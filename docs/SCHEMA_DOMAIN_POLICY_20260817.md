@@ -28,15 +28,28 @@ Every commitment carries a logical domain. Each domain has a closed payload-sche
 | `MATURITY_SNAPSHOT` | `maturity.snapshot/v1` |
 | `SETTLEMENT_RECEIPT` | `settlement.receipt/v1` |
 | `LEDGER_EVENT` | `ledger.event/v1` |
+| `PROJECT_PROPOSAL` | `project.proposal/v2` |
 | `PROJECT_EVIDENCE` | `project.evidence/v1` |
 | `PROJECT_SCREENING` | `project.screening/v1` |
 | `AI_POLICY_PROPOSAL` | `ai.policy-proposal/v2` |
 
 Unknown domains and mismatched pairs fail closed.
 
+## Project proposal migration rule
+
+`project.proposal/v1` remains preserved for provenance, but it is not accepted for new typed trust commitments. New project proposal commitments use only:
+
+```text
+PROJECT_PROPOSAL -> project.proposal/v2
+```
+
+The v2 producer uses canonical decimal strings for fractional economic values and cross-language-safe integer semantics for discrete counters. The trust layer does not convert or reinterpret v1 bytes into v2.
+
+`PROJECT_PROPOSAL` and `PROJECT_SCREENING` are deliberately different domains. A valid project proposal commitment is not a screening decision; a valid screening commitment is not an approval or funding authorization.
+
 ## Legacy preservation
 
-Superseded schemas such as `ai.policy-proposal/v1` remain preserved in their source repositories and central schema registry for provenance. Preservation does **not** imply that a superseded draft is accepted for new canonical trust-layer commitments.
+Superseded schemas such as `project.proposal/v1` and `ai.policy-proposal/v1` remain preserved in their source repositories and central schema registry for provenance. Preservation does **not** imply that a superseded draft is accepted for new canonical trust-layer commitments.
 
 ## Separation from authorization
 
