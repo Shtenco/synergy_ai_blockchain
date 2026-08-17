@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import Any
 
 
+ENVELOPE_SCHEMA = "commitment.envelope/v1"
+
+
 class CommitmentInvariantError(ValueError):
     """Raised when a commitment envelope is structurally unsafe or ambiguous."""
 
@@ -54,7 +57,7 @@ class CommitmentEnvelope:
     domain: str
     network_domain: str
     verifier_id: str
-    schema: str
+    payload_schema: str
     subject_id: str
     sequence: int
     as_of: datetime
@@ -69,7 +72,7 @@ class CommitmentEnvelope:
             raise CommitmentInvariantError("domain must use the SINERGY: namespace")
         network_domain = _require_text(self.network_domain, "network_domain")
         verifier_id = _require_text(self.verifier_id, "verifier_id")
-        schema = _require_text(self.schema, "schema")
+        payload_schema = _require_text(self.payload_schema, "payload_schema")
         subject_id = _require_text(self.subject_id, "subject_id")
         signer_policy = _require_text(self.signer_policy, "signer_policy")
         if self.sequence < 0:
@@ -80,7 +83,7 @@ class CommitmentEnvelope:
         object.__setattr__(self, "domain", domain)
         object.__setattr__(self, "network_domain", network_domain)
         object.__setattr__(self, "verifier_id", verifier_id)
-        object.__setattr__(self, "schema", schema)
+        object.__setattr__(self, "payload_schema", payload_schema)
         object.__setattr__(self, "subject_id", subject_id)
         object.__setattr__(self, "signer_policy", signer_policy)
         object.__setattr__(
@@ -103,10 +106,11 @@ class CommitmentEnvelope:
 
     def to_canonical_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": ENVELOPE_SCHEMA,
             "domain": self.domain,
             "network_domain": self.network_domain,
             "verifier_id": self.verifier_id,
-            "schema": self.schema,
+            "payload_schema": self.payload_schema,
             "subject_id": self.subject_id,
             "sequence": self.sequence,
             "as_of": self.as_of.isoformat(),
