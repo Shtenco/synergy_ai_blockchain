@@ -1,0 +1,40 @@
+name: Typed commitment schema policy
+
+on:
+  pull_request:
+    paths:
+      - "sinergy_ai_blockchain/schema_policy.py"
+      - "tests/test_schema_policy.py"
+      - "docs/SCHEMA_DOMAIN_POLICY_20260817.md"
+      - "docs/FEDERATION_COMMITMENT_FLOW_20260817.md"
+      - ".github/workflows/schema-domain-policy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: schema-domain-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  schema-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test runner only
+        run: python -m pip install --disable-pip-version-check pytest
+
+      - name: Compile schema policy
+        run: python -m py_compile sinergy_ai_blockchain/schema_policy.py
+
+      - name: Run schema/domain regression tests
+        run: python -m pytest -q tests/test_schema_policy.py
