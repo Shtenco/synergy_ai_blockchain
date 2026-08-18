@@ -20,19 +20,35 @@ The execution/data planes may scale independently. Canonical consensus verifies 
 
 Adding node count alone is not intelligence scaling. V15/V16 already demonstrated that correlated nodes can be equal to or worse than one model. R7.5 therefore treats a new CognitiveNode as useful only when it adds residual capability and is sufficiently independent.
 
-For remaining oracle error `E_n`, if the next admitted node solves a fraction `q_n` of the still-unresolved DEV cases and
+Let `E_n` be remaining DEV oracle error after `n` admitted nodes. If node `k` solves a fraction `q_k` of the still-unresolved cases and
 
 ```text
-q_n >= c * n^(alpha - 1),  0 < alpha < 1,
+q_k >= c * k^(alpha - 1),  0 < alpha < 1,
 ```
 
-then
+then the exact discrete admission bound is
 
 ```text
-E_n <= E_1 * exp(-(c/alpha) * (n^alpha - 1)).
+E_n <= E_1 * product_{k=2..n}(1 - c*k^(alpha-1)).
 ```
 
-This is only a constructive DEV oracle-coverage bound. A frozen node portfolio/order must reproduce the effect on precommitted SEALED TEST, and the realized Trust Governor must convert oracle diversity into collective accuracy without Authority violations.
+Because `k^(alpha-1)` is positive and decreasing,
+
+```text
+sum_{k=2..n} k^(alpha-1)
+  >= integral_2^(n+1) x^(alpha-1) dx
+  = ((n+1)^alpha - 2^alpha)/alpha,
+```
+
+so the rigorous stretched-exponential upper bound is
+
+```text
+E_n <= E_1 * exp[-(c/alpha) * ((n+1)^alpha - 2^alpha)].
+```
+
+The `n+1` / `2` shift is deliberate. The earlier unshifted integral expression was too strong for a decreasing integrand and has been removed; a regression test now catches that error.
+
+This remains only a constructive DEV oracle-coverage bound. A frozen node portfolio/order must reproduce the effect on precommitted SEALED TEST, and the realized Trust Governor must convert oracle diversity into collective accuracy without Authority violations.
 
 Each evidence-bearing node commits:
 
