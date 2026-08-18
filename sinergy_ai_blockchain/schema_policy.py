@@ -15,6 +15,8 @@ DOMAIN_SCHEMA_POLICY: dict[str, frozenset[str]] = {
     "PROJECT_PROPOSAL": frozenset({"project.proposal/v2"}),
     "PROJECT_EVIDENCE": frozenset({"project.evidence/v1"}),
     "PROJECT_SCREENING": frozenset({"project.screening/v1"}),
+    "CAPITAL_AUTHORIZATION": frozenset({"capital.authorization/v1"}),
+    "ECONOMIC_CYCLE_TRACE": frozenset({"economic.cycle-trace/v1"}),
     "AI_POLICY_PROPOSAL": frozenset({"ai.policy-proposal/v2"}),
 }
 
