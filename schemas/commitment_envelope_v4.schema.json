@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://sinergy.system/schemas/commitment.envelope/v4",
+  "title":"SINERGY CommitmentEnvelope v4",
+  "type":"object","additionalProperties":false,
+  "$defs":{"hex64":{"type":"string","pattern":"^[a-f0-9]{64}$"},"safeSequence":{"type":"integer","minimum":0,"maximum":9007199254740991}},
+  "required":["schema_version","canonical_profile","policy_profile","domain","network_domain","verifier_id","payload_schema","subject_id","sequence","as_of","payload_digest","previous_commitment","signer_policy","metadata_digest"],
+  "properties":{
+    "schema_version":{"const":"commitment.envelope/v4"},
+    "canonical_profile":{"const":"sinergy.canonical-json/v1"},
+    "policy_profile":{"const":"sinergy.commitment-schema-policy/v4"},
+    "domain":{"type":"string","pattern":"^SINERGY:[A-Z0-9_]+$"},
+    "network_domain":{"type":"string","minLength":1},
+    "verifier_id":{"type":"string","minLength":1},
+    "payload_schema":{"type":"string","minLength":1},
+    "subject_id":{"type":"string","minLength":1},
+    "sequence":{"$ref":"#/$defs/safeSequence"},
+    "as_of":{"type":"string","pattern":"Z$"},
+    "payload_digest":{"$ref":"#/$defs/hex64"},
+    "previous_commitment":{"oneOf":[{"$ref":"#/$defs/hex64"},{"type":"null"}]},
+    "signer_policy":{"type":"string","minLength":1},
+    "metadata_digest":{"oneOf":[{"$ref":"#/$defs/hex64"},{"type":"null"}]}
+  }
+}

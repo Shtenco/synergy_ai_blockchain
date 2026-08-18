@@ -1,0 +1,16 @@
+{
+  "schema_version":"commitment.envelope/v4",
+  "canonical_profile":"sinergy.canonical-json/v1",
+  "policy_profile":"sinergy.commitment-schema-policy/v4",
+  "domain":"SINERGY:ECONOMIC_CYCLE_TRACE",
+  "network_domain":"offchain:reference",
+  "verifier_id":"sinergy-federation-v4",
+  "payload_schema":"economic.cycle-trace/v5",
+  "subject_id":"cycle-005",
+  "sequence":5,
+  "as_of":"2026-08-19T12:00:00Z",
+  "payload_digest":"67933a4e517d4a3fbdb42776dfd4183809db139046e35da6d348fa2a408c57a9",
+  "previous_commitment":null,
+  "signer_policy":"research-no-signature-v4",
+  "metadata_digest":null
+}

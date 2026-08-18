@@ -1,0 +1,31 @@
+name: commitment-v4-external-trace
+
+on:
+  pull_request:
+    paths:
+      - 'sinergy_ai_blockchain/v4/**'
+      - 'schemas/commitment_envelope_v4.schema.json'
+      - 'fixtures/conformance/revenue_recognition_v2_canonical.json'
+      - 'fixtures/conformance/ledger_event_v1_recognized_revenue.json'
+      - 'fixtures/conformance/economic_cycle_trace_v5_complete.json'
+      - 'tests/test_commitment_v4_external_trace_finalization.py'
+      - 'docs/COMMITMENT_V4_EXTERNAL_TRACE_FINALIZATION_20260818.md'
+      - '.github/workflows/commitment-v4-external-trace.yml'
+  workflow_dispatch:
+
+jobs:
+  commitment-v4:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tests
+        run: python -m pip install --upgrade pip pytest jsonschema
+      - name: Compile v4 trust primitives
+        run: python -m py_compile sinergy_ai_blockchain/v4/schema_policy.py sinergy_ai_blockchain/v4/commitment.py
+      - name: Run external-finalization regressions
+        run: python -m pytest tests/test_commitment_v4_external_trace_finalization.py -q
