@@ -2,6 +2,7 @@
 
 pub mod autopilot;
 pub mod cognitive;
+pub mod cognitive_market;
 pub mod cognitive_registry;
 pub mod consensus;
 pub mod migration;
@@ -20,6 +21,10 @@ pub use autopilot::{
 pub use cognitive::{
     CognitiveEvidence, CognitiveNodeManifest, CognitiveRole, CognitiveWorkReceipt,
     CognitiveWorkRequest, EvidenceKind, WorkVerdict,
+};
+pub use cognitive_market::{
+    reward_breakdown, CognitiveRewardBreakdown, CognitiveRewardPolicy,
+    VerifiedMarginalContribution,
 };
 pub use cognitive_registry::{
     independent_prefix_count, structural_independence, CognitiveNodeProvenance,
