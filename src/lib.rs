@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod autopilot;
+pub mod cognitive;
 pub mod consensus;
 pub mod migration;
 pub mod network;
@@ -14,6 +15,10 @@ pub mod validator;
 pub use autopilot::{
     ApprovalMode, AutopilotCapability, AutopilotExecutionReceipt, AutopilotPolicy,
     AutopilotProposal,
+};
+pub use cognitive::{
+    CognitiveEvidence, CognitiveNodeManifest, CognitiveRole, CognitiveWorkReceipt,
+    CognitiveWorkRequest, EvidenceKind, WorkVerdict,
 };
 pub use consensus::{PrecompileAddress, PrecompileGasSchedule};
 pub use migration::{LegacyChain, LegacyIdentityBinding};
