@@ -10,6 +10,7 @@ pub mod network;
 pub mod nexus;
 pub mod payments;
 pub mod pq;
+pub mod service_planes;
 pub mod storage;
 pub mod tx;
 pub mod validator;
@@ -36,6 +37,7 @@ pub use network::{HybridSharedSecret, TransportPolicy};
 pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{AuthPolicy, AuthScheme, HybridAuthorization};
+pub use service_planes::{ServicePlaneCapacityEnvelope, ServicePlaneRoots};
 pub use storage::{
     ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
     ProofOfStorageReceipt, StorageBid, StorageClass,
