@@ -1,0 +1,32 @@
+name: trust-commitment-v2
+
+on:
+  pull_request:
+    paths:
+      - 'sinergy_ai_blockchain/v2/**'
+      - 'fixtures/conformance/**'
+      - 'tests/test_commitment_v2.py'
+      - 'docs/TRUST_COMMITMENT_V2_20260818.md'
+      - '.github/workflows/trust-commitment-v2.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: trust-commitment-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --upgrade pip pytest
+      - name: Compile v2 trust package
+        run: python -m compileall -q sinergy_ai_blockchain/v2
+      - name: Run trust v2 regression suite
+        run: python -m pytest tests/test_commitment_v2.py tests/test_schema_policy.py -q
