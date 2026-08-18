@@ -1,13 +1,13 @@
 [package]
 name = "synergy-pq-evm-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Consensus-safe post-quantum EVM extension and deterministic NEXUS AI precompile core"
+description = "Consensus-safe post-quantum EVM extension with deterministic NEXUS and world-compute service-plane commitments"
 
 [lib]
 name = "synergy_pq_evm_core"
-path = "src/lib.rs"
+path = "src/lib_v2.rs"
 
 [features]
 default = []
