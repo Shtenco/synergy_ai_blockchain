@@ -36,7 +36,10 @@ pub use network::{HybridSharedSecret, TransportPolicy};
 pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{AuthPolicy, AuthScheme, HybridAuthorization};
-pub use storage::{ArchiveReceipt, ProofOfStorageReceipt, StorageBid, StorageClass};
+pub use storage::{
+    ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
+    ProofOfStorageReceipt, StorageBid, StorageClass,
+};
 pub use tx::PqEvmTransaction;
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
 
