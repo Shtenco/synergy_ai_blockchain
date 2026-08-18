@@ -6,8 +6,8 @@ import {PQVerify} from "./IPQVerifier.sol";
 /// @notice Native SYNERGY PQ-EVM account facade.
 /// NEXUS AI is never an authorization oracle: only cryptographic signatures can execute calls.
 contract PQSmartAccount {
-    bytes public immutable mlDsa87PublicKey;
-    bytes public immutable slhDsaPublicKey;
+    bytes public mlDsa87PublicKey;
+    bytes public slhDsaPublicKey;
     bool public immutable requireDualPQ;
     uint256 public nonce;
 
