@@ -1,0 +1,19 @@
+name: AUTOPILOT V5 AI Node LAB Commitment v2
+on:
+  pull_request:
+    paths:
+      - 'registry/autopilot_v5_ai_node_lab_deployment_commitment_v2.json'
+      - 'verify/verify_autopilot_v5_ai_node_lab_commitment_v2.py'
+      - 'tests/test_autopilot_v5_ai_node_lab_commitment_v2.py'
+      - '.github/workflows/autopilot-v5-ai-node-lab-commitment-v2.yml'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python verify/verify_autopilot_v5_ai_node_lab_commitment_v2.py
+      - run: python -m unittest -v tests/test_autopilot_v5_ai_node_lab_commitment_v2.py
