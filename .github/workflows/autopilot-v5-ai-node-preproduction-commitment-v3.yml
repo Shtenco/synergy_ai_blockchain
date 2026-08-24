@@ -1,0 +1,20 @@
+name: AUTOPILOT V5 AI Node Pre-Production Commitment v3
+on:
+  pull_request:
+    paths:
+      - 'registry/autopilot_v5_ai_node_preproduction_commitment_v3.json'
+      - 'verify/verify_autopilot_v5_ai_node_preproduction_commitment_v3.py'
+      - 'tests/test_autopilot_v5_ai_node_preproduction_commitment_v3.py'
+      - 'docs/AUTOPILOT_V5_AI_NODE_PREPRODUCTION_COMMITMENT_V3.md'
+      - '.github/workflows/autopilot-v5-ai-node-preproduction-commitment-v3.yml'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python verify/verify_autopilot_v5_ai_node_preproduction_commitment_v3.py
+      - run: python -m unittest tests/test_autopilot_v5_ai_node_preproduction_commitment_v3.py -v
