@@ -1,0 +1,53 @@
+{
+  "schema": "synergy.economic-testnet-persistent-loopback-execution-evidence/v1",
+  "network_id": "synergy-economic-testnet-v1",
+  "source_repository": "Shtenco/synergy_ai_blockchain",
+  "parent_loopback_execution_evidence_digest": "6f80d6cfdbce8eb0b2410c7e440f260eaf6199da8e5b64ce48c365c68be684d5",
+  "genesis_digest": "cfba3627eb65d933ed1dec416bfe1c28ecf586312028efc7e629859f315678b2",
+  "economic_cycle_digest": "83f9c3ee0c168ca50212ebaa1e64c58c08eb87fd040a8b5f214ee4987242f3f1",
+  "economic_commitment_digest": "9ffd71e7f535ff91cd4cedfb229ac0b43972bc8a2e82f8dce269b7440a9e65a8",
+  "compute_trust_context_digest": "608b0ca91e905cb0345d345af9e1246489236a8e672a07fb60ea4cfb8691d397",
+  "runner_class": "EPHEMERAL_LOCAL_MULTI_PROCESS_TCP_WITH_LOCAL_DISK_PERSISTENCE",
+  "runtime": "CPython 3.13.5",
+  "platform": "Linux x86_64",
+  "transport": "TCP_LOOPBACK_127_0_0_1",
+  "storage": "LOCAL_ATOMIC_JSON_FILE_REPLACE",
+  "process_count": 3,
+  "node_count": 3,
+  "restart_count": 2,
+  "partition_simulation": "NODE_3_WITHHELD_CHECKPOINT_2",
+  "replay_rejection": "NODE_1_CHECKPOINT_1_REPLAY_REJECTED_AFTER_RESTART",
+  "reconnect_catchup": "NODE_3_ACCEPTED_CHECKPOINT_2_AFTER_RESTART",
+  "checkpoint_digests": [
+    "69897b297fde6a25a9c123fe1c21b5ea31f2da2dc463edfc1c7a2364812ca8ab",
+    "3742319fa196294a16f9bd80fc502cbd25c06040b569b9080dfeb2893100dedd",
+    "92c74a6181af9676c4e6805665db3d6466cde5b5a7cecc1850e500ec9a627ae8"
+  ],
+  "first_restart_heads": [
+    "3742319fa196294a16f9bd80fc502cbd25c06040b569b9080dfeb2893100dedd",
+    "3742319fa196294a16f9bd80fc502cbd25c06040b569b9080dfeb2893100dedd",
+    "69897b297fde6a25a9c123fe1c21b5ea31f2da2dc463edfc1c7a2364812ca8ab"
+  ],
+  "final_head_digest": "92c74a6181af9676c4e6805665db3d6466cde5b5a7cecc1850e500ec9a627ae8",
+  "second_restart_all_nodes_same_final_head": true,
+  "transcript_digest": "fd29843c4934246938bdd8d71d32c716d589e2e6756df444e72d1e0d1bb791d8",
+  "execution_status": "LOCAL_DISK_PERSISTENCE_RESTART_RECOVERY_VERIFIED_NOT_EXTERNAL_HOST_TESTNET",
+  "external_host_testnet_status": "NOT_EXECUTED",
+  "external_host_claim": false,
+  "public_network_claim": false,
+  "consensus_claim": "NONE",
+  "finality_claim": "CANDIDATE_NOT_FINAL",
+  "signing_status": "UNSIGNED",
+  "submission_status": "NOT_SUBMITTED",
+  "accounting_authority": "NONE",
+  "financial_authority": "NONE",
+  "payment_authority": "NONE",
+  "signing_authority": "NONE",
+  "blockchain_submission_authority": "NONE",
+  "execution_authority": "NONE",
+  "remaining_blockers": [
+    "EXTERNAL_HOST_MULTI_NODE_DEPLOYMENT_EXECUTION_NOT_CAPTURED"
+  ],
+  "executed_at": "2026-08-28T11:30:17Z",
+  "evidence_digest": "7c533e6ebb3b3177ef9191d1951c930ddd9d6f49541b0fa3982924f2dce86680"
+}
