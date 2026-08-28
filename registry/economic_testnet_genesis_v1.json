@@ -1,0 +1,29 @@
+{
+  "schema": "synergy.economic-testnet-genesis/v1",
+  "network_id": "synergy-economic-testnet-v1",
+  "network_scope": "NON_PRODUCTION_EVIDENCE_TESTNET",
+  "economic_commitment_schema": "synergy.ai-blockchain-economic-evidence-commitment/v1",
+  "economic_commitment_digest": "9ffd71e7f535ff91cd4cedfb229ac0b43972bc8a2e82f8dce269b7440a9e65a8",
+  "economic_cycle_digest": "83f9c3ee0c168ca50212ebaa1e64c58c08eb87fd040a8b5f214ee4987242f3f1",
+  "compute_trust_context_commitment_digest": "608b0ca91e905cb0345d345af9e1246489236a8e672a07fb60ea4cfb8691d397",
+  "checkpoint_schema": "synergy.economic-testnet-checkpoint/v1",
+  "checkpoint_validation": "HASH_CHAIN_AND_PINNED_EVIDENCE_ONLY_NO_CONSENSUS_CLAIM",
+  "signing_mode": "UNSIGNED_TESTNET_CANDIDATES_ONLY",
+  "execution_status": "READY_NOT_EXECUTED",
+  "live_network_claim": false,
+  "allowed_evidence_root_types": [
+    "ECONOMIC_CYCLE",
+    "ECONOMIC_BLOCKCHAIN_COMMITMENT",
+    "FINANCIAL_OS",
+    "METAPAY",
+    "COMPUTE_TRUST_CONTEXT"
+  ],
+  "accounting_authority": "NONE",
+  "financial_authority": "NONE",
+  "payment_authority": "NONE",
+  "signing_authority": "NONE",
+  "blockchain_submission_authority": "NONE",
+  "execution_authority": "NONE",
+  "generated_at": "2026-08-28T10:10:00Z",
+  "genesis_digest": "cfba3627eb65d933ed1dec416bfe1c28ecf586312028efc7e629859f315678b2"
+}
