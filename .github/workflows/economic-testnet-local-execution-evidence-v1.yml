@@ -1,0 +1,22 @@
+name: economic-testnet-local-execution-evidence-v1
+
+on:
+  pull_request:
+    paths:
+      - 'registry/economic_testnet_local_execution_evidence_v1.json'
+      - 'testnet/economic_testnet_execution_evidence_v1.py'
+      - 'tests/test_economic_testnet_execution_evidence_v1.py'
+      - 'docs/ECONOMIC_TESTNET_LOCAL_EXECUTION_EVIDENCE_V1_20260828.md'
+      - '.github/workflows/economic-testnet-local-execution-evidence-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  evidence-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - run: pytest -q tests/test_economic_os_e2e_commitment_v1.py tests/test_economic_testnet_v1.py tests/test_economic_testnet_execution_evidence_v1.py
