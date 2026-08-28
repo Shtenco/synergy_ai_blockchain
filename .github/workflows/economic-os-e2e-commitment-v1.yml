@@ -1,0 +1,23 @@
+name: economic-os-e2e-commitment-v1
+
+on:
+  pull_request:
+    paths:
+      - 'registry/economic_os_e2e_commitment_v1.json'
+      - 'verify/verify_economic_os_e2e_commitment_v1.py'
+      - 'tests/test_economic_os_e2e_commitment_v1.py'
+      - 'docs/ECONOMIC_OS_E2E_COMMITMENT_V1_20260828.md'
+      - '.github/workflows/economic-os-e2e-commitment-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python verify/verify_economic_os_e2e_commitment_v1.py
+      - run: python -m pip install pytest
+      - run: pytest -q tests/test_economic_os_e2e_commitment_v1.py
