@@ -1,0 +1,55 @@
+name: Base-L3 Foundry EVM
+
+on:
+  push:
+    branches:
+      - base-l3-cross-domain-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract package
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ci/SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE_V2.tar.gz.b64 > /tmp/pkg.tar.gz
+          tar -xzf /tmp/pkg.tar.gz
+          test -f SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE/foundry.toml
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Tool versions
+        shell: bash
+        run: |
+          forge --version
+          cast --version
+          anvil --version
+
+      - name: Static and economic controls
+        working-directory: SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE
+        shell: bash
+        run: |
+          python3 scripts/static_audit.py
+          python3 scripts/economic_reference.py
+
+      - name: Solidity build
+        working-directory: SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE
+        shell: bash
+        run: forge build --sizes
+
+      - name: EVM tests
+        working-directory: SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE
+        shell: bash
+        run: forge test -vvv
