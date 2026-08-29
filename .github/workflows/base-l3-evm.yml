@@ -12,7 +12,7 @@ permissions:
 jobs:
   evm:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,10 +25,17 @@ jobs:
           tar -xzf /tmp/pkg.tar.gz
           test -f SYNERGY_BASE_L3_CROSS_DOMAIN_ARBITRAGE/foundry.toml
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
+      - name: Install Foundry v1.8.1 without third-party action
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.foundry/bin"
+          curl -fsSL --retry 3 \
+            https://github.com/foundry-rs/foundry/releases/download/v1.8.1/foundry_v1.8.1_linux_amd64.tar.gz \
+            -o /tmp/foundry.tar.gz
+          echo '37b45855232e57624d90113b049ca54f0c92055bb5c1997fcbdc3076c7b89c10  /tmp/foundry.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/foundry.tar.gz -C "$HOME/.foundry/bin"
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
 
       - name: Tool versions
         shell: bash
