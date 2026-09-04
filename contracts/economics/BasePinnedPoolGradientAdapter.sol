@@ -75,7 +75,8 @@ contract BasePinnedPoolGradientAdapter {
         uint64 openedAt;
     }
 
-    address public immutable executor;
+    address public immutable governor;
+    address public executor;
     uint16 public immutable slippageBps;
     bytes32 public immutable venueSetHash;
     mapping(uint256 => Position) public positions;
@@ -90,6 +91,7 @@ contract BasePinnedPoolGradientAdapter {
     error Slippage();
     error Residual();
 
+    event ExecutorConfigured(address indexed executor);
     event GradientOpened(
         uint256 indexed intentId,
         bool positiveQE,
@@ -108,9 +110,9 @@ contract BasePinnedPoolGradientAdapter {
         uint256 amountOut
     );
 
-    constructor(address executor_, uint16 slippageBps_) {
-        if (executor_ == address(0) || slippageBps_ > 500) revert InvalidConfig();
-        executor = executor_;
+    constructor(address governor_, uint16 slippageBps_) {
+        if (governor_ == address(0) || slippageBps_ > 500) revert InvalidConfig();
+        governor = governor_;
         slippageBps = slippageBps_;
         if (!verifyPinnedPool()) revert InvalidConfig();
 
@@ -132,17 +134,21 @@ contract BasePinnedPoolGradientAdapter {
         _forceApprove(WETH, SWAP_ROUTER_02, type(uint256).max);
     }
 
+    /// @notice One-time wiring after the Base executor is deployed. This removes
+    /// the constructor cycle adapter -> executor -> adapter.
+    function setExecutor(address executor_) external {
+        if (msg.sender != governor || executor != address(0) || executor_ == address(0)) revert Unauthorized();
+        executor = executor_;
+        emit ExecutorConfigured(executor_);
+    }
+
     modifier onlyExecutor(address vault) {
-        if (msg.sender != executor || vault != executor) revert Unauthorized();
+        if (executor == address(0) || msg.sender != executor || vault != executor) revert Unauthorized();
         _;
     }
 
     function verifyPinnedPool() public view returns (bool) {
-        if (block.chainid != 8453 && block.chainid != 31337) {
-            // Base fork tests often preserve 8453; 31337 is allowed only when the
-            // pinned address has been deliberately etched/mock-provisioned.
-            return false;
-        }
+        if (block.chainid != 8453 && block.chainid != 31337) return false;
         IUniV3PoolIdentity p = IUniV3PoolIdentity(POOL);
         try p.token0() returns (address t0) {
             try p.token1() returns (address t1) {
@@ -160,10 +166,8 @@ contract BasePinnedPoolGradientAdapter {
         }
     }
 
-    /// @notice Executable canonical NAV: native USDC plus a current executable
-    /// WETH->USDC quote for all WETH held in the executor vault.
     function canonicalNavUsdc6(address vault) external returns (uint256 navUsdc6) {
-        if (vault != executor) revert Unauthorized();
+        if (vault != executor || executor == address(0)) revert Unauthorized();
         uint256 u = IERC20Gradient(USDC).balanceOf(vault);
         uint256 w = IERC20Gradient(WETH).balanceOf(vault);
         if (w == 0) return u;
@@ -194,13 +198,10 @@ contract BasePinnedPoolGradientAdapter {
         uint256 amountOut;
 
         if (positive) {
-            // Old V11 USDC pump: internal ETH is dearer -> buy external WETH.
             tokenIn = USDC;
             tokenOut = WETH;
             amountIn = notional;
         } else {
-            // Old V11 ETH pump: internal ETH is cheaper -> sell external WETH.
-            // Size the WETH leg from the same USDC-denominated transferred notional.
             tokenIn = WETH;
             tokenOut = USDC;
             amountIn = _quote(USDC, WETH, notional);
@@ -236,7 +237,6 @@ contract BasePinnedPoolGradientAdapter {
         if (!p.open) revert PositionMissing();
         if (deadline <= block.timestamp) revert InvalidIntent();
 
-        // Inverse pump uses exactly the output inventory created by OPEN.
         address tokenIn = p.positiveQE ? WETH : USDC;
         address tokenOut = p.positiveQE ? USDC : WETH;
         uint256 amountIn = p.openOutput;
@@ -259,7 +259,7 @@ contract BasePinnedPoolGradientAdapter {
     }
 
     function settlementClean(address vault, uint256 intentId) external view returns (bool) {
-        if (vault != executor) return false;
+        if (vault != executor || executor == address(0)) return false;
         return !positions[intentId].open && IERC20Gradient(USDC).balanceOf(address(this)) == 0
             && IERC20Gradient(WETH).balanceOf(address(this)) == 0;
     }
