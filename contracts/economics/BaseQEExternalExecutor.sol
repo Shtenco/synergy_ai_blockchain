@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.26;
 
+interface IERC20QEVault {
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
 interface IBaseMessengerForQE {
     function sendMessage(address target, bytes calldata message, uint32 minGasLimit) external payable;
     function xDomainMessageSender() external view returns (address);
@@ -17,18 +21,9 @@ interface ISinergyQESettlementReceiver {
     ) external;
 }
 
-/// @notice Adapter boundary for the real Base external-pool implementation.
-/// @dev A position may remain open across blocks. Therefore persistent canonical
-///      Base inventory, not a cross-block flash loan, funds the OPEN phase.
 interface IBaseQEGradientAdapter {
     function venueSetHash() external view returns (bytes32);
-
-    /// @notice Consolidated executable Base NAV of `vault` in native USDC-6 units.
     function canonicalNavUsdc6(address vault) external returns (uint256);
-
-    /// @notice Transfer a bounded fraction of the SINERGY internal QE gradient
-    /// into the external Base pool. Positive QE buys the external base asset;
-    /// negative QE sells it. The adapter must return all output to `vault`.
     function openGradient(
         address vault,
         uint256 intentId,
@@ -37,37 +32,22 @@ interface IBaseQEGradientAdapter {
         uint128 principalUsdc6,
         uint64 deadline
     ) external returns (uint256 externalGrossValueUsdc6, uint256 totalExternalCostsUsdc6);
-
-    /// @notice Close the previously opened gradient position at current executable Base prices.
     function closeGradient(address vault, uint256 intentId, uint64 deadline)
         external
         returns (uint256 externalGrossValueUsdc6, uint256 totalExternalCostsUsdc6);
-
-    /// @notice True only after the adapter has no debt or hidden residual for this intent.
     function settlementClean(address vault, uint256 intentId) external view returns (bool);
 }
 
 /// @notice Base-side two-phase value gate for SINERGY QE intents.
-///
-/// Phase 1 (OPEN): a bounded fraction of the internal QE gradient is physically
-/// transferred into a real Base pool. The resulting inventory may remain open
-/// while outside order flow changes the external executable state.
-///
-/// Phase 2 (CLOSE): anyone may attempt to close. The entire close transaction
-/// reverts unless final canonical Base NAV is at least `navBefore + minGain`.
-/// Thus an unprofitable attempted close cannot crystallize a loss accidentally.
-///
-/// After expiry the governor may force-unwind to clear risk; that settlement may
-/// report a loss to SINERGY L1 instead of hiding it.
+/// OPEN physically transfers a bounded part of the L1 QE gradient into a real
+/// Base pool. CLOSE may happen later after outside order flow changes the pool.
+/// A normal close reverts unless final consolidated Base NAV reaches the L1
+/// minimum-gain threshold. Expired positions can be force-unwound by governance
+/// and any loss is reported back to L1 rather than hidden.
 contract BaseQEExternalExecutor {
     uint256 public constant SINERGY_CHAIN_ID = 8_453_001;
 
-    enum PositionState {
-        NONE,
-        OPEN,
-        SETTLED,
-        FORCED_UNWIND
-    }
+    enum PositionState { NONE, OPEN, SETTLED, FORCED_UNWIND }
 
     struct Position {
         PositionState state;
@@ -90,6 +70,7 @@ contract BaseQEExternalExecutor {
     address public immutable sinergyController;
     IBaseQEGradientAdapter public adapter;
     bytes32 public adapterCodehash;
+    bool private adapterCallActive;
 
     mapping(uint256 => Position) public positions;
 
@@ -107,6 +88,7 @@ contract BaseQEExternalExecutor {
     error SettlementDirty();
     error CanonicalGainTooLow();
     error NotExpired();
+    error TransferFailed();
 
     event AdapterChanged(address indexed oldAdapter, address indexed newAdapter, bytes32 codehash);
     event GovernorChanged(address indexed oldGovernor, address indexed newGovernor);
@@ -155,11 +137,8 @@ contract BaseQEExternalExecutor {
         emit GovernorChanged(old, next);
     }
 
-    /// @dev Adapter rotation is allowed only by governance. Existing positions
-    /// must be settled before operationally rotating adapters; each position also
-    /// commits its venueSetHash so a mismatched replacement cannot close it silently.
     function setAdapter(IBaseQEGradientAdapter next) external {
-        if (msg.sender != governor) revert Unauthorized();
+        if (msg.sender != governor || adapterCallActive) revert Unauthorized();
         _setAdapter(next);
     }
 
@@ -173,8 +152,16 @@ contract BaseQEExternalExecutor {
         emit AdapterChanged(old, a, h);
     }
 
-    /// @notice Relay target for a SINERGY L1 QE intent. This opens, but does not
-    /// finalize, the external gradient position.
+    /// @notice Narrow vault callback used by the currently pinned adapter while
+    /// one of its OPEN/CLOSE calls is active. This avoids permanent ERC20 approvals.
+    function releaseToAdapter(address token, uint256 amount) external {
+        if (
+            !adapterCallActive || msg.sender != address(adapter) || address(adapter).codehash != adapterCodehash
+                || token == address(0) || amount == 0
+        ) revert Unauthorized();
+        if (!IERC20QEVault(token).transfer(msg.sender, amount)) revert TransferFailed();
+    }
+
     function onQEIntent(
         uint256 intentId,
         int32 qePremiumBps,
@@ -190,16 +177,18 @@ contract BaseQEExternalExecutor {
                 || messenger.xDomainMessageSender() != sinergyController
         ) revert WrongRemote();
         if (
-            intentId == 0 || principalUsdc6 == 0 || gradientTransferBps == 0 || gradientTransferBps > 10_000
-                || deadline <= block.timestamp
+            intentId == 0 || principalUsdc6 == 0 || qePremiumBps == 0 || gradientTransferBps == 0
+                || gradientTransferBps > 10_000 || deadline <= block.timestamp
         ) revert InvalidIntent();
         if (positions[intentId].state != PositionState.NONE) revert InvalidState();
         _assertAdapter(venueSetHash);
 
         uint256 navBefore = adapter.canonicalNavUsdc6(address(this));
+        adapterCallActive = true;
         (uint256 gross, uint256 costs) = adapter.openGradient(
             address(this), intentId, qePremiumBps, gradientTransferBps, principalUsdc6, deadline
         );
+        adapterCallActive = false;
         uint256 navOpen = adapter.canonicalNavUsdc6(address(this));
 
         positions[intentId] = Position({
@@ -232,15 +221,16 @@ contract BaseQEExternalExecutor {
     }
 
     /// @notice Permissionless profitable close attempt. If current external
-    /// state does not support the required final NAV, the whole call reverts and
-    /// the OPEN state remains unchanged.
+    /// state does not support the required final NAV, the whole call reverts.
     function closeQEIntent(uint256 intentId) external {
         Position storage p = positions[intentId];
         if (p.state != PositionState.OPEN) revert InvalidState();
         if (block.timestamp > p.deadline) revert NotExpired();
         _assertAdapter(p.venueSetHash);
 
+        adapterCallActive = true;
         (uint256 closeGross, uint256 closeCosts) = adapter.closeGradient(address(this), intentId, p.deadline);
+        adapterCallActive = false;
         if (!adapter.settlementClean(address(this), intentId)) revert SettlementDirty();
         uint256 navAfter = adapter.canonicalNavUsdc6(address(this));
         uint256 requiredAfter = p.navBeforeUsdc6 + uint256(p.minCanonicalGainUsdc6);
@@ -250,14 +240,10 @@ contract BaseQEExternalExecutor {
         p.closeCostsUsdc6 = closeCosts;
         p.state = PositionState.SETTLED;
 
-        uint256 gain = navAfter - p.navBeforeUsdc6;
-        cumulativeAcceptedCanonicalGainUsdc6 += gain;
+        cumulativeAcceptedCanonicalGainUsdc6 += navAfter - p.navBeforeUsdc6;
         _recordAndSendSettlement(intentId, p, navAfter, false);
     }
 
-    /// @notice Risk-off path after expiry. Unlike the normal close, a loss is
-    /// permitted and is reported explicitly to SINERGY L1 so QT can clear the
-    /// internal impulse and the reserve loss remains visible.
     function forceUnwindExpired(uint256 intentId) external {
         if (msg.sender != governor) revert Unauthorized();
         Position storage p = positions[intentId];
@@ -265,10 +251,10 @@ contract BaseQEExternalExecutor {
         if (block.timestamp <= p.deadline) revert NotExpired();
         _assertAdapter(p.venueSetHash);
 
-        // Adapter close receives the current timestamp so an expired position can
-        // be unwound even though its original economic-intent deadline has passed.
+        adapterCallActive = true;
         (uint256 closeGross, uint256 closeCosts) =
             adapter.closeGradient(address(this), intentId, uint64(block.timestamp + 10 minutes));
+        adapterCallActive = false;
         if (!adapter.settlementClean(address(this), intentId)) revert SettlementDirty();
         uint256 navAfter = adapter.canonicalNavUsdc6(address(this));
 
