@@ -11,6 +11,7 @@ interface IBaseQEExternalExecutor {
     function onQEIntent(
         uint256 intentId,
         int32 qePremiumBps,
+        uint16 gradientTransferBps,
         uint128 principalUsdc6,
         uint128 minCanonicalGainUsdc6,
         bytes32 venueSetHash,
@@ -18,7 +19,8 @@ interface IBaseQEExternalExecutor {
     ) external;
 }
 
-/// @notice SINERGY L1 monetary controller for the QE -> Base execution -> QT cycle.
+/// @notice SINERGY L1 monetary controller for the
+/// QE -> internal gradient -> partial Base transfer -> QT -> canonical settlement cycle.
 /// @dev Internal QE debt is never canonical profit. Canonical settlement arrives
 ///      only from the configured Base executor through the local messenger.
 contract SinergyQEController {
@@ -33,6 +35,7 @@ contract SinergyQEController {
         bool cancelled;
         bool economicPass;
         int32 qePremiumBps;
+        uint16 gradientTransferBps;
         uint128 principalUsdc6;
         uint128 minCanonicalGainUsdc6;
         uint128 qeDebtUsdc6;
@@ -66,6 +69,7 @@ contract SinergyQEController {
     event QEIntentOpened(
         uint256 indexed intentId,
         int32 qePremiumBps,
+        uint16 gradientTransferBps,
         uint256 principalUsdc6,
         uint256 qeDebtUsdc6,
         uint256 qePriceX18,
@@ -135,9 +139,13 @@ contract SinergyQEController {
     }
 
     /// @notice Opens one bounded QE impulse and emits a cross-domain execution intent.
+    /// @param gradientTransferBps Fraction (1..10000) of the QE-directed principal
+    ///        that the Base adapter may use to move/hedge against the external pool.
+    ///        This is the explicit "partial gradient transfer" control.
     /// @dev Only one impulse can be active in V1; this makes debt attribution exact.
     function openQEIntent(
         int32 qePremiumBps,
+        uint16 gradientTransferBps,
         uint128 principalUsdc6,
         uint128 minCanonicalGainUsdc6,
         bytes32 venueSetHash,
@@ -145,7 +153,10 @@ contract SinergyQEController {
         uint32 remoteMinGasLimit
     ) external onlyPolicy returns (uint256 intentId) {
         if (activeIntentId != 0) revert ActiveIntent();
-        if (principalUsdc6 == 0 || venueSetHash == bytes32(0)) revert InvalidIntent();
+        if (
+            principalUsdc6 == 0 || venueSetHash == bytes32(0) || gradientTransferBps == 0
+                || gradientTransferBps > BPS
+        ) revert InvalidIntent();
         if (deadline <= block.timestamp || deadline > block.timestamp + MAX_INTENT_LIFETIME) {
             revert InvalidIntent();
         }
@@ -169,6 +180,7 @@ contract SinergyQEController {
             cancelled: false,
             economicPass: false,
             qePremiumBps: qePremiumBps,
+            gradientTransferBps: gradientTransferBps,
             principalUsdc6: principalUsdc6,
             minCanonicalGainUsdc6: minCanonicalGainUsdc6,
             qeDebtUsdc6: uint128(debt),
@@ -187,6 +199,7 @@ contract SinergyQEController {
         emit QEIntentOpened(
             intentId,
             qePremiumBps,
+            gradientTransferBps,
             principalUsdc6,
             debt,
             targetPrice,
@@ -202,6 +215,7 @@ contract SinergyQEController {
                 (
                     intentId,
                     qePremiumBps,
+                    gradientTransferBps,
                     principalUsdc6,
                     minCanonicalGainUsdc6,
                     venueSetHash,
