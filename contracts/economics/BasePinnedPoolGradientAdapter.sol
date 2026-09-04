@@ -4,8 +4,11 @@ pragma solidity ^0.8.26;
 interface IERC20Gradient {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
+}
+
+interface IBaseQEAssetVault {
+    function releaseToAdapter(address token, uint256 amount) external;
 }
 
 interface IUniV3PoolIdentity {
@@ -44,17 +47,8 @@ interface IUniRouter02Gradient {
 
 /// @notice Concrete V11-style partial-gradient adapter against the pinned Base
 /// WETH/USDC Uniswap V3 0.30% pool used by the previous SYNERGY fork harness.
-///
-/// Positive internal QE (P_internal > P_external):
-///     USDC -> WETH on Base, physically pushing a bounded part of the gradient outward.
-///
-/// Negative internal QE (P_internal < P_external):
-///     WETH -> USDC on Base, physically pushing the opposite direction.
-///
-/// The opened inventory remains in the Base executor vault. A later CLOSE performs
-/// the inverse leg at then-current executable pool state. Without intervening outside
-/// flow, fees/price impact make the round trip non-profitable; the parent executor's
-/// canonical-NAV gate therefore refuses to call such a round trip a successful cycle.
+/// Positive QE buys external WETH; negative QE sells external WETH. The exact
+/// transferred notional is `principal * gradientTransferBps / 10000`.
 contract BasePinnedPoolGradientAdapter {
     uint256 public constant BPS = 10_000;
     uint256 public constant FEE_DENOMINATOR = 1_000_000;
@@ -134,8 +128,6 @@ contract BasePinnedPoolGradientAdapter {
         _forceApprove(WETH, SWAP_ROUTER_02, type(uint256).max);
     }
 
-    /// @notice One-time wiring after the Base executor is deployed. This removes
-    /// the constructor cycle adapter -> executor -> adapter.
     function setExecutor(address executor_) external {
         if (msg.sender != governor || executor != address(0) || executor_ == address(0)) revert Unauthorized();
         executor = executor_;
@@ -155,15 +147,9 @@ contract BasePinnedPoolGradientAdapter {
                 try p.fee() returns (uint24 f) {
                     bool pair = (t0 == WETH && t1 == USDC) || (t0 == USDC && t1 == WETH);
                     return pair && f == POOL_FEE;
-                } catch {
-                    return false;
-                }
-            } catch {
-                return false;
-            }
-        } catch {
-            return false;
-        }
+                } catch { return false; }
+            } catch { return false; }
+        } catch { return false; }
     }
 
     function canonicalNavUsdc6(address vault) external returns (uint256 navUsdc6) {
@@ -192,24 +178,13 @@ contract BasePinnedPoolGradientAdapter {
         if (notional == 0) revert InvalidIntent();
 
         bool positive = qePremiumBps > 0;
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-        uint256 amountOut;
-
-        if (positive) {
-            tokenIn = USDC;
-            tokenOut = WETH;
-            amountIn = notional;
-        } else {
-            tokenIn = WETH;
-            tokenOut = USDC;
-            amountIn = _quote(USDC, WETH, notional);
-        }
+        address tokenIn = positive ? USDC : WETH;
+        address tokenOut = positive ? WETH : USDC;
+        uint256 amountIn = positive ? notional : _quote(USDC, WETH, notional);
         if (amountIn == 0) revert QuoteFailed();
 
-        _pull(tokenIn, vault, amountIn);
-        amountOut = _swap(tokenIn, tokenOut, amountIn, deadline);
+        _pullFromVault(vault, tokenIn, amountIn);
+        uint256 amountOut = _swap(tokenIn, tokenOut, amountIn, deadline);
         _push(tokenOut, vault, amountOut);
 
         positions[intentId] = Position({
@@ -223,7 +198,6 @@ contract BasePinnedPoolGradientAdapter {
 
         externalGrossValueUsdc6 = notional;
         totalExternalCostsUsdc6 = notional * uint256(POOL_FEE) / FEE_DENOMINATOR;
-
         emit GradientOpened(intentId, positive, notional, tokenIn, amountIn, tokenOut, amountOut);
         _requireNoResidual();
     }
@@ -241,19 +215,13 @@ contract BasePinnedPoolGradientAdapter {
         address tokenOut = p.positiveQE ? USDC : WETH;
         uint256 amountIn = p.openOutput;
 
-        _pull(tokenIn, vault, amountIn);
+        _pullFromVault(vault, tokenIn, amountIn);
         uint256 amountOut = _swap(tokenIn, tokenOut, amountIn, deadline);
         _push(tokenOut, vault, amountOut);
-
         delete positions[intentId];
 
-        if (tokenOut == USDC) {
-            externalGrossValueUsdc6 = amountOut;
-        } else {
-            externalGrossValueUsdc6 = _quote(WETH, USDC, amountOut);
-        }
+        externalGrossValueUsdc6 = tokenOut == USDC ? amountOut : _quote(WETH, USDC, amountOut);
         totalExternalCostsUsdc6 = p.transferNotionalUsdc6 * uint256(POOL_FEE) / FEE_DENOMINATOR;
-
         emit GradientClosed(intentId, p.positiveQE, tokenIn, amountIn, tokenOut, amountOut);
         _requireNoResidual();
     }
@@ -289,9 +257,7 @@ contract BasePinnedPoolGradientAdapter {
         ) {
             if (out == 0) revert QuoteFailed();
             return out;
-        } catch {
-            revert QuoteFailed();
-        }
+        } catch { revert QuoteFailed(); }
     }
 
     function _swap(address tokenIn, address tokenOut, uint256 amountIn, uint64 deadline)
@@ -318,8 +284,8 @@ contract BasePinnedPoolGradientAdapter {
         if (actualOut < minOut) revert Slippage();
     }
 
-    function _pull(address token, address from, uint256 amount) internal {
-        if (!IERC20Gradient(token).transferFrom(from, address(this), amount)) revert TransferFailed();
+    function _pullFromVault(address vault, address token, uint256 amount) internal {
+        IBaseQEAssetVault(vault).releaseToAdapter(token, amount);
     }
 
     function _push(address token, address to, uint256 amount) internal {
