@@ -2,8 +2,12 @@
 pragma solidity ^0.8.26;
 
 import {TrustedRelayerCrossDomainMessenger} from "../contracts/bridge/TrustedRelayerCrossDomainMessenger.sol";
-import {SinergyQEController} from "../contracts/economics/SinergyQEController.sol";
-import {BaseQEExternalExecutor, IBaseQEGradientAdapter} from "../contracts/economics/BaseQEExternalExecutor.sol";
+import {SinergyQEController, ISinergyMessenger} from "../contracts/economics/SinergyQEController.sol";
+import {
+    BaseQEExternalExecutor,
+    IBaseQEGradientAdapter,
+    IBaseMessengerForQE
+} from "../contracts/economics/BaseQEExternalExecutor.sol";
 
 contract MockMessenger {
     address private sender_;
@@ -24,13 +28,8 @@ contract MockMessenger {
         sentCount++;
     }
 
-    function xDomainMessageSender() external view returns (address) {
-        return sender_;
-    }
-
-    function xDomainSourceChainId() external view returns (uint256) {
-        return sourceChain_;
-    }
+    function xDomainMessageSender() external view returns (address) { return sender_; }
+    function xDomainSourceChainId() external view returns (uint256) { return sourceChain_; }
 
     function relay(address target, address remoteSender, uint256 sourceChain, bytes calldata data)
         external
@@ -72,17 +71,9 @@ contract MockGradientAdapter is IBaseQEGradientAdapter {
     uint256 public lastIntent;
     uint16 public lastTransferBps;
 
-    constructor() {
-        venueSetHash = keccak256("MOCK_VENUE_SET");
-    }
-
-    function setCloseNav(uint256 next) external {
-        closeNavUsdc6 = next;
-    }
-
-    function canonicalNavUsdc6(address) external returns (uint256) {
-        return navUsdc6;
-    }
+    constructor() { venueSetHash = keccak256("MOCK_VENUE_SET"); }
+    function setCloseNav(uint256 next) external { closeNavUsdc6 = next; }
+    function canonicalNavUsdc6(address) external returns (uint256) { return navUsdc6; }
 
     function openGradient(
         address,
@@ -96,7 +87,6 @@ contract MockGradientAdapter is IBaseQEGradientAdapter {
         positionOpen = true;
         lastIntent = intentId;
         lastTransferBps = gradientTransferBps;
-        // Opening a real external position may temporarily cost canonical NAV.
         navUsdc6 = 999_000;
         return (uint256(principalUsdc6) * gradientTransferBps / 10_000, 300);
     }
@@ -139,15 +129,20 @@ contract SinergyL1BaseQEV1Test {
         MockMessenger messenger = new MockMessenger();
         address baseExecutor = address(0xBACE);
         uint256 neutral = 2_500e18;
-        SinergyQEController controller =
-            new SinergyQEController(address(this), address(0), messenger, baseExecutor, neutral);
+        SinergyQEController controller = new SinergyQEController(
+            address(this),
+            address(0),
+            ISinergyMessenger(address(messenger)),
+            baseExecutor,
+            neutral
+        );
 
         bytes32 venueHash = keccak256("BASE_PINNED_POOL");
         uint256 intentId = controller.openQEIntent(
-            1_000, // +10% internal QE
-            2_500, // transfer 25% of the gradient-directed principal to Base
-            100_000, // $0.10 principal in USDC-6
-            100, // require +$0.0001 canonical gain on final settlement
+            1_000,
+            2_500,
+            100_000,
+            100,
             venueHash,
             uint64(block.timestamp + 30 minutes),
             450_000
@@ -163,10 +158,7 @@ contract SinergyL1BaseQEV1Test {
             address(controller),
             baseExecutor,
             8453,
-            abi.encodeCall(
-                SinergyQEController.settleFromBase,
-                (intentId, 1_000_000, 1_000_150, 25_000, 80)
-            )
+            abi.encodeCall(SinergyQEController.settleFromBase, (intentId, 1_000_000, 1_000_150, 25_000, 80))
         );
 
         require(controller.qeDebtUsdc6() == 0, "QT_NOT_CLOSED");
@@ -178,8 +170,12 @@ contract SinergyL1BaseQEV1Test {
         MockMessenger messenger = new MockMessenger();
         MockGradientAdapter adapter = new MockGradientAdapter();
         address sinergyController = address(0x51A7);
-        BaseQEExternalExecutor executor =
-            new BaseQEExternalExecutor(address(this), messenger, sinergyController, adapter);
+        BaseQEExternalExecutor executor = new BaseQEExternalExecutor(
+            address(this),
+            IBaseMessengerForQE(address(messenger)),
+            sinergyController,
+            adapter
+        );
 
         bytes memory open = abi.encodeCall(
             BaseQEExternalExecutor.onQEIntent,
@@ -197,12 +193,10 @@ contract SinergyL1BaseQEV1Test {
         require(adapter.positionOpen(), "POSITION_NOT_OPEN");
         require(adapter.lastTransferBps() == 2_500, "TRANSFER_BPS");
 
-        // First close would crystallize a loss; the Base canonical-NAV gate must revert.
         (bool lowCloseOk,) = address(executor).call(abi.encodeCall(BaseQEExternalExecutor.closeQEIntent, (1)));
         require(!lowCloseOk, "LOSS_CLOSE_ACCEPTED");
         require(adapter.positionOpen(), "REVERT_DID_NOT_RESTORE_POSITION");
 
-        // External state improves; now the same inverse leg can satisfy the L1 threshold.
         adapter.setCloseNav(1_010_000);
         executor.closeQEIntent(1);
         require(!adapter.positionOpen(), "POSITION_NOT_CLOSED");
