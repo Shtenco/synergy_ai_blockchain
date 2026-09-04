@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ML-DSA-87 and SLH-DSA-SHAKE-256s relayer keys locally.
-
-The output directory must remain outside Git. Secret files are created mode 0600.
-"""
+"""Generate ML-DSA-87 and SLH-DSA-SHAKE-256s relayer keys locally."""
 
 from __future__ import annotations
 
@@ -10,12 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from pqcrypto.sign import ml_dsa_87
-
-try:
-    from pqcrypto.sign import slh_dsa_shake_256s as slh_dsa_256s
-except ImportError:
-    from pqcrypto.sign import sphincs_shake_256s_simple as slh_dsa_256s
+from pqcrypto.sign import ml_dsa_87, slh_dsa_shake_256s
 
 
 def write(path: Path, data: bytes, secret: bool) -> None:
@@ -35,8 +27,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(out, 0o700)
 
-    ml_public, ml_secret = ml_dsa_87.generate_keypair()
-    slh_public, slh_secret = slh_dsa_256s.generate_keypair()
+    ml_public, ml_secret = ml_dsa_87.keygen()
+    slh_public, slh_secret = slh_dsa_shake_256s.keygen()
 
     write(out / "relayer.ml_dsa_87.pub", ml_public, False)
     write(out / "relayer.ml_dsa_87.key", ml_secret, True)
