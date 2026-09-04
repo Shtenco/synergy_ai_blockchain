@@ -57,7 +57,7 @@ contract BasePinnedPoolGradientAdapter {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address public constant POOL = 0x6c561B446416E1A00E8E93E221854d6eA4171372;
     address public constant QUOTER_V2 = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a;
-    address public constant SWAP_ROUTER_02 = 0x2626664c2603336E57b271c5C0b26F421741e481;
+    address public constant SWAP_ROUTER_02 = 0x2626664c2603336E57B271c5C0b26F421741e481;
     uint24 public constant POOL_FEE = 3000;
 
     struct Position {
