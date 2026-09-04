@@ -1,0 +1,45 @@
+name: SINERGY L1 Base QE V1
+
+on:
+  push:
+    branches: ["feat/sinergy-l1-base-qe-v1-20260904"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  solidity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Forge build
+        run: forge build
+      - name: Messenger and QE invariant tests
+        run: forge test -vvv
+
+  pq-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax check
+        run: python -m py_compile node/pq_rpc_gateway.py node/generate_pq_relayer_keys.py relayer/base_sinergy_relayer.py
+      - name: Install PQ provider
+        run: pip install -r node/requirements.txt
+      - name: FIPS-signature provider smoke test
+        run: |
+          python - <<'PY'
+          from pqcrypto.sign import ml_dsa_87, slh_dsa_shake_256s
+          msg = b"SINERGY-PQ-CI"
+          for scheme in (ml_dsa_87, slh_dsa_shake_256s):
+              public, secret = scheme.keygen()
+              signature = scheme.sign(secret, msg)
+              scheme.verify(public, msg, signature)
+          print("PQ_PROVIDER_OK")
+          PY
