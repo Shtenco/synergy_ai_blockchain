@@ -1,3 +1,5 @@
+pub mod pq_event_signing;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -41,7 +43,9 @@ fn is_sha256_hex(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-pub fn validate_financial_commitment(artifact: &FinancialCommitmentArtifact) -> Result<(), ContractError> {
+pub fn validate_financial_commitment(
+    artifact: &FinancialCommitmentArtifact,
+) -> Result<(), ContractError> {
     if !is_sha256_hex(&artifact.snapshot_hash) {
         return Err(ContractError::InvalidSnapshotHash);
     }
@@ -99,7 +103,14 @@ mod tests {
     #[test]
     fn chain_commits_snapshot_hash_without_repricing_financial_state() {
         let source = artifact();
-        let receipt = make_chain_receipt(&source, "synergy-testnet", 42, "0xabc", FinalityStatus::FINAL).unwrap();
+        let receipt = make_chain_receipt(
+            &source,
+            "synergy-testnet",
+            42,
+            "0xabc",
+            FinalityStatus::FINAL,
+        )
+        .unwrap();
         assert_eq!(receipt.commitment_hash, source.snapshot_hash);
         assert_eq!(receipt.close_id, source.close_id);
     }
@@ -108,6 +119,9 @@ mod tests {
     fn invalid_hash_is_rejected() {
         let mut source = artifact();
         source.snapshot_hash = "not-a-hash".into();
-        assert_eq!(validate_financial_commitment(&source), Err(ContractError::InvalidSnapshotHash));
+        assert_eq!(
+            validate_financial_commitment(&source),
+            Err(ContractError::InvalidSnapshotHash),
+        );
     }
 }
