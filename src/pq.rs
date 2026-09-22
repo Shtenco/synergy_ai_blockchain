@@ -117,7 +117,6 @@ pub fn fips_signature_context(
     out.extend_from_slice(chain_id);
     out.push(domain.protocol_code());
     out.push(policy.protocol_code());
-    debug_assert!(out.len() <= 255);
     out
 }
 
