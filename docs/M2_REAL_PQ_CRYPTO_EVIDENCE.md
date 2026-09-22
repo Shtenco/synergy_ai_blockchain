@@ -417,3 +417,62 @@ The fields are therefore both signed and state-validated.
 It guards dependency pins, Rust 1.85, context anti-downgrade, nominal handles, serialized sizes, fallible RNG, bounded handle generation, transaction state validation and generic envelope replay/expiry validation.
 
 Workflow run `35795271723` (run #262) still failed with `steps=[]`, so even this Python-only post-checkout guard did not execute. The hosted-runner blocker therefore remains above checkout and source execution.
+
+
+## Transaction, transport and shared-secret hardening
+
+The static M2 pass found and closed additional protocol-level gaps after the initial cryptographic provider work.
+
+### Expected domain/policy are now state-bound
+
+Commits `8cda4e509481896be2a1430c9861543b08ea0099` and `a51eb5142f3c8bb97b5f6b1cbd3ccf0c6bf02af9` require the verifier/caller to state the expected authorization domain and policy. A cryptographically valid signature from another action domain or a weaker/different policy cannot be accepted merely because its own signed fields are internally self-consistent.
+
+### ML-KEM encapsulation RNG is fail-closed
+
+Exact `kem 0.3` source review showed that the convenience `Encapsulate::encapsulate()` path uses `UnwrapErr(SysRng)`, which can panic on system RNG failure.
+
+Commit `1e3e00169be48d3f0726a6496b5725341b7375bb` removes that production path. The reference provider now obtains 32 bytes through fallible `OsRng::try_fill_bytes`, converts them to ML-KEM `B32`, and invokes the exact-version `encapsulate_deterministic` implementation.
+
+### PQ evidence sizes are rejected before provider dispatch
+
+Commit `157c47784a5c80b6e0bcf68b0d19108c4463bdf5` moves ML-DSA/SLH serialization sizes into the protocol layer and makes `HybridAuthorization::validate_structure` reject malformed PQ key/signature lengths before cryptographic parsing.
+
+### Hardened transport boundary
+
+Commit `7452b4c22dd09c49e08efd5ff6aeef4dab7910eb` adds protocol constants and transport validation for:
+
+- ML-KEM-1024 public key: 1568 bytes;
+- ML-KEM-1024 ciphertext: 1568 bytes;
+- ML-KEM shared secret: 32 bytes;
+- nonzero transcript hash;
+- nonempty classical KEX material when `TransportPolicy::Hybrid` is selected.
+
+Commit `98cd3799266faffb449fe57fc14e39fdbfccc6c0` makes rekey policy fail closed and caps a configured policy at:
+
+- `2^20` messages;
+- 300 seconds.
+
+Zero limits or limits above those maxima are invalid, and `should_rekey` returns true for an invalid policy rather than silently disabling rotation.
+
+### Typed zeroizing shared-secret boundary
+
+The initial transport hardening zeroized secret vectors from `HybridSharedSecret::drop`. A further audit identified that plain public `Vec<u8>` fields remained too easy to copy or mutate before drop.
+
+Commits `84b6722bed0257a7aff3f2a329f24929449abd78` and `923d529d7e883b820243950e0265c5e9b71865a9` replace the ML-KEM shared secret with a nominal fixed-size `MlKemSharedSecret([u8; 32])` and the variable-length classical secret with a nominal `SecretBytes(Vec<u8>)`.
+
+Both secret wrappers:
+
+- keep their storage private;
+- do not implement `Clone`;
+- use redacted `Debug`;
+- zeroize their backing memory on drop.
+
+`MlKem1024Provider::encapsulate` and `decapsulate` now return `MlKemSharedSecret` instead of a raw `Vec<u8>`.
+
+This closes the transport shared-secret lifecycle at source level, pending executable Rust confirmation.
+
+### Runner remains the execution gate
+
+The latest explicitly inspected workflow in this audit line, run `35795271723` (#262), still concluded failure with `steps=[]`. No source checkout, Python guard, Rust toolchain, Cargo resolver, compilation or tests executed.
+
+Therefore all items above are source/test-definition evidence only. M2 remains YELLOW.
