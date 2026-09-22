@@ -13,11 +13,37 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
       - name: Toolchain
         run: |
           rustc --version
           cargo --version
+
+      - name: Resolve reproducibility bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f Cargo.lock ]]; then
+            echo "Using committed Cargo.lock"
+          else
+            echo "::warning::Cargo.lock is absent; generating bootstrap lockfile. M2 cannot become GREEN until this exact lockfile is committed and a later run succeeds with it."
+            cargo generate-lockfile
+          fi
+          cargo metadata --locked --format-version 1 > m2-cargo-metadata.json
+
       - name: Core unit tests
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
+
       - name: Real PQ reference provider tests
-        run: cargo test --all-targets --features reference-pq
+        run: cargo test --locked --all-targets --features reference-pq
+
+      - name: Upload M2 reproducibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-cargo-reproducibility-${{ github.run_id }}
+          path: |
+            Cargo.lock
+            m2-cargo-metadata.json
+          if-no-files-found: warn
+          retention-days: 30
