@@ -78,10 +78,11 @@ impl ReferenceMlKem1024Provider {
         for _ in 0..32 {
             let mut candidate = [0u8; 32];
             rng.try_fill_bytes(&mut candidate).ok()?;
-            let candidate = MlKemSecretHandle::from_random_bytes(candidate)?;
-            if !self.secrets.contains_key(&candidate) {
-                selected = Some(candidate);
-                break;
+            if let Some(candidate) = MlKemSecretHandle::from_random_bytes(candidate) {
+                if !self.secrets.contains_key(&candidate) {
+                    selected = Some(candidate);
+                    break;
+                }
             }
         }
         let handle = selected?;
@@ -159,9 +160,10 @@ impl ReferencePqSigner {
         for _ in 0..32 {
             let mut handle_bytes = [0u8; 32];
             rng.try_fill_bytes(&mut handle_bytes).ok()?;
-            let handle = PqSigningKeyHandle::from_random_bytes(handle_bytes)?;
-            if !self.ml_dsa_keys.contains_key(&handle) {
-                return Some(handle);
+            if let Some(handle) = PqSigningKeyHandle::from_random_bytes(handle_bytes) {
+                if !self.ml_dsa_keys.contains_key(&handle) {
+                    return Some(handle);
+                }
             }
         }
         None
