@@ -17,5 +17,7 @@ jobs:
         run: |
           rustc --version
           cargo --version
-      - name: Unit tests
+      - name: Core unit tests
         run: cargo test --all-targets
+      - name: Real PQ reference provider tests
+        run: cargo test --all-targets --features reference-pq
