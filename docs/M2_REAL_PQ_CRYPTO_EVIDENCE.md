@@ -270,3 +270,27 @@ Workflow commit `320e777c35d100d6433796e6b58e3fc83998935b` changes CI so the fir
 A generated artifact does **not** itself close M2.10c. The exact Cargo-produced lockfile must be committed to the branch, followed by a later run that succeeds using that committed lockfile.
 
 Workflow run `35771551276` (run #175) was queued from this commit. Its result must be treated as pending until real job steps and logs exist.
+
+
+## Cross-repository hosted-runner diagnosis
+
+The zero-step failure pattern is not isolated to `synergy_ai_blockchain`.
+
+Observed on the same GitHub account:
+
+- `Shtenco/synergychain`, run `34547147861`, 2026-09-11: GitHub-hosted jobs actually executed `Set up job`, `actions/checkout@v4`, Foundry setup and test steps. One job completed successfully, proving hosted runners were provisioned for this account at that time.
+- `Shtenco/synergychain`, run `34956850725`, 2026-09-15: both jobs concluded failure with `steps=[]`.
+- `Shtenco/synergy_midas_ai_trading_system`, run `35453264669`, 2026-09-19: job concluded failure with `steps=[]`.
+- `Shtenco/synergy_ai_blockchain`, runs including `35767770906` and `35771551276`, 2026-09-22: job concludes failure with `steps=[]`, no downloadable log blob, and zero billable Ubuntu milliseconds.
+
+For run `35767770906`, the Actions timing API reports:
+
+```text
+UBUNTU total_ms = 0
+job duration_ms = 0
+workflow run_duration_ms = 4000
+```
+
+This evidence strongly localizes the current blocker above repository source/test execution: the GitHub-hosted VM is not being provisioned. Changing `ubuntu-latest` to `ubuntu-24.04` did not change the failure mode.
+
+Therefore M2.11 remains an infrastructure blocker. No source-code failure should be inferred from these zero-step runs.
