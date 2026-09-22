@@ -25,7 +25,22 @@ use ml_kem::{
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
-pub type MlKemSecretHandle = [u8; 32];
+///
+/// The bytes are intentionally private: protocol code can hold and return the
+/// capability but cannot reinterpret it as arbitrary network/consensus bytes.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MlKemSecretHandle([u8; 32]);
+
+impl MlKemSecretHandle {
+    fn from_random_bytes(bytes: [u8; 32]) -> Option<Self> {
+        (bytes != [0u8; 32]).then_some(Self(bytes))
+    }
+
+    #[cfg(test)]
+    fn is_zero(&self) -> bool {
+        self.0 == [0u8; 32]
+    }
+}
 
 const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
@@ -63,7 +78,8 @@ impl ReferenceMlKem1024Provider {
         for _ in 0..32 {
             let mut candidate = [0u8; 32];
             rng.try_fill_bytes(&mut candidate).ok()?;
-            if candidate != [0u8; 32] && !self.secrets.contains_key(&candidate) {
+            let candidate = MlKemSecretHandle::from_random_bytes(candidate)?;
+            if !self.secrets.contains_key(&candidate) {
                 selected = Some(candidate);
                 break;
             }
@@ -87,6 +103,8 @@ impl ReferenceMlKem1024Provider {
 }
 
 impl MlKem1024Provider for ReferenceMlKem1024Provider {
+    type SecretHandle = MlKemSecretHandle;
+
     fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
         if public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
             return None;
@@ -99,12 +117,15 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         Some((ciphertext.as_ref().to_vec(), shared.as_ref().to_vec()))
     }
 
-    fn decapsulate(&self, secret_key_handle: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
+    fn decapsulate(
+        &self,
+        secret_key_handle: &Self::SecretHandle,
+        ciphertext: &[u8],
+    ) -> Option<Vec<u8>> {
         if ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
             return None;
         }
-        let handle: MlKemSecretHandle = secret_key_handle.try_into().ok()?;
-        let dk = self.secrets.get(&handle)?;
+        let dk = self.secrets.get(secret_key_handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
         Some(dk.decapsulate(&ciphertext).as_ref().to_vec())
     }
@@ -382,8 +403,8 @@ mod tests {
         let (h1, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
         let (h2, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
 
-        assert_ne!(h1, [0u8; 32]);
-        assert_ne!(h2, [0u8; 32]);
+        assert!(!h1.is_zero());
+        assert!(!h2.is_zero());
         assert_ne!(h1, h2);
         assert!(provider.contains_key(&h1));
         assert!(provider.contains_key(&h2));
@@ -405,9 +426,18 @@ mod tests {
     #[test]
     fn ml_kem_wrong_handle_fails_closed() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (_handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
+        let (_correct_handle, public_key) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
+        let (wrong_handle, _) = provider
+            .try_generate_keypair()
+            .expect("second ML-KEM key generation");
         let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
-        assert!(provider.decapsulate(&[99u8; 32], &ciphertext).is_none());
+        let wrong_shared = provider
+            .decapsulate(&wrong_handle, &ciphertext)
+            .expect("ML-KEM implicit rejection");
+        let (_, correct_sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
+        assert_ne!(wrong_shared, correct_sender_shared);
     }
 
     #[test]
