@@ -206,6 +206,74 @@ pub trait ContextSignatureVerifier {
     ) -> bool;
 }
 
+
+/// Opaque handle used by post-quantum signing providers.
+///
+/// Protocol code never receives raw private-key bytes. A provider may back this
+/// handle with an in-process zeroizing key, an OS keystore, HSM or remote signer.
+pub type PqSigningKeyHandle = [u8; 32];
+
+/// Context-aware signing boundary for the FIPS 204/205 lanes.
+///
+/// Implementations own private-key custody. Callers receive only public keys,
+/// signatures and opaque handles.
+pub trait ContextSignatureSigner {
+    fn generate_keypair(
+        &mut self,
+        scheme: AuthScheme,
+    ) -> Option<(PqSigningKeyHandle, Vec<u8>)>;
+
+    fn sign_with_context(
+        &self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+        message: &[u8],
+        context: &[u8],
+    ) -> Option<Vec<u8>>;
+
+    fn remove_key(
+        &mut self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+    ) -> bool;
+}
+
+/// Produce one PQ signature-evidence lane from an authorization envelope without
+/// exposing private-key material to protocol code.
+pub fn sign_envelope_evidence<S: ContextSignatureSigner>(
+    signer: &S,
+    scheme: AuthScheme,
+    secret_key_handle: &PqSigningKeyHandle,
+    public_key: &[u8],
+    policy: AuthPolicy,
+    envelope: &AuthorizationEnvelope,
+) -> Option<SignatureEvidence> {
+    if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+        || public_key.is_empty()
+    {
+        return None;
+    }
+
+    let message = envelope.canonical_message(policy).ok()?;
+    let context = envelope.fips_signature_context(policy).ok()?;
+    let signature = signer.sign_with_context(
+        scheme,
+        secret_key_handle,
+        &message,
+        &context,
+    )?;
+
+    if signature.is_empty() {
+        return None;
+    }
+
+    Some(SignatureEvidence {
+        scheme,
+        public_key: public_key.to_vec(),
+        signature,
+    })
+}
+
 /// Routes classical and post-quantum signature families to separate backends.
 ///
 /// This is deliberately scheme-routed rather than "try backend A OR backend B";
@@ -459,6 +527,104 @@ mod tests {
             base.canonical_message(AuthPolicy::Online).unwrap(),
             next_nonce.canonical_message(AuthPolicy::Online).unwrap()
         );
+    }
+
+    #[derive(Default)]
+    struct MockHandleSigner {
+        live: bool,
+    }
+
+    impl ContextSignatureSigner for MockHandleSigner {
+        fn generate_keypair(
+            &mut self,
+            scheme: AuthScheme,
+        ) -> Option<(PqSigningKeyHandle, Vec<u8>)> {
+            if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s) {
+                return None;
+            }
+            self.live = true;
+            Some(([0xAB; 32], vec![0xCD]))
+        }
+
+        fn sign_with_context(
+            &self,
+            scheme: AuthScheme,
+            secret_key_handle: &PqSigningKeyHandle,
+            message: &[u8],
+            context: &[u8],
+        ) -> Option<Vec<u8>> {
+            (self.live
+                && matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+                && secret_key_handle == &[0xAB; 32]
+                && !message.is_empty()
+                && !context.is_empty()
+                && context.len() <= 255)
+                .then_some(vec![0xEF])
+        }
+
+        fn remove_key(
+            &mut self,
+            _scheme: AuthScheme,
+            secret_key_handle: &PqSigningKeyHandle,
+        ) -> bool {
+            if self.live && secret_key_handle == &[0xAB; 32] {
+                self.live = false;
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    #[test]
+    fn envelope_signing_uses_only_opaque_key_handles() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x71; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 2,
+            nonce: 3,
+            expires_at: 4,
+            payload_commitment: [0x72; 32],
+        };
+        let mut signer = MockHandleSigner::default();
+        let (handle, public_key) = signer
+            .generate_keypair(AuthScheme::MlDsa87)
+            .expect("PQ keypair");
+
+        let evidence = sign_envelope_evidence(
+            &signer,
+            AuthScheme::MlDsa87,
+            &handle,
+            &public_key,
+            AuthPolicy::PqOnly,
+            &envelope,
+        )
+        .expect("opaque-handle signature evidence");
+
+        assert_eq!(evidence.scheme, AuthScheme::MlDsa87);
+        assert_eq!(evidence.public_key, public_key);
+        assert_eq!(evidence.signature, vec![0xEF]);
+
+        assert!(signer.remove_key(AuthScheme::MlDsa87, &handle));
+        assert!(sign_envelope_evidence(
+            &signer,
+            AuthScheme::MlDsa87,
+            &handle,
+            &public_key,
+            AuthPolicy::PqOnly,
+            &envelope,
+        )
+        .is_none());
+
+        assert!(sign_envelope_evidence(
+            &signer,
+            AuthScheme::Secp256k1,
+            &handle,
+            &public_key,
+            AuthPolicy::Online,
+            &envelope,
+        )
+        .is_none());
     }
 
     #[test]
