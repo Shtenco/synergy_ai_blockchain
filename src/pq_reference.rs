@@ -221,6 +221,61 @@ mod tests {
     }
 
     #[test]
+    fn pq_only_authorization_verifies_two_independent_real_pq_lanes() {
+        use crate::pq::{
+            verify_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+            HybridAuthorization, SignatureEvidence,
+        };
+        use ml_dsa::{Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, Signer as MlSigner, SigningKey as MlSigningKey};
+        use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
+        use slh_dsa::signature::{Keypair as SlhKeypair, Signer as SlhSigner};
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [1; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 7,
+            nonce: 42,
+            expires_at: 999,
+            payload_commitment: [2; 32],
+        };
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+
+        let ml_sk = MlSigningKey::<MlDsa87>::generate();
+        let ml_pk = ml_sk.verifying_key().encode().to_vec();
+        let ml_sig = ml_sk.sign(&message).to_vec();
+
+        let mut rng = rand::thread_rng();
+        let slh_sk = SlhSigningKey::<Shake256s>::new(&mut rng);
+        let slh_pk = slh_sk.verifying_key().to_vec();
+        let slh_sig = slh_sk.try_sign(&message).expect("SLH-DSA sign").to_vec();
+
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: ml_pk,
+                    signature: ml_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: slh_pk,
+                    signature: slh_sig,
+                },
+            ],
+        };
+
+        assert!(verify_authorization(&ReferencePqSignatureVerifier, &auth, &message));
+
+        let wrong_policy_message = envelope.canonical_message(AuthPolicy::Online).unwrap();
+        assert!(!verify_authorization(
+            &ReferencePqSignatureVerifier,
+            &auth,
+            &wrong_policy_message
+        ));
+    }
+
+    #[test]
     fn pq_verifier_never_claims_classical_lanes() {
         let verifier = ReferencePqSignatureVerifier;
         assert!(!verifier.verify(AuthScheme::Secp256k1, &[], b"x", &[]));
