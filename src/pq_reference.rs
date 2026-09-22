@@ -9,7 +9,8 @@
 //! and keep the same opaque-handle boundary.
 
 use crate::network::{
-    MlKem1024Provider, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES,
+    MlKem1024Provider, MlKemSharedSecret, ML_KEM_1024_CIPHERTEXT_BYTES,
+    ML_KEM_1024_PUBLIC_KEY_BYTES,
 };
 use crate::pq::{
     AuthScheme, ContextSignatureSigner, ContextSignatureVerifier, PqSigningKeyHandle,
@@ -103,7 +104,7 @@ impl ReferenceMlKem1024Provider {
 impl MlKem1024Provider for ReferenceMlKem1024Provider {
     type SecretHandle = MlKemSecretHandle;
 
-    fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, MlKemSharedSecret)> {
         if public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
             return None;
         }
@@ -118,20 +119,22 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let randomness = B32::try_from(randomness.as_slice()).ok()?;
 
         let (ciphertext, shared) = ek.encapsulate_deterministic(&randomness);
-        Some((ciphertext.as_ref().to_vec(), shared.as_ref().to_vec()))
+        let shared = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
+        Some((ciphertext.as_ref().to_vec(), shared))
     }
 
     fn decapsulate(
         &self,
         secret_key_handle: &Self::SecretHandle,
         ciphertext: &[u8],
-    ) -> Option<Vec<u8>> {
+    ) -> Option<MlKemSharedSecret> {
         if ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
             return None;
         }
         let dk = self.secrets.get(secret_key_handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
-        Some(dk.decapsulate(&ciphertext).as_ref().to_vec())
+        let shared = dk.decapsulate(&ciphertext);
+        MlKemSharedSecret::try_from_slice(shared.as_ref())
     }
 }
 
@@ -400,7 +403,7 @@ mod tests {
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("decapsulation");
 
         assert_eq!(sender_shared, receiver_shared);
-        assert_eq!(sender_shared.len(), 32);
+        assert_eq!(sender_shared.as_bytes().len(), 32);
     }
 
     #[test]
