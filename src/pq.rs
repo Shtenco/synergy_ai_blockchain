@@ -10,6 +10,9 @@ pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
 pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
+pub const MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 128;
+pub const MAX_CLASSICAL_SIGNATURE_BYTES: usize = 256;
+pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000;
 
 impl AuthScheme {
     pub fn expected_public_key_bytes(self) -> Option<usize> {
@@ -223,6 +226,15 @@ impl HybridAuthorization {
                 return Err("authorization evidence must contain key and signature bytes");
             }
 
+            if matches!(evidence.scheme, AuthScheme::Secp256k1 | AuthScheme::Ed25519) {
+                if evidence.public_key.len() > MAX_CLASSICAL_PUBLIC_KEY_BYTES {
+                    return Err("authorization classical public key exceeds protocol maximum");
+                }
+                if evidence.signature.len() > MAX_CLASSICAL_SIGNATURE_BYTES {
+                    return Err("authorization classical signature exceeds protocol maximum");
+                }
+            }
+
             if let Some(expected) = evidence.scheme.expected_public_key_bytes() {
                 if evidence.public_key.len() != expected {
                     return Err("authorization PQ public key length mismatch");
@@ -246,6 +258,17 @@ impl HybridAuthorization {
             .any(|required_scheme| !self.evidence.iter().any(|e| e.scheme == *required_scheme))
         {
             return Err("required authorization scheme missing");
+        }
+
+        let total_evidence_bytes = self.evidence.iter().try_fold(0usize, |acc, evidence| {
+            acc.checked_add(evidence.public_key.len())?
+                .checked_add(evidence.signature.len())
+        });
+        if total_evidence_bytes
+            .map(|bytes| bytes > MAX_AUTHORIZATION_EVIDENCE_BYTES)
+            .unwrap_or(true)
+        {
+            return Err("authorization evidence exceeds protocol byte budget");
         }
 
         Ok(())
@@ -554,6 +577,35 @@ mod tests {
                 evidence(AuthScheme::Secp256k1),
                 evidence(AuthScheme::MlDsa87),
                 evidence(AuthScheme::Ed25519),
+            ],
+        };
+        assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn oversized_classical_evidence_is_rejected_before_backend_verification() {
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: vec![1; MAX_CLASSICAL_PUBLIC_KEY_BYTES + 1],
+                    signature: vec![2; 64],
+                },
+                evidence(AuthScheme::MlDsa87),
+            ],
+        };
+        assert!(auth.validate_structure().is_err());
+
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: vec![1; 33],
+                    signature: vec![2; MAX_CLASSICAL_SIGNATURE_BYTES + 1],
+                },
+                evidence(AuthScheme::MlDsa87),
             ],
         };
         assert!(auth.validate_structure().is_err());
