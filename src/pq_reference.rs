@@ -227,6 +227,19 @@ mod tests {
     }
 
     #[test]
+    fn ml_kem_remove_key_revokes_handle_and_drops_private_key() {
+        let mut provider = ReferenceMlKem1024Provider::new();
+        let (handle, public_key) = provider.generate_keypair();
+        let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
+
+        assert!(provider.contains_key(&handle));
+        assert!(provider.remove_key(&handle));
+        assert!(!provider.contains_key(&handle));
+        assert!(provider.decapsulate(&handle, &ciphertext).is_none());
+        assert!(!provider.remove_key(&handle));
+    }
+
+    #[test]
     fn ml_kem_wrong_handle_fails_closed() {
         let mut provider = ReferenceMlKem1024Provider::new();
         let (_handle, public_key) = provider.generate_keypair();
