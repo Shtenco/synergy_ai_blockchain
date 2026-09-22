@@ -165,6 +165,7 @@ impl TransportTranscript {
 }
 
 pub struct HybridSharedSecret {
+    policy: TransportPolicy,
     pq_shared: MlKemSharedSecret,
     classical_shared: Option<SecretBytes>,
     pub transcript_hash: [u8; 32],
@@ -192,10 +193,15 @@ impl HybridSharedSecret {
         }
 
         Some(Self {
+            policy: transcript.policy,
             pq_shared,
             classical_shared,
             transcript_hash,
         })
+    }
+
+    pub fn policy(&self) -> TransportPolicy {
+        self.policy
     }
 
     pub fn pq_shared(&self) -> &MlKemSharedSecret {
@@ -210,6 +216,7 @@ impl HybridSharedSecret {
 impl fmt::Debug for HybridSharedSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HybridSharedSecret")
+            .field("policy", &self.policy)
             .field("pq_shared", &"<redacted>")
             .field("classical_shared", &"<redacted>")
             .field("transcript_hash", &self.transcript_hash)
@@ -232,7 +239,7 @@ pub trait MlKem1024Provider {
 /// Consensus code does not implement a transport cipher here. The networking
 /// stack feeds the resulting hybrid secret into its reviewed transcript-bound KDF.
 pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecret) -> bool {
-    if secret.transcript_hash == [0u8; 32] {
+    if secret.policy() != policy || secret.transcript_hash == [0u8; 32] {
         return false;
     }
     match policy {
@@ -372,7 +379,7 @@ mod tests {
 
         let valid = valid_secret();
         assert!(validate_shared_secret(TransportPolicy::Hybrid, &valid));
-        assert!(validate_shared_secret(TransportPolicy::PqOnly, &valid));
+        assert!(!validate_shared_secret(TransportPolicy::PqOnly, &valid));
 
         let mut bad = valid_secret();
         bad.transcript_hash = [0u8; 32];
