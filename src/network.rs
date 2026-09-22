@@ -34,10 +34,87 @@ impl TransportPeerIdentity {
 }
 
 #[derive(PartialEq, Eq)]
+pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);
+
+impl MlKemSharedSecret {
+    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
+        let bytes: [u8; ML_KEM_SHARED_SECRET_BYTES] = bytes.try_into().ok()?;
+        Some(Self(bytes))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; ML_KEM_SHARED_SECRET_BYTES] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for MlKemSharedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MlKemSharedSecret(<redacted>)")
+    }
+}
+
+impl Drop for MlKemSharedSecret {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub struct SecretBytes(Vec<u8>);
+
+impl SecretBytes {
+    pub fn new(bytes: Vec<u8>) -> Option<Self> {
+        (!bytes.is_empty()).then_some(Self(bytes))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretBytes(<redacted>)")
+    }
+}
+
+impl Drop for SecretBytes {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+#[derive(PartialEq, Eq)]
 pub struct HybridSharedSecret {
-    pub pq_shared: Vec<u8>,
-    pub classical_shared: Vec<u8>,
+    pq_shared: MlKemSharedSecret,
+    classical_shared: Option<SecretBytes>,
     pub transcript_hash: [u8; 32],
+}
+
+impl HybridSharedSecret {
+    pub fn new(
+        pq_shared: MlKemSharedSecret,
+        classical_shared: Option<SecretBytes>,
+        transcript_hash: [u8; 32],
+    ) -> Self {
+        Self {
+            pq_shared,
+            classical_shared,
+            transcript_hash,
+        }
+    }
+
+    pub fn pq_shared(&self) -> &MlKemSharedSecret {
+        &self.pq_shared
+    }
+
+    pub fn classical_shared(&self) -> Option<&SecretBytes> {
+        self.classical_shared.as_ref()
+    }
 }
 
 impl fmt::Debug for HybridSharedSecret {
@@ -50,36 +127,30 @@ impl fmt::Debug for HybridSharedSecret {
     }
 }
 
-impl Drop for HybridSharedSecret {
-    fn drop(&mut self) {
-        self.pq_shared.zeroize();
-        self.classical_shared.zeroize();
-    }
-}
-
 /// Provider boundary for a reviewed ML-KEM-1024 implementation.
 pub trait MlKem1024Provider {
     type SecretHandle;
 
-    fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)>;
+    fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, MlKemSharedSecret)>;
     fn decapsulate(
         &self,
         secret_key_handle: &Self::SecretHandle,
         ciphertext: &[u8],
-    ) -> Option<Vec<u8>>;
+    ) -> Option<MlKemSharedSecret>;
 }
 
 /// Consensus code does not implement a transport cipher here. The networking
 /// stack feeds the resulting hybrid secret into its reviewed transcript-bound KDF.
 pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecret) -> bool {
-    if secret.pq_shared.len() != ML_KEM_SHARED_SECRET_BYTES
-        || secret.transcript_hash == [0u8; 32]
-    {
+    if secret.transcript_hash == [0u8; 32] {
         return false;
     }
     match policy {
         TransportPolicy::PqOnly => true,
-        TransportPolicy::Hybrid => secret.classical_shared.len() >= 32,
+        TransportPolicy::Hybrid => secret
+            .classical_shared()
+            .map(|shared| shared.len() >= 32)
+            .unwrap_or(false),
     }
 }
 
@@ -170,31 +241,41 @@ mod tests {
     }
 
     fn valid_secret() -> HybridSharedSecret {
-        HybridSharedSecret {
-            pq_shared: vec![1u8; ML_KEM_SHARED_SECRET_BYTES],
-            classical_shared: vec![2u8; 32],
-            transcript_hash: [3u8; 32],
-        }
+        HybridSharedSecret::new(
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("fixed ML-KEM shared secret"),
+            SecretBytes::new(vec![2u8; 32]),
+            [3u8; 32],
+        )
     }
 
     #[test]
     fn shared_secret_requires_exact_pq_size_and_nonzero_transcript() {
+        assert!(MlKemSharedSecret::try_from_slice(
+            &[1u8; ML_KEM_SHARED_SECRET_BYTES - 1]
+        )
+        .is_none());
+        assert!(MlKemSharedSecret::try_from_slice(
+            &[1u8; ML_KEM_SHARED_SECRET_BYTES + 1]
+        )
+        .is_none());
+
         let valid = valid_secret();
         assert!(validate_shared_secret(TransportPolicy::Hybrid, &valid));
         assert!(validate_shared_secret(TransportPolicy::PqOnly, &valid));
 
         let mut bad = valid_secret();
-        bad.pq_shared.push(0);
-        assert!(!validate_shared_secret(TransportPolicy::PqOnly, &bad));
-
-        let mut bad = valid_secret();
         bad.transcript_hash = [0u8; 32];
         assert!(!validate_shared_secret(TransportPolicy::PqOnly, &bad));
 
-        let mut bad = valid_secret();
-        bad.classical_shared.clear();
-        assert!(!validate_shared_secret(TransportPolicy::Hybrid, &bad));
-        assert!(validate_shared_secret(TransportPolicy::PqOnly, &bad));
+        let pq_only = HybridSharedSecret::new(
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("fixed ML-KEM shared secret"),
+            None,
+            [3u8; 32],
+        );
+        assert!(!validate_shared_secret(TransportPolicy::Hybrid, &pq_only));
+        assert!(validate_shared_secret(TransportPolicy::PqOnly, &pq_only));
     }
 
     #[test]
