@@ -170,3 +170,21 @@ SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
 ```
 
 The generator enumerates Cargo-resolved packages and `DEPENDS_ON` relationships. It cannot close M2.10d in the absence of a real `Cargo.lock` and successful `cargo metadata --locked`.
+
+
+## Expected feature/dependency duplication before lock resolution
+
+Static upstream-manifest review predicts the following legitimate multi-generation families under `reference-pq`:
+
+- `rand_core 0.6.x`: SLH-DSA 0.1.0 and rand 0.8.5;
+- `rand_core 0.10.x`: ML-KEM 0.3.2 / ML-DSA 0.1.1 stack;
+- `signature 2.3.0-pre.x`: SLH-DSA 0.1.0;
+- `signature 3.x`: ML-DSA 0.1.1;
+- `hybrid-array 0.2.0-rc.x`: SLH-DSA 0.1.0;
+- `hybrid-array 0.4.x`: ML-KEM / ML-DSA.
+
+The provider deliberately does not pass RNGs or signature trait objects across these generation boundaries.
+
+ML-KEM 0.3.2 and ML-DSA 0.1.1 both require `module-lattice 0.2.3`; unexpected duplication of that family should be reviewed after lock generation.
+
+CI commit `0d80cf83b4b05604a04044db04a3e6c72b4e2fce` captures `cargo tree --locked --duplicates` and pins execution to Rust 1.85.0. Commit `f90ad93b3a2b527d4d91f592508be1e20230e9f8` adds formatting, compile and Clippy diagnostic gates before the mandatory tests.
