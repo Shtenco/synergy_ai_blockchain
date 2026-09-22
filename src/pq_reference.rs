@@ -21,7 +21,7 @@ use ml_kem::{
         DecapsulationKey as MlKem1024DecapsulationKey,
         EncapsulationKey as MlKem1024EncapsulationKey,
     },
-    Decapsulate, Encapsulate, Generate, Key, KeyExport,
+    B32, Decapsulate, Generate, Key, KeyExport,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
@@ -114,7 +114,13 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         // EncapsulationKey::new performs the public-key validation required by
         // the ML-KEM implementation. Do not replace this with unchecked casting.
         let ek = MlKem1024EncapsulationKey::new(&encoded).ok()?;
-        let (ciphertext, shared) = ek.encapsulate();
+
+        use rand::RngCore;
+        let mut randomness = [0u8; 32];
+        rand::rngs::OsRng.try_fill_bytes(&mut randomness).ok()?;
+        let randomness = B32::try_from(randomness.as_slice()).ok()?;
+
+        let (ciphertext, shared) = ek.encapsulate_deterministic(&randomness);
         Some((ciphertext.as_ref().to_vec(), shared.as_ref().to_vec()))
     }
 
