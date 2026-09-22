@@ -338,6 +338,19 @@ mod tests {
     }
 
     #[test]
+    fn ml_kem_handles_are_nonzero_and_unique_while_live() {
+        let mut provider = ReferenceMlKem1024Provider::new();
+        let (h1, _) = provider.generate_keypair();
+        let (h2, _) = provider.generate_keypair();
+
+        assert_ne!(h1, [0u8; 32]);
+        assert_ne!(h2, [0u8; 32]);
+        assert_ne!(h1, h2);
+        assert!(provider.contains_key(&h1));
+        assert!(provider.contains_key(&h2));
+    }
+
+    #[test]
     fn ml_kem_remove_key_revokes_handle_and_drops_private_key() {
         let mut provider = ReferenceMlKem1024Provider::new();
         let (handle, public_key) = provider.generate_keypair();
@@ -372,6 +385,21 @@ mod tests {
         ciphertext[0] ^= 0x01;
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
         assert_ne!(sender_shared, receiver_shared);
+    }
+
+    #[test]
+    fn ml_dsa_signing_handles_are_nonzero_and_unique_while_live() {
+        use crate::pq::ContextSignatureSigner;
+
+        let mut signer = ReferencePqSigner::new();
+        let (h1, _) = signer.generate_keypair(AuthScheme::MlDsa87).expect("key 1");
+        let (h2, _) = signer.generate_keypair(AuthScheme::MlDsa87).expect("key 2");
+
+        assert_ne!(h1, [0u8; 32]);
+        assert_ne!(h2, [0u8; 32]);
+        assert_ne!(h1, h2);
+        assert!(signer.contains_key(&h1));
+        assert!(signer.contains_key(&h2));
     }
 
     #[test]
