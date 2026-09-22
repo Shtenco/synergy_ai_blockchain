@@ -6,6 +6,29 @@ pub enum AuthScheme {
     SlhDsaShake256s,
 }
 
+pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
+pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
+pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
+pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
+
+impl AuthScheme {
+    pub fn expected_public_key_bytes(self) -> Option<usize> {
+        match self {
+            Self::MlDsa87 => Some(ML_DSA_87_PUBLIC_KEY_BYTES),
+            Self::SlhDsaShake256s => Some(SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES),
+            Self::Secp256k1 | Self::Ed25519 => None,
+        }
+    }
+
+    pub fn expected_signature_bytes(self) -> Option<usize> {
+        match self {
+            Self::MlDsa87 => Some(ML_DSA_87_SIGNATURE_BYTES),
+            Self::SlhDsaShake256s => Some(SLH_DSA_SHAKE_256S_SIGNATURE_BYTES),
+            Self::Secp256k1 | Self::Ed25519 => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AuthPolicy {
     /// EVM compatibility plus mandatory ML-DSA.
@@ -198,6 +221,17 @@ impl HybridAuthorization {
             }
             if evidence.public_key.is_empty() || evidence.signature.is_empty() {
                 return Err("authorization evidence must contain key and signature bytes");
+            }
+
+            if let Some(expected) = evidence.scheme.expected_public_key_bytes() {
+                if evidence.public_key.len() != expected {
+                    return Err("authorization PQ public key length mismatch");
+                }
+            }
+            if let Some(expected) = evidence.scheme.expected_signature_bytes() {
+                if evidence.signature.len() != expected {
+                    return Err("authorization PQ signature length mismatch");
+                }
             }
             if self.evidence[..index]
                 .iter()
@@ -461,10 +495,12 @@ mod tests {
     use super::*;
 
     fn evidence(scheme: AuthScheme) -> SignatureEvidence {
+        let public_key = vec![1; scheme.expected_public_key_bytes().unwrap_or(1)];
+        let signature = vec![2; scheme.expected_signature_bytes().unwrap_or(1)];
         SignatureEvidence {
             scheme,
-            public_key: vec![1],
-            signature: vec![2],
+            public_key,
+            signature,
         }
     }
 
