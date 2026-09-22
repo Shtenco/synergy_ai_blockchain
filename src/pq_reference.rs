@@ -32,7 +32,7 @@ use ml_kem::{
 ///
 /// The bytes are intentionally private: protocol code can hold and return the
 /// capability but cannot reinterpret it as arbitrary network/consensus bytes.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MlKemSecretHandle([u8; 32]);
 
 impl MlKemSecretHandle {
@@ -43,6 +43,12 @@ impl MlKemSecretHandle {
     #[cfg(test)]
     fn is_zero(&self) -> bool {
         self.0 == [0u8; 32]
+    }
+}
+
+impl Drop for MlKemSecretHandle {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
     }
 }
 
@@ -85,7 +91,7 @@ impl ReferenceMlKem1024Provider {
         }
         let handle = selected?;
 
-        if self.secrets.insert(handle, dk).is_some() {
+        if self.secrets.insert(handle.clone(), dk).is_some() {
             return None;
         }
 
@@ -199,7 +205,7 @@ impl ContextSignatureSigner for ReferencePqSigner {
         let public_key = signing_key.verifying_key().encode().to_vec();
         let handle = self.try_allocate_handle()?;
 
-        if self.ml_dsa_keys.insert(handle, signing_key).is_some() {
+        if self.ml_dsa_keys.insert(handle.clone(), signing_key).is_some() {
             return None;
         }
 
