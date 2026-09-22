@@ -9,7 +9,7 @@
 //! and keep the same opaque-handle boundary.
 
 use crate::network::MlKem1024Provider;
-use crate::pq::{AuthScheme, SignatureVerifier};
+use crate::pq::{AuthScheme, ContextSignatureVerifier, SignatureVerifier};
 use std::collections::BTreeMap;
 
 use ml_kem::{
@@ -103,6 +103,30 @@ impl SignatureVerifier for ReferencePqSignatureVerifier {
     }
 }
 
+impl ContextSignatureVerifier for ReferencePqSignatureVerifier {
+    fn verify_with_context(
+        &self,
+        scheme: AuthScheme,
+        public_key: &[u8],
+        message: &[u8],
+        context: &[u8],
+        signature: &[u8],
+    ) -> bool {
+        if context.len() > 255 {
+            return false;
+        }
+        match scheme {
+            AuthScheme::MlDsa87 => {
+                verify_ml_dsa_87_with_context(public_key, message, context, signature)
+            }
+            AuthScheme::SlhDsaShake256s => {
+                verify_slh_dsa_shake_256s_with_context(public_key, message, context, signature)
+            }
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => false,
+        }
+    }
+}
+
 fn verify_ml_dsa_87(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
     use ml_dsa::{MlDsa87, Signature, Verifier, VerifyingKey};
 
@@ -116,6 +140,29 @@ fn verify_ml_dsa_87(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool
         Err(_) => return false,
     };
     verifying_key.verify(message, &signature).is_ok()
+}
+
+fn verify_ml_dsa_87_with_context(
+    public_key: &[u8],
+    message: &[u8],
+    context: &[u8],
+    signature: &[u8],
+) -> bool {
+    use ml_dsa::{MlDsa87, Signature, VerifyingKey};
+
+    if context.len() > 255 {
+        return false;
+    }
+    let encoded_key = match ml_dsa::EncodedVerifyingKey::<MlDsa87>::try_from(public_key) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let verifying_key = VerifyingKey::<MlDsa87>::decode(&encoded_key);
+    let signature = match Signature::<MlDsa87>::try_from(signature) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    verifying_key.verify_with_context(message, context, &signature)
 }
 
 fn verify_slh_dsa_shake_256s(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
@@ -133,11 +180,35 @@ fn verify_slh_dsa_shake_256s(public_key: &[u8], message: &[u8], signature: &[u8]
     verifying_key.verify(message, &signature).is_ok()
 }
 
+fn verify_slh_dsa_shake_256s_with_context(
+    public_key: &[u8],
+    message: &[u8],
+    context: &[u8],
+    signature: &[u8],
+) -> bool {
+    use slh_dsa::{Shake256s, Signature, VerifyingKey};
+
+    if context.len() > 255 {
+        return false;
+    }
+    let verifying_key = match VerifyingKey::<Shake256s>::try_from(public_key) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let signature = match Signature::<Shake256s>::try_from(signature) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    verifying_key
+        .try_verify_with_context(message, context, &signature)
+        .is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::network::MlKem1024Provider;
-    use crate::pq::SignatureVerifier;
+    use crate::pq::{ContextSignatureVerifier, SignatureVerifier};
 
     #[test]
     fn ml_kem_1024_real_round_trip() {
@@ -217,6 +288,98 @@ mod tests {
             &public_key,
             b"tampered",
             &signature
+        ));
+    }
+
+    #[test]
+    fn ml_dsa_87_fips_context_is_cryptographically_enforced() {
+        use ml_dsa::{Generate, Keypair, MlDsa87, SignatureEncoding, SigningKey};
+
+        let signing_key = SigningKey::<MlDsa87>::generate();
+        let public_key = signing_key.verifying_key().encode().to_vec();
+        let message = b"SYNERGY/PQ/FIPS-CONTEXT/ML-DSA";
+        let context = b"SYNERGY/context/A";
+        let wrong_context = b"SYNERGY/context/B";
+        let signature = signing_key
+            .sign_deterministic(message, context)
+            .expect("ML-DSA context sign")
+            .to_vec();
+
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &public_key,
+            message,
+            context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &public_key,
+            message,
+            wrong_context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &public_key,
+            b"tampered",
+            context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &public_key,
+            message,
+            &[0u8; 256],
+            &signature,
+        ));
+    }
+
+    #[test]
+    fn slh_dsa_shake_256s_fips_context_is_cryptographically_enforced() {
+        use slh_dsa::{Shake256s, SigningKey};
+        use slh_dsa::signature::Keypair;
+
+        let mut rng = rand::thread_rng();
+        let signing_key = SigningKey::<Shake256s>::new(&mut rng);
+        let public_key = signing_key.verifying_key().to_vec();
+        let message = b"SYNERGY/PQ/FIPS-CONTEXT/SLH-DSA";
+        let context = b"SYNERGY/context/A";
+        let wrong_context = b"SYNERGY/context/B";
+        let signature = signing_key
+            .try_sign_with_context(message, context, None)
+            .expect("SLH-DSA context sign")
+            .to_vec();
+
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            message,
+            context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            message,
+            wrong_context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            b"tampered",
+            context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            message,
+            &[0u8; 256],
+            &signature,
         ));
     }
 
