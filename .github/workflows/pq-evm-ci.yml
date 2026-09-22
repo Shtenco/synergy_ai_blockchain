@@ -14,8 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Toolchain
+      - name: Pin MSRV toolchain
+        shell: bash
         run: |
+          set -euo pipefail
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup override set 1.85.0
           rustc --version
           cargo --version
 
@@ -31,6 +35,7 @@ jobs:
           fi
           cargo metadata --locked --format-version 1 > m2-cargo-metadata.json
           cargo tree --locked --edges normal,build,dev > m2-cargo-tree.txt
+          cargo tree --locked --duplicates > m2-cargo-duplicates.txt
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           python3 scripts/m2_spdx_from_cargo_metadata.py \
             m2-cargo-metadata.json \
@@ -51,6 +56,7 @@ jobs:
             Cargo.lock
             m2-cargo-metadata.json
             m2-cargo-tree.txt
+            m2-cargo-duplicates.txt
             m2-spdx.json
           if-no-files-found: warn
           retention-days: 30
