@@ -129,3 +129,26 @@ The selected `ml-dsa = 0.1.1` dependency enables its `zeroize` feature. Upstream
 Pinned `slh-dsa = 0.1.0` does not expose an equivalent `zeroize` feature/drop guarantee for `SigningKey`. The current SYNERGY reference provider verifies SLH-DSA signatures and does not retain SLH private keys; tests generate ephemeral signing keys.
 
 Therefore full production SLH signing-key zeroization remains an explicit hardening item. It must not be claimed complete merely because verification is correct.
+
+
+## Opaque signing-key custody boundary
+
+Commit `5338e1e4d6414609f4869fde5ebca4f678ddf82f` adds `ContextSignatureSigner` and `PqSigningKeyHandle`. Protocol-facing signing code receives only:
+
+- an opaque 32-byte handle;
+- a public key;
+- the resulting signature.
+
+Raw private-key bytes are not part of the protocol API.
+
+Commit `0cdd27fddb34aa7a70e841ee1519d2f997d62ab7` adds `ReferencePqSigner` for ML-DSA-87. It stores `ml_dsa::SigningKey<MlDsa87>` inside the provider and signs the envelope-derived FIPS context through `ExpandedSigningKey::sign_deterministic`.
+
+At exact upstream tag `ml-dsa/v0.1.1`, commit `f75d5b829948988f18d9463f286805fb9410bcdd`, the enabled `zeroize` feature provides:
+
+- `Drop` for `SigningKey`, zeroizing its seed;
+- `Drop` for `ExpandedSigningKey`, zeroizing `rho`, `K`, `tr`, `s1`, `s2`, `t0` and their NTT forms;
+- `ZeroizeOnDrop` markers for both key types.
+
+Therefore ML-DSA signing-key lifecycle is now closed at source level for the reference in-memory provider, pending executable tests.
+
+The same reference signer intentionally refuses `SLH-DSA-SHAKE-256s`. Stable `slh-dsa/v0.1.0` lacks a zeroize-on-drop signing-key guarantee. A newer `slh-dsa/v0.2.0-rc.5` has such support, but M2 does not silently upgrade a pinned stable cryptographic dependency to a release candidate without executable Cargo compatibility testing. Production SLH signing remains delegated to a future zeroizing keystore/HSM/provider boundary.
