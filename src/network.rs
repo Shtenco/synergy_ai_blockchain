@@ -5,6 +5,8 @@ use zeroize::Zeroize;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
+pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 512;
+pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096;
 pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 
@@ -32,8 +34,15 @@ impl TransportPeerIdentity {
         if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
             return Err("legacy KEX public key exceeds protocol size bound");
         }
-        if matches!(policy, TransportPolicy::Hybrid) && self.legacy_kex_public_key.is_empty() {
-            return Err("hybrid transport requires legacy KEX public key");
+        if matches!(policy, TransportPolicy::Hybrid) {
+            if self.legacy_kex_public_key.is_empty() {
+                return Err("hybrid transport requires legacy KEX public key");
+            }
+            if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
+                return Err("legacy KEX public key exceeds protocol maximum");
+            }
+        } else if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
+            return Err("legacy KEX public key exceeds protocol maximum");
         }
         Ok(())
     }
@@ -68,7 +77,8 @@ pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
     pub fn new(bytes: Vec<u8>) -> Option<Self> {
-        (!bytes.is_empty()).then_some(Self(bytes))
+        (!bytes.is_empty() && bytes.len() <= MAX_CLASSICAL_SHARED_SECRET_BYTES)
+            .then_some(Self(bytes))
     }
 
     pub fn len(&self) -> usize {
@@ -376,6 +386,20 @@ mod tests {
             &valid_transcript(TransportPolicy::Hybrid),
         )
         .expect("valid hybrid shared secret")
+    }
+
+    #[test]
+    fn transport_classical_material_is_bounded() {
+        assert!(SecretBytes::new(vec![1u8; MAX_CLASSICAL_SHARED_SECRET_BYTES]).is_some());
+        assert!(SecretBytes::new(vec![1u8; MAX_CLASSICAL_SHARED_SECRET_BYTES + 1]).is_none());
+
+        let peer = TransportPeerIdentity {
+            node_id: [1u8; 32],
+            ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
+            legacy_kex_public_key: vec![3u8; MAX_LEGACY_KEX_PUBLIC_KEY_BYTES + 1],
+        };
+        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
     }
 
     #[test]
