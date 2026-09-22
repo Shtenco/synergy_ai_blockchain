@@ -384,6 +384,92 @@ mod tests {
     }
 
     #[test]
+    fn pq_only_authorization_requires_same_derived_fips_context_on_both_pq_lanes() {
+        use crate::pq::{
+            verify_authorization_with_context, AuthPolicy, AuthorizationDomain,
+            AuthorizationEnvelope, HybridAuthorization, SignatureEvidence,
+        };
+        use ml_dsa::{
+            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding,
+            SigningKey as MlSigningKey,
+        };
+        use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
+        use slh_dsa::signature::Keypair as SlhKeypair;
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x31; 32],
+            domain: AuthorizationDomain::InferenceReceipt,
+            epoch: 77,
+            nonce: 1234,
+            expires_at: 9_999,
+            payload_commitment: [0x62; 32],
+        };
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+
+        let ml_sk = MlSigningKey::<MlDsa87>::generate();
+        let ml_pk = ml_sk.verifying_key().encode().to_vec();
+        let ml_sig = ml_sk
+            .sign_deterministic(&message, &context)
+            .expect("ML-DSA FIPS-context sign")
+            .to_vec();
+
+        let mut rng = rand::thread_rng();
+        let slh_sk = SlhSigningKey::<Shake256s>::new(&mut rng);
+        let slh_pk = slh_sk.verifying_key().to_vec();
+        let slh_sig = slh_sk
+            .try_sign_with_context(&message, &context, None)
+            .expect("SLH-DSA FIPS-context sign")
+            .to_vec();
+
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: ml_pk,
+                    signature: ml_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: slh_pk,
+                    signature: slh_sig,
+                },
+            ],
+        };
+
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(verify_authorization_with_context(
+            &verifier,
+            &auth,
+            &message,
+            &context,
+        ));
+
+        let mut wrong_domain = envelope.clone();
+        wrong_domain.domain = AuthorizationDomain::Governance;
+        let wrong_context = wrong_domain
+            .fips_signature_context(AuthPolicy::PqOnly)
+            .unwrap();
+        assert!(!verify_authorization_with_context(
+            &verifier,
+            &auth,
+            &message,
+            &wrong_context,
+        ));
+
+        let wrong_policy_context = envelope
+            .fips_signature_context(AuthPolicy::Max)
+            .unwrap();
+        assert!(!verify_authorization_with_context(
+            &verifier,
+            &auth,
+            &message,
+            &wrong_policy_context,
+        ));
+    }
+
+    #[test]
     fn pq_only_authorization_verifies_two_independent_real_pq_lanes() {
         use crate::pq::{
             verify_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
