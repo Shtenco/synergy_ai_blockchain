@@ -5,6 +5,8 @@ use zeroize::Zeroize;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
+pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096;
+pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportPolicy {
@@ -26,6 +28,9 @@ impl TransportPeerIdentity {
         }
         if self.ml_kem1024_public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
             return Err("ML-KEM-1024 public key length mismatch");
+        }
+        if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
+            return Err("legacy KEX public key exceeds protocol size bound");
         }
         if matches!(policy, TransportPolicy::Hybrid) && self.legacy_kex_public_key.is_empty() {
             return Err("hybrid transport requires legacy KEX public key");
@@ -184,7 +189,9 @@ impl HybridSharedSecret {
             TransportPolicy::Hybrid
                 if classical_shared
                     .as_ref()
-                    .map(|secret| secret.len() < 32)
+                    .map(|secret| {
+                        secret.len() < 32 || secret.len() > MAX_CLASSICAL_SHARED_SECRET_BYTES
+                    })
                     .unwrap_or(true) =>
             {
                 return None;
@@ -246,7 +253,9 @@ pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecr
         TransportPolicy::PqOnly => true,
         TransportPolicy::Hybrid => secret
             .classical_shared()
-            .map(|shared| shared.len() >= 32)
+            .map(|shared| {
+                shared.len() >= 32 && shared.len() <= MAX_CLASSICAL_SHARED_SECRET_BYTES
+            })
             .unwrap_or(false),
     }
 }
@@ -332,6 +341,9 @@ mod tests {
         assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
         peer.ml_kem1024_public_key = vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES];
+        peer.legacy_kex_public_key = vec![3u8; MAX_LEGACY_KEX_PUBLIC_KEY_BYTES + 1];
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
+
         peer.legacy_kex_public_key.clear();
         assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
         assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
@@ -394,6 +406,17 @@ mod tests {
         .expect("valid PQ-only shared secret");
         assert!(!validate_shared_secret(TransportPolicy::Hybrid, &pq_only));
         assert!(validate_shared_secret(TransportPolicy::PqOnly, &pq_only));
+    }
+
+    #[test]
+    fn hybrid_secret_rejects_oversized_classical_secret() {
+        let secret = HybridSharedSecret::from_transcript(
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("fixed ML-KEM shared secret"),
+            SecretBytes::new(vec![2u8; MAX_CLASSICAL_SHARED_SECRET_BYTES + 1]),
+            &valid_transcript(TransportPolicy::Hybrid),
+        );
+        assert!(secret.is_none());
     }
 
     #[test]
