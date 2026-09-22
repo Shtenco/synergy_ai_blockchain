@@ -130,9 +130,9 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let (ciphertext, mut shared) = ek.encapsulate_deterministic(&randomness);
         zeroize::Zeroize::zeroize(&mut randomness);
 
-        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
+        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref());
         zeroize::Zeroize::zeroize(&mut shared);
-        Some((ciphertext.as_ref().to_vec(), wrapped))
+        wrapped.map(|wrapped| (ciphertext.as_ref().to_vec(), wrapped))
     }
 
     fn decapsulate(
@@ -146,9 +146,9 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let dk = self.secrets.get(secret_key_handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
         let mut shared = dk.decapsulate(&ciphertext);
-        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
+        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref());
         zeroize::Zeroize::zeroize(&mut shared);
-        Some(wrapped)
+        wrapped
     }
 }
 
