@@ -75,6 +75,41 @@ RustCrypto KAT provenance currently documents:
 
 That aggregate hash is provenance evidence for the upstream test corpus. It is not, by itself, a substitute for importing traceable FIPS-205/ACVP cases into SYNERGY.
 
+### Imported executable FIPS 205 subset
+
+The branch now commits `tests/vectors/slh-dsa-shake-256s-acvp-subset.json` and wires it into `tests/pq_acvp.rs`.
+
+Pinned source:
+
+- repository: `usnistgov/ACVP-Server`;
+- commit: `975de31eb83d87039ec88934fdc47d8c312b892d`;
+- prompt: `gen-val/json-files/SLH-DSA-sigVer-FIPS205/prompt.json`;
+- prompt blob: `85134f8b1fc3c6cd51378f6cf9e451efc7728e59`;
+- expected results: `gen-val/json-files/SLH-DSA-sigVer-FIPS205/expectedResults.json`;
+- expected-results blob: `a04d2c683ba2a2cba2028e0922b137d30166a9cd`;
+- parameter set: `SLH-DSA-SHAKE-256s`;
+- group: `tgId=36`;
+- valid case: `tcId=491`;
+- invalid case: `tcId=492`.
+
+The integration test parses the committed public key, message and signature and requires the reference FIPS-205 verifier to accept tcId 491 and reject tcId 492. This is executable test code, but it is not represented as passing until a Rust runner actually executes it.
+
+## Wycheproof ML-KEM-1024 negative subset
+
+The branch now commits `tests/vectors/ml-kem-1024-wycheproof-negative-subset.json`.
+
+Pinned source:
+
+- repository: `C2SP/wycheproof`;
+- commit: `3fa63dd0344abb611f1fb1d77e119938603ea230`;
+- source path: `testvectors_v1/mlkem_1024_semi_expanded_decaps_test.json`;
+- source blob: `d67b741ff0e0357964a045c8faa41b067bea4b49`;
+- schema: `mlkem_semi_expanded_decaps_test_schema.json`;
+- `tcId=2`: 1567-byte ciphertext, invalid, `IncorrectCiphertextLength`;
+- `tcId=3`: 1569-byte ciphertext, invalid, `IncorrectCiphertextLength`.
+
+These two cases intentionally exercise the protocol-facing provider boundary with a locally generated opaque secret handle. Because ciphertext length is invalid, the provider must return `None` before cryptographic decapsulation. This is a structural fail-closed Wycheproof gate, not a full imported raw-secret-key decapsulation KAT.
+
 ## Import policy
 
 Every committed external fixture must carry:
@@ -101,4 +136,4 @@ cargo test --all-targets --features reference-pq
 
 and the external-vector subset is executed as part of the latter command.
 
-Until then, external vector provenance is prepared but executable vector evidence remains pending.
+As of branch head after commits `35fab7cada339e229a8326eb50e2fe6f87201e6e` and `fb3b3e86fa281f542be0d79fe6a7ae9437821c31`, the external subsets are committed and connected to executable Rust tests. Their **execution result remains pending** because GitHub Actions run `35764263197` failed before any step was scheduled (`steps=[]`) and the available local container has no `cargo`/`rustc`.
