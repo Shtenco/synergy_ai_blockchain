@@ -21,7 +21,7 @@ use ml_kem::{
         DecapsulationKey as MlKem1024DecapsulationKey,
         EncapsulationKey as MlKem1024EncapsulationKey,
     },
-    Decapsulate, Encapsulate, Generate, Key, KeyExport, MlKem1024,
+    Decapsulate, Encapsulate, Generate, Key, KeyExport,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
