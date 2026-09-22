@@ -276,6 +276,88 @@ mod tests {
     }
 
     #[test]
+    fn max_authorization_requires_classical_and_both_real_pq_lanes() {
+        use crate::pq::{
+            verify_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+            HybridAuthorization, SchemeRoutedVerifier, SignatureEvidence,
+        };
+        use ml_dsa::{
+            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, Signer as MlSigner,
+            SigningKey as MlSigningKey,
+        };
+        use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
+        use slh_dsa::signature::{Keypair as SlhKeypair, Signer as SlhSigner};
+
+        #[derive(Clone, Copy)]
+        struct TestClassicalVerifier;
+
+        impl SignatureVerifier for TestClassicalVerifier {
+            fn verify(
+                &self,
+                scheme: AuthScheme,
+                public_key: &[u8],
+                message: &[u8],
+                signature: &[u8],
+            ) -> bool {
+                scheme == AuthScheme::Secp256k1
+                    && public_key == b"classical-key"
+                    && signature == b"classical-signature"
+                    && !message.is_empty()
+            }
+        }
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x11; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 12,
+            nonce: 99,
+            expires_at: 1_000,
+            payload_commitment: [0x22; 32],
+        };
+        let message = envelope.canonical_message(AuthPolicy::Max).unwrap();
+
+        let ml_sk = MlSigningKey::<MlDsa87>::generate();
+        let ml_pk = ml_sk.verifying_key().encode().to_vec();
+        let ml_sig = ml_sk.sign(&message).to_vec();
+
+        let mut rng = rand::thread_rng();
+        let slh_sk = SlhSigningKey::<Shake256s>::new(&mut rng);
+        let slh_pk = slh_sk.verifying_key().to_vec();
+        let slh_sig = slh_sk.try_sign(&message).expect("SLH-DSA sign").to_vec();
+
+        let verifier = SchemeRoutedVerifier {
+            classical: TestClassicalVerifier,
+            pq: ReferencePqSignatureVerifier,
+        };
+
+        let mut auth = HybridAuthorization {
+            policy: AuthPolicy::Max,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: b"classical-key".to_vec(),
+                    signature: b"classical-signature".to_vec(),
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: ml_pk,
+                    signature: ml_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: slh_pk,
+                    signature: slh_sig,
+                },
+            ],
+        };
+
+        assert!(verify_authorization(&verifier, &auth, &message));
+
+        auth.evidence[0].signature = b"wrong-classical-signature".to_vec();
+        assert!(!verify_authorization(&verifier, &auth, &message));
+    }
+
+    #[test]
     fn pq_verifier_never_claims_classical_lanes() {
         let verifier = ReferencePqSignatureVerifier;
         assert!(!verifier.verify(AuthScheme::Secp256k1, &[], b"x", &[]));
