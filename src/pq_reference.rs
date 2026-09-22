@@ -432,12 +432,11 @@ mod tests {
         let (wrong_handle, _) = provider
             .try_generate_keypair()
             .expect("second ML-KEM key generation");
-        let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
+        let (ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
         let wrong_shared = provider
             .decapsulate(&wrong_handle, &ciphertext)
             .expect("ML-KEM implicit rejection");
-        let (_, correct_sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
-        assert_ne!(wrong_shared, correct_sender_shared);
+        assert_ne!(wrong_shared, sender_shared);
     }
 
     #[test]
