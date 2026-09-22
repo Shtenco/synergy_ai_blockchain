@@ -102,19 +102,23 @@ impl AuthorizationEnvelope {
         policy: AuthPolicy,
     ) -> Result<Vec<u8>, &'static str> {
         self.validate()?;
-        const PREFIX: &[u8] = b"SYNERGY/PQ-FIPS-CONTEXT/V1\0";
-        let mut out = Vec::with_capacity(PREFIX.len() + 32 + 2);
-        out.extend_from_slice(PREFIX);
-        out.extend_from_slice(&self.chain_id);
-        out.push(self.domain.protocol_code());
-        out.push(policy.protocol_code());
-
-        // FIPS 204 and FIPS 205 limit ctx to at most 255 bytes.
-        if out.len() > 255 {
-            return Err("FIPS signature context exceeds 255 bytes");
-        }
-        Ok(out)
+        Ok(fips_signature_context(&self.chain_id, self.domain, policy))
     }
+}
+
+pub fn fips_signature_context(
+    chain_id: &[u8; 32],
+    domain: AuthorizationDomain,
+    policy: AuthPolicy,
+) -> Vec<u8> {
+    const PREFIX: &[u8] = b"SYNERGY/PQ-FIPS-CONTEXT/V1\0";
+    let mut out = Vec::with_capacity(PREFIX.len() + 32 + 2);
+    out.extend_from_slice(PREFIX);
+    out.extend_from_slice(chain_id);
+    out.push(domain.protocol_code());
+    out.push(policy.protocol_code());
+    debug_assert!(out.len() <= 255);
+    out
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
