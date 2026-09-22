@@ -463,10 +463,10 @@ mod tests {
 
     #[test]
     fn envelope_verifier_derives_message_and_context_from_same_policy() {
-        #[derive(Clone, Copy)]
+        #[derive(Clone)]
         struct EnvelopeVerifier {
             expected_message_len: usize,
-            expected_context: [u8; 58],
+            expected_context: Vec<u8>,
         }
 
         impl ContextSignatureVerifier for EnvelopeVerifier {
@@ -480,7 +480,7 @@ mod tests {
             ) -> bool {
                 matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
                     && message.len() == self.expected_message_len
-                    && context == self.expected_context
+                    && context == self.expected_context.as_slice()
             }
         }
 
@@ -494,8 +494,7 @@ mod tests {
         };
         let policy = AuthPolicy::PqOnly;
         let expected_message = envelope.canonical_message(policy).unwrap();
-        let expected_context_vec = envelope.fips_signature_context(policy).unwrap();
-        let expected_context: [u8; 58] = expected_context_vec.try_into().unwrap();
+        let expected_context = envelope.fips_signature_context(policy).unwrap();
 
         let auth = HybridAuthorization {
             policy,
