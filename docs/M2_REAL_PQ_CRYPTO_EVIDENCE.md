@@ -1,0 +1,157 @@
+# M2 — Real Post-Quantum Crypto Evidence Ledger
+
+Date: 2026-09-22  
+Branch: `feat/distributed-ai-foundation-v1-20260922`
+
+## Objective
+
+M2 is complete only when the protocol uses real standards-conformant post-quantum primitives through explicit provider boundaries and produces executable positive/negative evidence.
+
+Target standards:
+
+- FIPS 203 — ML-KEM-1024
+- FIPS 204 — ML-DSA-87
+- FIPS 205 — SLH-DSA-SHAKE-256s
+
+The project does not implement these algorithms from scratch.
+
+## Selected reference implementations
+
+Pinned Rust dependencies behind Cargo feature `reference-pq`:
+
+- `ml-kem = 0.3.2`
+- `ml-dsa = 0.1.1`
+- `slh-dsa = 0.1.0`
+
+The reference provider is an integration/testing dependency, not an assertion of independent cryptographic audit.
+
+Upstream references:
+
+- https://docs.rs/ml-kem/0.3.2/ml_kem/
+- https://docs.rs/ml-dsa/0.1.1/ml_dsa/
+- https://docs.rs/slh-dsa/0.1.0/slh_dsa/
+
+## Implemented in this branch
+
+### 1. Real ML-KEM-1024 adapter
+
+`src/pq_reference.rs` implements `MlKem1024Provider` using RustCrypto ML-KEM.
+
+Properties:
+
+- real ML-KEM-1024 key generation;
+- validated public-key import through `EncapsulationKey::new`;
+- real encapsulation and decapsulation;
+- preferred 64-byte decapsulation-key seed representation;
+- secret seeds stay behind opaque local handles;
+- corrupted ciphertext test expects implicit rejection to produce a different shared secret;
+- wrong handles and invalid public-key lengths fail closed.
+
+The protocol-facing trait still accepts only a secret-key handle, not raw private key bytes.
+
+### 2. Real ML-DSA-87 verification
+
+`ReferencePqSignatureVerifier` parses an encoded ML-DSA-87 public key and signature and invokes the standards-based verification path.
+
+Tests include:
+
+- real generated key;
+- real sign/verify;
+- modified message rejection;
+- modified signature rejection.
+
+### 3. Real SLH-DSA-SHAKE-256s verification
+
+The same provider parses SLH-DSA-SHAKE-256s public keys/signatures and invokes the verification implementation.
+
+Tests include:
+
+- real generated key;
+- real sign/verify;
+- modified message rejection.
+
+### 4. Authorization domain separation
+
+`src/pq.rs` now defines a canonical signed envelope containing:
+
+- protocol prefix/version;
+- chain ID;
+- authorization domain;
+- authorization policy;
+- epoch;
+- nonce;
+- expiry;
+- payload commitment.
+
+A signature from one domain/policy cannot be reused as the same canonical message under another domain/policy.
+
+### 5. Anti-downgrade authorization structure
+
+Hybrid authorization now fails closed unless:
+
+- evidence count exactly matches the selected policy;
+- every required scheme appears exactly once;
+- no extra scheme is present;
+- no duplicate scheme is present;
+- public key bytes are non-empty;
+- signature bytes are non-empty.
+
+### 6. Scheme-routed verifier
+
+`SchemeRoutedVerifier` explicitly sends:
+
+- secp256k1 / Ed25519 → classical backend;
+- ML-DSA-87 / SLH-DSA-SHAKE-256s → PQ backend.
+
+The implementation does not use an ambiguous `backend_a || backend_b` fallback.
+
+### 7. Real dual-PQ authorization test
+
+The reference-provider tests create one real ML-DSA-87 signature and one real SLH-DSA-SHAKE-256s signature over the exact same canonical `PQ_ONLY` authorization message.
+
+The test also attempts verification against an `ONLINE` canonical message and requires failure.
+
+## CI gate
+
+The workflow now contains two intended test passes:
+
+```text
+cargo test --all-targets
+cargo test --all-targets --features reference-pq
+```
+
+### Current infrastructure status
+
+As of 2026-09-22, GitHub Actions runs for this branch terminate before any step starts:
+
+- runner_id = 0
+- runner_name = empty
+- steps = []
+- conclusion = failure after only a few seconds
+
+Therefore this branch does **not** claim executable CI success yet.
+
+A local fallback was attempted, but the working container has no Rust toolchain and external DNS/package installation is unavailable.
+
+This is tracked as an infrastructure validation blocker, not proof of a source-code failure.
+
+## Still required before M2 can become GREEN
+
+- executable Rust compilation on Rust >= 1.85;
+- all default-feature tests green;
+- all `reference-pq` tests green;
+- official/traceable known-answer vectors committed or reproducibly fetched in CI;
+- ML-KEM negative/Wycheproof vector subset;
+- ML-DSA known-answer and invalid-signature vector subset;
+- SLH-DSA ACVP/KAT subset;
+- explicit context/domain test vectors;
+- dependency lockfile committed;
+- SBOM/dependency provenance record;
+- secret-key zeroization evidence for production-selected backend;
+- independent cryptographic review before real asset custody.
+
+## M2 maturity
+
+Current state: **YELLOW / implemented, executable evidence blocked by runner infrastructure.**
+
+M3 must not be declared complete or production-ready until this gate is resolved.
