@@ -90,3 +90,18 @@ require(
     "verify_authorization(verifier" not in tx,
     "transaction validation regressed to no-context verifier",
 )
+
+
+# Generic envelope replay/expiry state must be enforced, not merely signed.
+require(
+    "pub struct AuthorizationValidationContext" in pq,
+    "authorization state validation context missing",
+)
+require(
+    "validate_in_context" in pq
+    and "authorization chain mismatch" in pq
+    and "authorization epoch mismatch" in pq
+    and "authorization nonce mismatch" in pq
+    and "authorization expired" in pq,
+    "authorization chain/epoch/nonce/expiry checks missing",
+)
