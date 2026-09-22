@@ -10,6 +10,8 @@ pub struct PqEvmTransaction {
     pub chain_id: u64,
     pub sender_account: [u8; 32],
     pub nonce: u64,
+    pub authorization_epoch: u64,
+    pub authorization_expires_at: u64,
     pub gas_limit: u64,
     pub max_fee_per_gas: [u8; 32],
     pub to: Option<[u8; 20]>,
@@ -22,6 +24,8 @@ pub struct PqEvmTransaction {
 pub struct TxValidationContext {
     pub expected_chain_id: u64,
     pub expected_nonce: u64,
+    pub expected_authorization_epoch: u64,
+    pub now: u64,
     pub required_policy: crate::pq::AuthPolicy,
     pub max_calldata_bytes: usize,
 }
@@ -31,6 +35,8 @@ pub enum TxError {
     ZeroChainId,
     WrongChainId,
     NonceMismatch,
+    AuthorizationEpochMismatch,
+    AuthorizationExpired,
     PolicyMismatch,
     ZeroGasLimit,
     DataTooLarge,
@@ -92,6 +98,8 @@ impl PqEvmTransaction {
         out.extend_from_slice(&self.chain_id.to_be_bytes());
         out.extend_from_slice(&self.sender_account);
         out.extend_from_slice(&self.nonce.to_be_bytes());
+        out.extend_from_slice(&self.authorization_epoch.to_be_bytes());
+        out.extend_from_slice(&self.authorization_expires_at.to_be_bytes());
         out.extend_from_slice(&self.gas_limit.to_be_bytes());
         out.extend_from_slice(&self.max_fee_per_gas);
         match self.to {
@@ -126,6 +134,12 @@ impl PqEvmTransaction {
         }
         if self.nonce != context.expected_nonce {
             return Err(TxError::NonceMismatch);
+        }
+        if self.authorization_epoch != context.expected_authorization_epoch {
+            return Err(TxError::AuthorizationEpochMismatch);
+        }
+        if self.authorization_expires_at == 0 || context.now > self.authorization_expires_at {
+            return Err(TxError::AuthorizationExpired);
         }
         if self.authorization.policy != context.required_policy {
             return Err(TxError::PolicyMismatch);
@@ -184,6 +198,8 @@ mod tests {
             chain_id: 8453,
             sender_account: [0x11; 32],
             nonce: 7,
+            authorization_epoch: 12,
+            authorization_expires_at: 1_000,
             gas_limit: 100_000,
             max_fee_per_gas: [0x22; 32],
             to: Some([0x33; 20]),
@@ -221,6 +237,8 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 1_000,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -234,6 +252,8 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 1,
                     expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 1_000,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -247,11 +267,52 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 8453,
                     expected_nonce: 8,
+                    expected_authorization_epoch: 12,
+                    now: 1_000,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
             ),
             Err(TxError::NonceMismatch)
+        );
+    }
+
+    #[test]
+    fn transaction_validation_rejects_wrong_epoch_and_expiry() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 13,
+                    now: 1_000,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationEpochMismatch)
+        );
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 1_001,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationExpired)
         );
     }
 
@@ -269,6 +330,8 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 1_000,
                     required_policy: AuthPolicy::Max,
                     max_calldata_bytes: 1024,
                 },
