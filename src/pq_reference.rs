@@ -21,7 +21,7 @@ use ml_kem::{
         DecapsulationKey as MlKem1024DecapsulationKey,
         EncapsulationKey as MlKem1024EncapsulationKey,
     },
-    Decapsulate, Encapsulate, Kem, Key, KeyExport, MlKem1024,
+    Decapsulate, Encapsulate, Generate, Key, KeyExport, MlKem1024,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
@@ -45,24 +45,26 @@ impl ReferenceMlKem1024Provider {
     /// Generate a fresh ML-KEM-1024 keypair.
     ///
     /// Returns (opaque secret handle, serialized public encapsulation key).
-    pub fn generate_keypair(&mut self) -> (MlKemSecretHandle, Vec<u8>) {
-        let (dk, ek) = MlKem1024::generate_keypair();
+    pub fn try_generate_keypair(&mut self) -> Option<(MlKemSecretHandle, Vec<u8>)> {
+        let dk = MlKem1024DecapsulationKey::try_generate().ok()?;
+        let ek = dk.encapsulation_key().clone();
 
         use rand::RngCore;
 
         let mut rng = rand::rngs::OsRng;
         let handle = loop {
             let mut candidate = [0u8; 32];
-            rng.fill_bytes(&mut candidate);
+            rng.try_fill_bytes(&mut candidate).ok()?;
             if candidate != [0u8; 32] && !self.secrets.contains_key(&candidate) {
                 break candidate;
             }
         };
 
-        let replaced = self.secrets.insert(handle, dk);
-        debug_assert!(replaced.is_none());
+        if self.secrets.insert(handle, dk).is_some() {
+            return None;
+        }
 
-        (handle, ek.to_bytes().as_ref().to_vec())
+        Some((handle, ek.to_bytes().as_ref().to_vec()))
     }
 
     pub fn remove_key(&mut self, handle: &MlKemSecretHandle) -> bool {
@@ -113,15 +115,15 @@ impl ReferencePqSigner {
         self.ml_dsa_keys.contains_key(handle)
     }
 
-    fn allocate_handle(&self) -> PqSigningKeyHandle {
+    fn try_allocate_handle(&self) -> Option<PqSigningKeyHandle> {
         use rand::RngCore;
 
         let mut rng = rand::rngs::OsRng;
         loop {
             let mut handle = [0u8; 32];
-            rng.fill_bytes(&mut handle);
+            rng.try_fill_bytes(&mut handle).ok()?;
             if handle != [0u8; 32] && !self.ml_dsa_keys.contains_key(&handle) {
-                return handle;
+                return Some(handle);
             }
         }
     }
@@ -138,11 +140,13 @@ impl ContextSignatureSigner for ReferencePqSigner {
             return None;
         }
 
-        let signing_key = SigningKey::<MlDsa87>::generate();
+        let signing_key = SigningKey::<MlDsa87>::try_generate().ok()?;
         let public_key = signing_key.verifying_key().encode().to_vec();
-        let handle = self.allocate_handle();
-        let replaced = self.ml_dsa_keys.insert(handle, signing_key);
-        debug_assert!(replaced.is_none());
+        let handle = self.try_allocate_handle()?;
+
+        if self.ml_dsa_keys.insert(handle, signing_key).is_some() {
+            return None;
+        }
 
         Some((handle, public_key))
     }
@@ -327,7 +331,7 @@ mod tests {
     #[test]
     fn ml_kem_1024_real_round_trip() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.generate_keypair();
+        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
         assert!(provider.contains_key(&handle));
 
         let (ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
@@ -340,8 +344,8 @@ mod tests {
     #[test]
     fn ml_kem_handles_are_nonzero_and_unique_while_live() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (h1, _) = provider.generate_keypair();
-        let (h2, _) = provider.generate_keypair();
+        let (h1, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
+        let (h2, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
 
         assert_ne!(h1, [0u8; 32]);
         assert_ne!(h2, [0u8; 32]);
@@ -353,7 +357,7 @@ mod tests {
     #[test]
     fn ml_kem_remove_key_revokes_handle_and_drops_private_key() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.generate_keypair();
+        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
         let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
 
         assert!(provider.contains_key(&handle));
@@ -366,7 +370,7 @@ mod tests {
     #[test]
     fn ml_kem_wrong_handle_fails_closed() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (_handle, public_key) = provider.generate_keypair();
+        let (_handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
         let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
         assert!(provider.decapsulate(&[99u8; 32], &ciphertext).is_none());
     }
@@ -380,7 +384,7 @@ mod tests {
     #[test]
     fn ml_kem_corrupted_ciphertext_does_not_recover_original_secret() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.generate_keypair();
+        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
         let (mut ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
         ciphertext[0] ^= 0x01;
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
