@@ -58,7 +58,10 @@ pub use payment_funding::{
     PaymentFundingReservation,
 };
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
-pub use pq::{AuthPolicy, AuthScheme, HybridAuthorization};
+pub use pq::{
+    AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, HybridAuthorization,
+    SchemeRoutedVerifier, SignatureEvidence,
+};
 #[cfg(feature = "reference-pq")]
 pub use pq_reference::{MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier};
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
