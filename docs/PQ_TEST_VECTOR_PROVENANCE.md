@@ -137,3 +137,31 @@ cargo test --all-targets --features reference-pq
 and the external-vector subset is executed as part of the latter command.
 
 As of branch head after commits `35fab7cada339e229a8326eb50e2fe6f87201e6e` and `fb3b3e86fa281f542be0d79fe6a7ae9437821c31`, the external subsets are committed and connected to executable Rust tests. Their **execution result remains pending** because GitHub Actions run `35764263197` failed before any step was scheduled (`steps=[]`) and the available local container has no `cargo`/`rustc`.
+
+
+## FIPS context-separation evidence
+
+FIPS 204 and FIPS 205 expose explicit application-context inputs with a maximum length of 255 bytes. SYNERGY now uses that primitive directly rather than relying only on message-prefix conventions.
+
+The derived context intentionally contains only stable namespace fields:
+
+```text
+SYNERGY/PQ-FIPS-CONTEXT/V1\0
+|| chain_id
+|| authorization_domain
+|| authorization_policy
+```
+
+Dynamic replay/freshness fields remain in the canonical signed message. This gives two independent bindings:
+
+```text
+canonical message:
+  chain + domain + policy + epoch + nonce + expiry + payload commitment
+
+FIPS context:
+  protocol + chain + domain + policy
+```
+
+Tests deliberately mutate domain/policy context without mutating the signed message to prove that the FIPS API itself enforces the second boundary.
+
+This is source/test-definition evidence until the Rust test suite actually executes.
