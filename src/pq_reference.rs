@@ -13,8 +13,12 @@ use crate::pq::{AuthScheme, ContextSignatureVerifier, SignatureVerifier};
 use std::collections::BTreeMap;
 
 use ml_kem::{
-    ml_kem_1024::{Ciphertext as MlKem1024Ciphertext, EncapsulationKey as MlKem1024EncapsulationKey},
-    Decapsulate, Encapsulate, Kem, Key, KeyExport, MlKem1024, Seed as MlKemSeed,
+    ml_kem_1024::{
+        Ciphertext as MlKem1024Ciphertext,
+        DecapsulationKey as MlKem1024DecapsulationKey,
+        EncapsulationKey as MlKem1024EncapsulationKey,
+    },
+    Decapsulate, Encapsulate, Kem, Key, KeyExport, MlKem1024,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
@@ -22,12 +26,13 @@ pub type MlKemSecretHandle = [u8; 32];
 
 /// Reference ML-KEM provider.
 ///
-/// Secret key material is stored internally as the preferred 64-byte ML-KEM
-/// seed representation. Callers receive only an opaque handle.
+/// Secret key material is stored internally as the ML-KEM decapsulation-key
+/// type itself. With the pinned `ml-kem` `zeroize` feature this type zeroizes
+/// its private components on drop. Callers receive only an opaque handle.
 #[derive(Default)]
 pub struct ReferenceMlKem1024Provider {
     next_handle: u64,
-    secrets: BTreeMap<MlKemSecretHandle, MlKemSeed>,
+    secrets: BTreeMap<MlKemSecretHandle, MlKem1024DecapsulationKey>,
 }
 
 impl ReferenceMlKem1024Provider {
@@ -45,8 +50,7 @@ impl ReferenceMlKem1024Provider {
         let mut handle = [0u8; 32];
         handle[..8].copy_from_slice(&self.next_handle.to_be_bytes());
 
-        let seed = dk.to_bytes();
-        let replaced = self.secrets.insert(handle, seed);
+        let replaced = self.secrets.insert(handle, dk);
         debug_assert!(replaced.is_none());
 
         (handle, ek.to_bytes().as_ref().to_vec())
@@ -73,8 +77,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
 
     fn decapsulate(&self, secret_key_handle: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
         let handle: MlKemSecretHandle = secret_key_handle.try_into().ok()?;
-        let seed = self.secrets.get(&handle)?;
-        let dk = ml_kem::DecapsulationKey::<MlKem1024>::from_seed(seed.clone());
+        let dk = self.secrets.get(&handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
         Some(dk.decapsulate(&ciphertext).as_ref().to_vec())
     }
