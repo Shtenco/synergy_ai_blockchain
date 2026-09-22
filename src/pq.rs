@@ -64,6 +64,14 @@ pub struct AuthorizationEnvelope {
     pub payload_commitment: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthorizationValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub now: u64,
+}
+
 impl AuthorizationEnvelope {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.chain_id == [0; 32] || self.payload_commitment == [0; 32] {
@@ -71,6 +79,26 @@ impl AuthorizationEnvelope {
         }
         if self.expires_at == 0 {
             return Err("authorization expiry required");
+        }
+        Ok(())
+    }
+
+    pub fn validate_in_context(
+        &self,
+        context: &AuthorizationValidationContext,
+    ) -> Result<(), &'static str> {
+        self.validate()?;
+        if self.chain_id != context.expected_chain_id {
+            return Err("authorization chain mismatch");
+        }
+        if self.epoch != context.expected_epoch {
+            return Err("authorization epoch mismatch");
+        }
+        if self.nonce != context.expected_nonce {
+            return Err("authorization nonce mismatch");
+        }
+        if context.now > self.expires_at {
+            return Err("authorization expired");
         }
         Ok(())
     }
@@ -398,7 +426,12 @@ pub fn verify_envelope_authorization<V: ContextSignatureVerifier>(
     verifier: &V,
     authorization: &HybridAuthorization,
     envelope: &AuthorizationEnvelope,
+    validation: &AuthorizationValidationContext,
 ) -> bool {
+    if envelope.validate_in_context(validation).is_err() {
+        return false;
+    }
+
     let message = match envelope.canonical_message(authorization.policy) {
         Ok(message) => message,
         Err(_) => return false,
@@ -706,11 +739,63 @@ mod tests {
             expected_context,
         };
 
-        assert!(verify_envelope_authorization(&verifier, &auth, &envelope));
+        let validation = AuthorizationValidationContext {
+            expected_chain_id: envelope.chain_id,
+            expected_epoch: envelope.epoch,
+            expected_nonce: envelope.nonce,
+            now: envelope.expires_at,
+        };
+        assert!(verify_envelope_authorization(
+            &verifier,
+            &auth,
+            &envelope,
+            &validation,
+        ));
 
         let mut wrong_domain = envelope.clone();
         wrong_domain.domain = AuthorizationDomain::Governance;
-        assert!(!verify_envelope_authorization(&verifier, &auth, &wrong_domain));
+        assert!(!verify_envelope_authorization(
+            &verifier,
+            &auth,
+            &wrong_domain,
+            &validation,
+        ));
+    }
+
+    #[test]
+    fn envelope_state_validation_rejects_replay_epoch_chain_and_expiry_mismatch() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x91; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 12,
+            nonce: 44,
+            expires_at: 1_000,
+            payload_commitment: [0x92; 32],
+        };
+
+        let ok = AuthorizationValidationContext {
+            expected_chain_id: [0x91; 32],
+            expected_epoch: 12,
+            expected_nonce: 44,
+            now: 1_000,
+        };
+        assert!(envelope.validate_in_context(&ok).is_ok());
+
+        let mut bad = ok;
+        bad.expected_chain_id = [0x90; 32];
+        assert!(envelope.validate_in_context(&bad).is_err());
+
+        let mut bad = ok;
+        bad.expected_epoch = 13;
+        assert!(envelope.validate_in_context(&bad).is_err());
+
+        let mut bad = ok;
+        bad.expected_nonce = 45;
+        assert!(envelope.validate_in_context(&bad).is_err());
+
+        let mut bad = ok;
+        bad.now = 1_001;
+        assert!(envelope.validate_in_context(&bad).is_err());
     }
 
     #[derive(Clone, Copy)]
