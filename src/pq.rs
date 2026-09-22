@@ -281,7 +281,7 @@ pub trait ContextSignatureVerifier {
 ///
 /// Protocol code never receives raw private-key bytes. A provider may back this
 /// handle with an in-process zeroizing key, an OS keystore, HSM or remote signer.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PqSigningKeyHandle([u8; 32]);
 
 impl PqSigningKeyHandle {
@@ -292,6 +292,12 @@ impl PqSigningKeyHandle {
     #[cfg(test)]
     pub(crate) fn is_zero(&self) -> bool {
         self.0 == [0u8; 32]
+    }
+}
+
+impl Drop for PqSigningKeyHandle {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
     }
 }
 
