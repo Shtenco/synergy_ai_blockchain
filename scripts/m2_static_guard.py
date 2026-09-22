@@ -82,8 +82,13 @@ require(
     "state-aware transaction validation context missing",
 )
 require(
-    "expected_chain_id" in tx and "expected_nonce" in tx,
-    "transaction replay guards missing",
+    "expected_chain_id" in tx
+    and "expected_nonce" in tx
+    and "expected_authorization_epoch" in tx
+    and "authorization_expires_at" in tx
+    and "AuthorizationEpochMismatch" in tx
+    and "AuthorizationExpired" in tx,
+    "transaction chain/nonce/epoch/expiry replay guards missing",
 )
 require(
     "verify_authorization_with_context(" in tx,
