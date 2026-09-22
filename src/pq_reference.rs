@@ -34,7 +34,6 @@ pub type MlKemSecretHandle = [u8; 32];
 /// its private components on drop. Callers receive only an opaque handle.
 #[derive(Default)]
 pub struct ReferenceMlKem1024Provider {
-    next_handle: u64,
     secrets: BTreeMap<MlKemSecretHandle, MlKem1024DecapsulationKey>,
 }
 
@@ -49,9 +48,16 @@ impl ReferenceMlKem1024Provider {
     pub fn generate_keypair(&mut self) -> (MlKemSecretHandle, Vec<u8>) {
         let (dk, ek) = MlKem1024::generate_keypair();
 
-        self.next_handle = self.next_handle.checked_add(1).expect("ML-KEM handle counter overflow");
-        let mut handle = [0u8; 32];
-        handle[..8].copy_from_slice(&self.next_handle.to_be_bytes());
+        use rand::RngCore;
+
+        let mut rng = rand::rngs::OsRng;
+        let handle = loop {
+            let mut candidate = [0u8; 32];
+            rng.fill_bytes(&mut candidate);
+            if candidate != [0u8; 32] && !self.secrets.contains_key(&candidate) {
+                break candidate;
+            }
+        };
 
         let replaced = self.secrets.insert(handle, dk);
         debug_assert!(replaced.is_none());
@@ -95,7 +101,6 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
 /// backend (or HSM/keystore integration) is selected.
 #[derive(Default)]
 pub struct ReferencePqSigner {
-    next_handle: u64,
     ml_dsa_keys: BTreeMap<PqSigningKeyHandle, ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
 }
 
@@ -108,15 +113,17 @@ impl ReferencePqSigner {
         self.ml_dsa_keys.contains_key(handle)
     }
 
-    fn allocate_handle(&mut self) -> PqSigningKeyHandle {
-        self.next_handle = self
-            .next_handle
-            .checked_add(1)
-            .expect("PQ signing handle counter overflow");
-        let mut handle = [0u8; 32];
-        handle[..8].copy_from_slice(&self.next_handle.to_be_bytes());
-        handle[8..16].copy_from_slice(b"MLDSA87\0");
-        handle
+    fn allocate_handle(&self) -> PqSigningKeyHandle {
+        use rand::RngCore;
+
+        let mut rng = rand::rngs::OsRng;
+        loop {
+            let mut handle = [0u8; 32];
+            rng.fill_bytes(&mut handle);
+            if handle != [0u8; 32] && !self.ml_dsa_keys.contains_key(&handle) {
+                return handle;
+            }
+        }
     }
 }
 
