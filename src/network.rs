@@ -83,15 +83,42 @@ pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecr
     }
 }
 
+pub const MAX_REKEY_MESSAGES: u64 = 1 << 20;
+pub const MAX_REKEY_SECONDS: u64 = 300;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RekeyPolicy {
     pub max_messages: u64,
     pub max_seconds: u64,
 }
 
+impl RekeyPolicy {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.max_messages == 0 || self.max_seconds == 0 {
+            return Err("rekey limits must be nonzero");
+        }
+        if self.max_messages > MAX_REKEY_MESSAGES {
+            return Err("rekey message limit exceeds protocol maximum");
+        }
+        if self.max_seconds > MAX_REKEY_SECONDS {
+            return Err("rekey time limit exceeds protocol maximum");
+        }
+        Ok(())
+    }
+
+    pub fn should_rekey(&self, messages_since_rekey: u64, seconds_since_rekey: u64) -> bool {
+        self.validate().is_err()
+            || messages_since_rekey >= self.max_messages
+            || seconds_since_rekey >= self.max_seconds
+    }
+}
+
 impl Default for RekeyPolicy {
     fn default() -> Self {
-        Self { max_messages: 1 << 20, max_seconds: 300 }
+        Self {
+            max_messages: MAX_REKEY_MESSAGES,
+            max_seconds: MAX_REKEY_SECONDS,
+        }
     }
 }
 
@@ -99,6 +126,29 @@ impl Default for RekeyPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rekey_policy_is_bounded_and_fail_closed() {
+        let policy = RekeyPolicy::default();
+        assert_eq!(policy.validate(), Ok(()));
+        assert!(!policy.should_rekey(MAX_REKEY_MESSAGES - 1, MAX_REKEY_SECONDS - 1));
+        assert!(policy.should_rekey(MAX_REKEY_MESSAGES, 0));
+        assert!(policy.should_rekey(0, MAX_REKEY_SECONDS));
+
+        let disabled_by_zero = RekeyPolicy {
+            max_messages: 0,
+            max_seconds: MAX_REKEY_SECONDS,
+        };
+        assert!(disabled_by_zero.validate().is_err());
+        assert!(disabled_by_zero.should_rekey(0, 0));
+
+        let too_weak = RekeyPolicy {
+            max_messages: MAX_REKEY_MESSAGES + 1,
+            max_seconds: MAX_REKEY_SECONDS,
+        };
+        assert!(too_weak.validate().is_err());
+        assert!(too_weak.should_rekey(0, 0));
+    }
 
     #[test]
     fn peer_identity_enforces_ml_kem_size_and_hybrid_classical_key() {
