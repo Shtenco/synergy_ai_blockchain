@@ -362,7 +362,9 @@ fn ml_kem_1024_wycheproof_rejects_incorrect_ciphertext_lengths() {
     );
 
     let mut provider = ReferenceMlKem1024Provider::new();
-    let (handle, _public_key) = provider.generate_keypair();
+    let (handle, _public_key) = provider
+        .try_generate_keypair()
+        .expect("ML-KEM key generation");
 
     assert_eq!(fixture.tests.len(), 2);
     for case in &fixture.tests {
