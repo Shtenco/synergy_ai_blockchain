@@ -111,6 +111,26 @@ The reference-provider tests create one real ML-DSA-87 signature and one real SL
 
 The test also attempts verification against an `ONLINE` canonical message and requires failure.
 
+### 8. MAX three-lane anti-downgrade test
+
+The reference test suite now constructs a `MAX` authorization containing:
+
+- a separately routed classical secp256k1 test lane;
+- a real ML-DSA-87 signature;
+- a real SLH-DSA-SHAKE-256s signature.
+
+The authorization succeeds only when all three lanes validate. Corrupting only the classical lane must make the entire authorization fail. The PQ verifier is not permitted to satisfy the classical lane.
+
+### 9. External-vector provenance pinned
+
+`docs/PQ_TEST_VECTOR_PROVENANCE.md` records reproducible provenance for the external evidence gate:
+
+- NIST ACVP commit `65370b861b96efd30dfe0daae607bde26a78a5c8` for ML-KEM / ML-DSA vector lineage used by the selected RustCrypto suites;
+- SPHINCS+ commit `eccdc43a99e194f52d5ef0e4030ef4dd1e31828b` for the documented SLH-DSA KAT lineage;
+- exact target parameter sets and import rules.
+
+This is provenance preparation, not a claim that the local external-vector subset has already executed.
+
 ## CI gate
 
 The workflow now contains two intended test passes:
