@@ -301,6 +301,7 @@ mod tests {
         let context = b"SYNERGY/context/A";
         let wrong_context = b"SYNERGY/context/B";
         let signature = signing_key
+            .expanded_key()
             .sign_deterministic(message, context)
             .expect("ML-DSA context sign")
             .to_vec();
@@ -410,6 +411,7 @@ mod tests {
         let ml_sk = MlSigningKey::<MlDsa87>::generate();
         let ml_pk = ml_sk.verifying_key().encode().to_vec();
         let ml_sig = ml_sk
+            .expanded_key()
             .sign_deterministic(&message, &context)
             .expect("ML-DSA FIPS-context sign")
             .to_vec();
