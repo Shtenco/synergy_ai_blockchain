@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: M2 static security guard
+        run: python3 scripts/m2_static_guard.py
+
       - name: Pin MSRV toolchain
         shell: bash
         run: |
