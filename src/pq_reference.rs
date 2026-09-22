@@ -406,7 +406,7 @@ mod tests {
 
         assert!(!h1.is_zero());
         assert!(!h2.is_zero());
-        assert_ne!(h1, h2);
+        assert!(h1 != h2);
         assert!(provider.contains_key(&h1));
         assert!(provider.contains_key(&h2));
     }
@@ -506,7 +506,7 @@ mod tests {
 
         assert!(!h1.is_zero());
         assert!(!h2.is_zero());
-        assert_ne!(h1, h2);
+        assert!(h1 != h2);
         assert!(signer.contains_key(&h1));
         assert!(signer.contains_key(&h2));
     }
