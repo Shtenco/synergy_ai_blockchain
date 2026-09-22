@@ -22,6 +22,7 @@ for exact in (
     'slh-dsa = { version = "=0.1.0"',
     'rand = { version = "=0.8.5"',
     'zeroize = { version = "=1.8.1"',
+    'sha2 = { version = "=0.10.9"',
     'hex = "=0.4.3"',
     'serde = { version = "=1.0.228"',
     'serde_json = "=1.0.145"',
@@ -218,3 +219,22 @@ require(
 )
 
 print("M2 static guard: PASS")
+
+
+require(
+    'pub struct TransportTranscript' in network
+    and 'TRANSPORT_TRANSCRIPT_DOMAIN' in network
+    and 'pub fn commitment(&self) -> Option<[u8; 32]>' in network
+    and 'Sha256::new()' in network,
+    "canonical transport transcript commitment missing",
+)
+require(
+    'policy: TransportPolicy' in network
+    and 'secret.policy() != policy' in network,
+    "established shared secret must remain bound to transport policy",
+)
+require(
+    "MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096" in network
+    and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network,
+    "legacy KEX/classical secret DoS bounds missing",
+)
