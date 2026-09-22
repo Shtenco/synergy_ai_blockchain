@@ -73,7 +73,7 @@ pub use storage::{
     ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
     ProofOfStorageReceipt, StorageBid, StorageClass,
 };
-pub use tx::PqEvmTransaction;
+pub use tx::{PqEvmTransaction, TxError, TxValidationContext};
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
 pub use verification::{
     VerificationAggregate, VerificationChallenge, VerificationVerdict, VerifierReceipt,
