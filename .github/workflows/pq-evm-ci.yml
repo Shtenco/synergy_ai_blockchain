@@ -30,6 +30,11 @@ jobs:
             cargo generate-lockfile
           fi
           cargo metadata --locked --format-version 1 > m2-cargo-metadata.json
+          cargo tree --locked --edges normal,build,dev > m2-cargo-tree.txt
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          python3 scripts/m2_spdx_from_cargo_metadata.py \
+            m2-cargo-metadata.json \
+            m2-spdx.json
 
       - name: Core unit tests
         run: cargo test --locked --all-targets
@@ -45,5 +50,7 @@ jobs:
           path: |
             Cargo.lock
             m2-cargo-metadata.json
+            m2-cargo-tree.txt
+            m2-spdx.json
           if-no-files-found: warn
           retention-days: 30
