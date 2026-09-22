@@ -157,9 +157,10 @@ impl ReferencePqSigner {
 
         let mut rng = rand::rngs::OsRng;
         for _ in 0..32 {
-            let mut handle = [0u8; 32];
-            rng.try_fill_bytes(&mut handle).ok()?;
-            if handle != [0u8; 32] && !self.ml_dsa_keys.contains_key(&handle) {
+            let mut handle_bytes = [0u8; 32];
+            rng.try_fill_bytes(&mut handle_bytes).ok()?;
+            let handle = PqSigningKeyHandle::from_random_bytes(handle_bytes)?;
+            if !self.ml_dsa_keys.contains_key(&handle) {
                 return Some(handle);
             }
         }
@@ -503,8 +504,8 @@ mod tests {
         let (h1, _) = signer.generate_keypair(AuthScheme::MlDsa87).expect("key 1");
         let (h2, _) = signer.generate_keypair(AuthScheme::MlDsa87).expect("key 2");
 
-        assert_ne!(h1, [0u8; 32]);
-        assert_ne!(h2, [0u8; 32]);
+        assert!(!h1.is_zero());
+        assert!(!h2.is_zero());
         assert_ne!(h1, h2);
         assert!(signer.contains_key(&h1));
         assert!(signer.contains_key(&h2));
