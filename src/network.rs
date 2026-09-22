@@ -1,3 +1,6 @@
+use core::fmt;
+use zeroize::Zeroize;
+
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
@@ -30,11 +33,28 @@ impl TransportPeerIdentity {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct HybridSharedSecret {
     pub pq_shared: Vec<u8>,
     pub classical_shared: Vec<u8>,
     pub transcript_hash: [u8; 32],
+}
+
+impl fmt::Debug for HybridSharedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HybridSharedSecret")
+            .field("pq_shared", &"<redacted>")
+            .field("classical_shared", &"<redacted>")
+            .field("transcript_hash", &self.transcript_hash)
+            .finish()
+    }
+}
+
+impl Drop for HybridSharedSecret {
+    fn drop(&mut self) {
+        self.pq_shared.zeroize();
+        self.classical_shared.zeroize();
+    }
 }
 
 /// Provider boundary for a reviewed ML-KEM-1024 implementation.
@@ -99,27 +119,40 @@ mod tests {
         assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
     }
 
-    #[test]
-    fn shared_secret_requires_exact_pq_size_and_nonzero_transcript() {
-        let valid = HybridSharedSecret {
+    fn valid_secret() -> HybridSharedSecret {
+        HybridSharedSecret {
             pq_shared: vec![1u8; ML_KEM_SHARED_SECRET_BYTES],
             classical_shared: vec![2u8; 32],
             transcript_hash: [3u8; 32],
-        };
+        }
+    }
+
+    #[test]
+    fn shared_secret_requires_exact_pq_size_and_nonzero_transcript() {
+        let valid = valid_secret();
         assert!(validate_shared_secret(TransportPolicy::Hybrid, &valid));
         assert!(validate_shared_secret(TransportPolicy::PqOnly, &valid));
 
-        let mut bad = valid.clone();
+        let mut bad = valid_secret();
         bad.pq_shared.push(0);
         assert!(!validate_shared_secret(TransportPolicy::PqOnly, &bad));
 
-        let mut bad = valid.clone();
+        let mut bad = valid_secret();
         bad.transcript_hash = [0u8; 32];
         assert!(!validate_shared_secret(TransportPolicy::PqOnly, &bad));
 
-        let mut bad = valid;
+        let mut bad = valid_secret();
         bad.classical_shared.clear();
         assert!(!validate_shared_secret(TransportPolicy::Hybrid, &bad));
         assert!(validate_shared_secret(TransportPolicy::PqOnly, &bad));
+    }
+
+    #[test]
+    fn shared_secret_debug_redacts_key_material() {
+        let secret = valid_secret();
+        let debug = format!("{secret:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("1, 1, 1"));
+        assert!(!debug.contains("2, 2, 2"));
     }
 }
