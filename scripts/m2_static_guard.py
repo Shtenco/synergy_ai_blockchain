@@ -199,3 +199,16 @@ require(
     and 'zeroize::Zeroize::zeroize(&mut shared);' in pq_ref,
     "ML-KEM entropy/shared temporary copies must be explicitly zeroized",
 )
+
+
+require(
+    '#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct PqSigningKeyHandle' not in pq
+    and 'impl Drop for PqSigningKeyHandle' in pq
+    and 'zeroize::Zeroize::zeroize(&mut self.0);' in pq,
+    "signing capability handles must remain non-Copy and zeroizing",
+)
+require(
+    '#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct MlKemSecretHandle' not in pq_ref
+    and 'impl Drop for MlKemSecretHandle' in pq_ref,
+    "ML-KEM capability handles must remain non-Copy and zeroizing",
+)
