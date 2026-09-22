@@ -22,6 +22,7 @@ pub struct PqEvmTransaction {
 pub struct TxValidationContext {
     pub expected_chain_id: u64,
     pub expected_nonce: u64,
+    pub required_policy: crate::pq::AuthPolicy,
     pub max_calldata_bytes: usize,
 }
 
@@ -30,6 +31,7 @@ pub enum TxError {
     ZeroChainId,
     WrongChainId,
     NonceMismatch,
+    PolicyMismatch,
     ZeroGasLimit,
     DataTooLarge,
     AuthorizationFailed,
@@ -125,6 +127,9 @@ impl PqEvmTransaction {
         if self.nonce != context.expected_nonce {
             return Err(TxError::NonceMismatch);
         }
+        if self.authorization.policy != context.required_policy {
+            return Err(TxError::PolicyMismatch);
+        }
         if self.gas_limit == 0 {
             return Err(TxError::ZeroGasLimit);
         }
@@ -212,6 +217,7 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
+                    required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
             ),
@@ -224,6 +230,7 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 1,
                     expected_nonce: 7,
+                    required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
             ),
@@ -236,10 +243,33 @@ mod tests {
                 TxValidationContext {
                     expected_chain_id: 8453,
                     expected_nonce: 8,
+                    required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
             ),
             Err(TxError::NonceMismatch)
+        );
+    }
+
+    #[test]
+    fn transaction_validation_rejects_weaker_or_different_policy() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    required_policy: AuthPolicy::Max,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::PolicyMismatch)
         );
     }
 
