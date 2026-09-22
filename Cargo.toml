@@ -11,5 +11,15 @@ path = "src/lib_v2.rs"
 
 [features]
 default = []
+reference-pq = [
+    "dep:ml-kem",
+    "dep:ml-dsa",
+    "dep:slh-dsa",
+    "dep:rand",
+]
 
 [dependencies]
+ml-kem = { version = "=0.3.2", optional = true, default-features = false, features = ["getrandom", "zeroize"] }
+ml-dsa = { version = "=0.1.1", optional = true, default-features = false, features = ["alloc", "getrandom", "zeroize"] }
+slh-dsa = { version = "=0.1.0", optional = true }
+rand = { version = "=0.8.5", optional = true }
