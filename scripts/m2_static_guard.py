@@ -185,9 +185,6 @@ require(
     "ML-KEM provider must return typed zeroizing shared secrets",
 )
 
-print("M2 static guard: PASS")
-
-
 require(
     '#[derive(PartialEq, Eq)]\npub struct MlKemSharedSecret' not in network
     and '#[derive(PartialEq, Eq)]\npub struct SecretBytes' not in network,
@@ -212,3 +209,12 @@ require(
     and 'impl Drop for MlKemSecretHandle' in pq_ref,
     "ML-KEM capability handles must remain non-Copy and zeroizing",
 )
+
+require(
+    "MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 65" in pq
+    and "MAX_CLASSICAL_SIGNATURE_BYTES: usize = 72" in pq
+    and "MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000" in pq,
+    "authorization evidence byte caps missing or changed",
+)
+
+print("M2 static guard: PASS")
