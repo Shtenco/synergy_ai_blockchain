@@ -329,3 +329,26 @@ The SPDX document is generated only from `cargo metadata --locked`; no package o
 This closes the **generator/preparation** side of M2.10d. The actual locked graph and SBOM remain pending until Cargo executes.
 
 Workflow run `35781369356` (run #210) again failed with `steps=[]`; therefore none of these generation steps executed.
+
+
+## Opaque signing custody and handle hardening
+
+M2 signing custody now uses an opaque-handle boundary.
+
+Commits:
+
+- `5338e1e4d6414609f4869fde5ebca4f678ddf82f` — introduces `ContextSignatureSigner`, `PqSigningKeyHandle` and envelope-derived signing;
+- `0cdd27fddb34aa7a70e841ee1519d2f997d62ab7` — adds zeroizing in-memory ML-DSA-87 signer;
+- `c91b55cf6931569052e10f4ccb382983878b7fb5` / `c8c41ca894ce0996847fd3a5542d14ad7217afc4` — bind the public key to the same opaque handle instead of accepting caller-supplied public-key bytes;
+- `fd983e1523ffb03664b10a5ab1ce5b29e751b836` — replaces restart-repeating counter handles with nonzero random 256-bit capability IDs and collision checks;
+- `23350f08f90e6e05ed0a1fa0693182a6a5209a91` — tests nonzero/unique live handles.
+
+The reference signer supports ML-DSA-87 only. It intentionally rejects SLH-DSA signing because the pinned stable `slh-dsa 0.1.0` lacks a signing-key zeroize-on-drop guarantee.
+
+ML-DSA signing-key lifecycle is therefore **complete at source level** for the reference provider, pending executable Rust confirmation.
+
+SLH-DSA verification remains implemented and ACVP-backed, while production signing custody remains blocked on either:
+
+- a reviewed zeroizing stable SLH backend;
+- an HSM/OS-keystore/remote-signer provider implementing the same opaque-handle interface;
+- or an explicitly reviewed dependency upgrade once Cargo execution is available.
