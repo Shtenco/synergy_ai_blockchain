@@ -114,11 +114,16 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let ek = MlKem1024EncapsulationKey::new(&encoded).ok()?;
 
         use rand::RngCore;
-        let mut randomness = [0u8; 32];
-        rand::rngs::OsRng.try_fill_bytes(&mut randomness).ok()?;
-        let randomness = B32::try_from(randomness.as_slice()).ok()?;
+        let mut randomness_bytes = [0u8; 32];
+        rand::rngs::OsRng
+            .try_fill_bytes(&mut randomness_bytes)
+            .ok()?;
+        let mut randomness = B32::try_from(randomness_bytes.as_slice()).ok()?;
+        zeroize::Zeroize::zeroize(&mut randomness_bytes);
 
         let (ciphertext, mut shared) = ek.encapsulate_deterministic(&randomness);
+        zeroize::Zeroize::zeroize(&mut randomness);
+
         let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
         zeroize::Zeroize::zeroize(&mut shared);
         Some((ciphertext.as_ref().to_vec(), wrapped))
