@@ -59,13 +59,16 @@ impl ReferenceMlKem1024Provider {
         use rand::RngCore;
 
         let mut rng = rand::rngs::OsRng;
-        let handle = loop {
+        let mut selected = None;
+        for _ in 0..32 {
             let mut candidate = [0u8; 32];
             rng.try_fill_bytes(&mut candidate).ok()?;
             if candidate != [0u8; 32] && !self.secrets.contains_key(&candidate) {
-                break candidate;
+                selected = Some(candidate);
+                break;
             }
-        };
+        }
+        let handle = selected?;
 
         if self.secrets.insert(handle, dk).is_some() {
             return None;
@@ -132,13 +135,14 @@ impl ReferencePqSigner {
         use rand::RngCore;
 
         let mut rng = rand::rngs::OsRng;
-        loop {
+        for _ in 0..32 {
             let mut handle = [0u8; 32];
             rng.try_fill_bytes(&mut handle).ok()?;
             if handle != [0u8; 32] && !self.ml_dsa_keys.contains_key(&handle) {
                 return Some(handle);
             }
         }
+        None
     }
 }
 
