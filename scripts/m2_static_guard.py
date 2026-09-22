@@ -152,7 +152,8 @@ require(
     "classical secret bytes must remain opaque and zeroize on drop",
 )
 require(
-    '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' in network
+    'pub struct HybridSharedSecret' in network
+    and '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' not in network
     and 'pq_shared: MlKemSharedSecret' in network
     and 'classical_shared: Option<SecretBytes>' in network,
     "HybridSharedSecret must contain typed secret wrappers and remain non-Clone",
@@ -180,3 +181,16 @@ require(
 )
 
 print("M2 static guard: PASS")
+
+
+require(
+    '#[derive(PartialEq, Eq)]\npub struct MlKemSharedSecret' not in network
+    and '#[derive(PartialEq, Eq)]\npub struct SecretBytes' not in network,
+    "secret-bearing transport types must not expose ordinary equality",
+)
+require(
+    'zeroize::Zeroize::zeroize(&mut randomness_bytes);' in pq_ref
+    and 'zeroize::Zeroize::zeroize(&mut randomness);' in pq_ref
+    and 'zeroize::Zeroize::zeroize(&mut shared);' in pq_ref,
+    "ML-KEM entropy/shared temporary copies must be explicitly zeroized",
+)
