@@ -5,8 +5,6 @@ use zeroize::Zeroize;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
-pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 512;
-pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096;
 pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 
@@ -32,17 +30,10 @@ impl TransportPeerIdentity {
             return Err("ML-KEM-1024 public key length mismatch");
         }
         if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
-            return Err("legacy KEX public key exceeds protocol size bound");
-        }
-        if matches!(policy, TransportPolicy::Hybrid) {
-            if self.legacy_kex_public_key.is_empty() {
-                return Err("hybrid transport requires legacy KEX public key");
-            }
-            if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
-                return Err("legacy KEX public key exceeds protocol maximum");
-            }
-        } else if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
             return Err("legacy KEX public key exceeds protocol maximum");
+        }
+        if matches!(policy, TransportPolicy::Hybrid) && self.legacy_kex_public_key.is_empty() {
+            return Err("hybrid transport requires legacy KEX public key");
         }
         Ok(())
     }
@@ -419,7 +410,7 @@ mod tests {
 
         let mut bad = valid_secret();
         bad.transcript_hash = [0u8; 32];
-        assert!(!validate_shared_secret(TransportPolicy::PqOnly, &bad));
+        assert!(!validate_shared_secret(TransportPolicy::Hybrid, &bad));
 
         let pq_only = HybridSharedSecret::from_transcript(
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
