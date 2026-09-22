@@ -154,7 +154,11 @@ impl PqEvmTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pq::{AuthPolicy, AuthScheme, ContextSignatureVerifier, SignatureEvidence};
+    use crate::pq::{
+        AuthPolicy, AuthScheme, ContextSignatureVerifier, SignatureEvidence,
+        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
 
     #[derive(Clone)]
     struct ExpectedTxVerifier {
@@ -190,13 +194,13 @@ mod tests {
                 evidence: vec![
                     SignatureEvidence {
                         scheme: AuthScheme::MlDsa87,
-                        public_key: vec![1],
-                        signature: vec![2],
+                        public_key: vec![1; ML_DSA_87_PUBLIC_KEY_BYTES],
+                        signature: vec![2; ML_DSA_87_SIGNATURE_BYTES],
                     },
                     SignatureEvidence {
                         scheme: AuthScheme::SlhDsaShake256s,
-                        public_key: vec![3],
-                        signature: vec![4],
+                        public_key: vec![3; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                        signature: vec![4; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
                     },
                 ],
             },
