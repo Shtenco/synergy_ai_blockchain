@@ -140,6 +140,20 @@ impl ContextSignatureSigner for ReferencePqSigner {
         Some((handle, public_key))
     }
 
+    fn public_key(
+        &self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+    ) -> Option<Vec<u8>> {
+        use ml_dsa::Keypair;
+
+        if scheme != AuthScheme::MlDsa87 {
+            return None;
+        }
+        let signing_key = self.ml_dsa_keys.get(secret_key_handle)?;
+        Some(signing_key.verifying_key().encode().to_vec())
+    }
+
     fn sign_with_context(
         &self,
         scheme: AuthScheme,
@@ -376,7 +390,6 @@ mod tests {
             &signer,
             AuthScheme::MlDsa87,
             &handle,
-            &public_key,
             AuthPolicy::PqOnly,
             &envelope,
         )
@@ -410,7 +423,6 @@ mod tests {
             &signer,
             AuthScheme::MlDsa87,
             &handle,
-            &public_key,
             AuthPolicy::PqOnly,
             &envelope,
         )
