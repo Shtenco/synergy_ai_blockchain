@@ -37,11 +37,11 @@ All version requirements use exact `=` pins in `Cargo.toml`.
 
 ## Source provenance
 
-Primary upstream repositories:
+Primary upstream repositories and exact release tags:
 
-- ML-KEM: `RustCrypto/KEMs`
-- ML-DSA: `RustCrypto/signatures`
-- SLH-DSA: `RustCrypto/signatures`
+- ML-KEM: `RustCrypto/KEMs`, tag `ml-kem/v0.3.2`, commit `440768245bba59784b504269cb3087a6c21af45c`
+- ML-DSA: `RustCrypto/signatures`, tag `ml-dsa/v0.1.1`, commit `f75d5b829948988f18d9463f286805fb9410bcdd`
+- SLH-DSA: `RustCrypto/signatures`, tag `slh-dsa/v0.1.0`, commit `81526ad2de17bf58295d97d796ff35bc991ab1b7`
 - external validation vectors: `usnistgov/ACVP-Server`, `C2SP/wycheproof`
 
 External vector source commits and blob SHAs are recorded separately in
@@ -102,3 +102,30 @@ transitive resolution           BLOCKED on Cargo.lock
 SBOM                            BLOCKED on locked resolution
 M2 overall                      YELLOW
 ```
+
+
+## Secret-key lifecycle evidence
+
+### ML-KEM-1024
+
+The provider no longer stores a raw 64-byte seed in its handle map. Commit `869cd817cbe2b29d86eba8706ecef3bba90f4cf0` stores the pinned crate's `ml_kem_1024::DecapsulationKey` directly.
+
+At upstream tag `ml-kem/v0.3.2`, commit `440768245bba59784b504269cb3087a6c21af45c`, `DecapsulationKey<P>` implements a `Drop` path under the enabled `zeroize` feature which zeroizes:
+
+- the PKE decryption key;
+- seed component `d` when present;
+- implicit-rejection secret `z`.
+
+The local lifecycle test added in commit `8a39fed2d52edeab8a419f4ef24fc5c33c29c146` requires `remove_key(handle)` to revoke the opaque handle and makes subsequent decapsulation fail closed.
+
+This is source-level zeroization/lifecycle evidence. It is still pending executable Rust confirmation.
+
+### ML-DSA-87
+
+The selected `ml-dsa = 0.1.1` dependency enables its `zeroize` feature. Upstream `SigningKey` has a zeroizing drop path for the seed and its expanded signing key. SYNERGY currently uses signing keys only inside reference tests; production signing-key custody is not yet implemented in the provider.
+
+### SLH-DSA-SHAKE-256s
+
+Pinned `slh-dsa = 0.1.0` does not expose an equivalent `zeroize` feature/drop guarantee for `SigningKey`. The current SYNERGY reference provider verifies SLH-DSA signatures and does not retain SLH private keys; tests generate ephemeral signing keys.
+
+Therefore full production SLH signing-key zeroization remains an explicit hardening item. It must not be claimed complete merely because verification is correct.
