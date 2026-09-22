@@ -21,6 +21,7 @@ for exact in (
     'ml-dsa = { version = "=0.1.1"',
     'slh-dsa = { version = "=0.1.0"',
     'rand = { version = "=0.8.5"',
+    'zeroize = { version = "=1.8.1"',
     'hex = "=0.4.3"',
     'serde = { version = "=1.0.228"',
     'serde_json = "=1.0.145"',
@@ -138,4 +139,21 @@ require(
     ".encapsulate()" not in pq_ref.split("#[cfg(test)]", 1)[0]
     and "encapsulate_deterministic" in pq_ref,
     "production ML-KEM encapsulation must remain fallible and deterministic-from-randomness",
+)
+
+
+require(
+    'impl Drop for HybridSharedSecret' in network
+    and 'self.pq_shared.zeroize();' in network
+    and 'self.classical_shared.zeroize();' in network,
+    "transport shared secrets must zeroize on drop",
+)
+require(
+    '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' in network,
+    "HybridSharedSecret must not derive Clone or raw Debug",
+)
+require(
+    'field("pq_shared", &"<redacted>")' in network
+    and 'field("classical_shared", &"<redacted>")' in network,
+    "HybridSharedSecret Debug must remain redacted",
 )
