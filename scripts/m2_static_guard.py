@@ -105,3 +105,13 @@ require(
     and "authorization expired" in pq,
     "authorization chain/epoch/nonce/expiry checks missing",
 )
+
+
+require(
+    "expected_domain" in pq and "expected_policy" in pq,
+    "generic authorization verifier must enforce expected domain and policy",
+)
+require(
+    "required_policy" in tx and "PolicyMismatch" in tx,
+    "transaction verifier must enforce caller-required policy",
+)
