@@ -59,11 +59,14 @@ pub use payment_funding::{
 };
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{
-    verify_envelope_authorization, AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope,
-    ContextSignatureVerifier, HybridAuthorization, SchemeRoutedVerifier, SignatureEvidence,
+    sign_envelope_evidence, verify_envelope_authorization, AuthPolicy, AuthScheme,
+    AuthorizationDomain, AuthorizationEnvelope, ContextSignatureSigner, ContextSignatureVerifier,
+    HybridAuthorization, PqSigningKeyHandle, SchemeRoutedVerifier, SignatureEvidence,
 };
 #[cfg(feature = "reference-pq")]
-pub use pq_reference::{MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier};
+pub use pq_reference::{
+    MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier, ReferencePqSigner,
+};
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
 pub use service_planes::{ServicePlaneCapacityEnvelope, ServicePlaneRoots};
 pub use storage::{
