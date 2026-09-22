@@ -188,3 +188,12 @@ The provider deliberately does not pass RNGs or signature trait objects across t
 ML-KEM 0.3.2 and ML-DSA 0.1.1 both require `module-lattice 0.2.3`; unexpected duplication of that family should be reviewed after lock generation.
 
 CI commit `0d80cf83b4b05604a04044db04a3e6c72b4e2fce` captures `cargo tree --locked --duplicates` and pins execution to Rust 1.85.0. Commit `f90ad93b3a2b527d4d91f592508be1e20230e9f8` adds formatting, compile and Clippy diagnostic gates before the mandatory tests.
+
+
+## Transport shared-secret zeroization
+
+The core now directly pins `zeroize = 1.8.1` (RustCrypto/utils tag `zeroize-v1.8.1`, commit `7050a8402b44344023cd8d27fe6e0e4055d6bdde`).
+
+That exact release has MSRV Rust 1.60 and, with its default/`alloc` support, implements `Zeroize` for `Vec<Z>`. Its implementation clears initialized elements, clears the vector length and zeroizes spare capacity.
+
+`HybridSharedSecret` uses that primitive in its `Drop` implementation for both post-quantum and classical shared-secret vectors. The type no longer derives `Clone` or raw `Debug`; its custom debug output redacts both secret fields.
