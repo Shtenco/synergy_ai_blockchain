@@ -151,3 +151,23 @@ Still mandatory:
 8. `cargo test --locked --all-targets --features reference-pq`.
 
 M2 remains YELLOW until those execution gates pass.
+
+
+## Additional protocol-boundary findings
+
+The continued static audit found that cryptographic correctness alone did not yet guarantee correct protocol use.
+
+Closed in this pass:
+
+- actual transaction validation previously used the no-context aggregate verifier; it now uses FIPS context;
+- transaction validation now requires expected chain ID, expected nonce and caller-required authorization policy;
+- generic authorization verification now requires expected chain/domain/policy/epoch/nonce and checks expiry against current time;
+- no-context aggregate verification is compiled only for tests;
+- PQ key/signature lengths are rejected structurally before provider dispatch;
+- ML-KEM convenience encapsulation using upstream `UnwrapErr(SysRng)` was replaced with a fallible randomness path;
+- KEM and signing handles are nominal capabilities rather than byte aliases;
+- transport identity/shared-secret lengths and transcript presence are checked;
+- rekey policy is bounded and invalid configurations fail closed;
+- ML-KEM/classical transport secrets are nominal zeroizing non-Clone wrappers.
+
+These changes reduce the remaining M2 uncertainty primarily to executable dependency resolution, compilation and runtime tests.
