@@ -220,7 +220,7 @@ impl PqSigningKeyHandle {
     }
 
     #[cfg(test)]
-    fn is_zero(&self) -> bool {
+    pub(crate) fn is_zero(&self) -> bool {
         self.0 == [0u8; 32]
     }
 }
