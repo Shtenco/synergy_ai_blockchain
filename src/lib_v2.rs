@@ -60,7 +60,8 @@ pub use payment_funding::{
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{
     sign_envelope_evidence, verify_envelope_authorization, AuthPolicy, AuthScheme,
-    AuthorizationDomain, AuthorizationEnvelope, ContextSignatureSigner, ContextSignatureVerifier,
+    AuthorizationDomain, AuthorizationEnvelope, AuthorizationValidationContext,
+    ContextSignatureSigner, ContextSignatureVerifier,
     HybridAuthorization, PqSigningKeyHandle, SchemeRoutedVerifier, SignatureEvidence,
 };
 #[cfg(feature = "reference-pq")]
