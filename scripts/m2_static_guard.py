@@ -12,6 +12,7 @@ cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
 pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
+tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -28,7 +29,10 @@ for exact in (
 
 # Context anti-downgrade invariants.
 require("pub fn verify_envelope_authorization" in pq, "envelope-bound verifier missing")
-require("pub(crate) fn verify_authorization<" in pq, "raw verifier must remain crate-internal")
+require(
+    '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
+    "no-context authorization helper must exist only in test builds",
+)
 require(
     "pub(crate) fn verify_authorization_with_context<" in pq,
     "raw context verifier must remain crate-internal",
@@ -67,3 +71,22 @@ require(".try_fill_bytes(" in prod, "fallible capability RNG missing")
 require("for _ in 0..32" in prod, "capability allocation attempts must remain bounded")
 
 print("M2 static guard: PASS")
+
+
+# Actual transaction path must be state-aware and FIPS-context aware.
+require(
+    "pub struct TxValidationContext" in tx,
+    "state-aware transaction validation context missing",
+)
+require(
+    "expected_chain_id" in tx and "expected_nonce" in tx,
+    "transaction replay guards missing",
+)
+require(
+    "verify_authorization_with_context(" in tx,
+    "transaction validation must use FIPS context verifier",
+)
+require(
+    "verify_authorization(verifier" not in tx,
+    "transaction validation regressed to no-context verifier",
+)
