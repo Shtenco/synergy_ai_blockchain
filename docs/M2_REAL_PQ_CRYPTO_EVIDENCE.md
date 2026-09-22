@@ -303,3 +303,29 @@ ML-KEM handle storage was hardened in commit `869cd817cbe2b29d86eba8706ecef3bba9
 Commit `8a39fed2d52edeab8a419f4ef24fc5c33c29c146` adds a local lifecycle test requiring key removal to revoke the opaque handle and make subsequent decapsulation fail closed.
 
 This partially advances the remaining zeroization gate. It does **not** close production key custody for every algorithm: SLH-DSA 0.1.0 signing keys do not carry an equivalent zeroize-on-drop guarantee, and the current provider does not retain SLH private keys.
+
+
+## Locked dependency graph and SPDX preparation
+
+M2.10d now has an executable generation path without fabricating transitive data.
+
+Commits:
+
+- `4feeddfa8b301cd7b3fe7f615597676afefa7658` — standard-library SPDX 2.3 generator from Cargo metadata;
+- `26ddbadc653d6fc5c3fd4e7974498ccb18c7e009` — reproducible timestamp/namespace derivation using `SOURCE_DATE_EPOCH` and metadata SHA-256;
+- `e65880ed11a3399605a9350ef7f831d5b24990ca` — CI emits locked metadata, locked dependency tree and SPDX artifact.
+
+When a runner is actually provisioned, CI will produce:
+
+```text
+Cargo.lock
+m2-cargo-metadata.json
+m2-cargo-tree.txt
+m2-spdx.json
+```
+
+The SPDX document is generated only from `cargo metadata --locked`; no package or dependency edge is invented by source code. Its document namespace is bound to the SHA-256 of the exact metadata input, while its creation time is derived from the git commit timestamp through `SOURCE_DATE_EPOCH`.
+
+This closes the **generator/preparation** side of M2.10d. The actual locked graph and SBOM remain pending until Cargo executes.
+
+Workflow run `35781369356` (run #210) again failed with `steps=[]`; therefore none of these generation steps executed.
