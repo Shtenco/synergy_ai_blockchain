@@ -33,7 +33,6 @@ impl TransportPeerIdentity {
     }
 }
 
-#[derive(PartialEq, Eq)]
 pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);
 
 impl MlKemSharedSecret {
@@ -59,7 +58,6 @@ impl Drop for MlKemSharedSecret {
     }
 }
 
-#[derive(PartialEq, Eq)]
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
@@ -88,7 +86,6 @@ impl Drop for SecretBytes {
     }
 }
 
-#[derive(PartialEq, Eq)]
 pub struct HybridSharedSecret {
     pq_shared: MlKemSharedSecret,
     classical_shared: Option<SecretBytes>,
