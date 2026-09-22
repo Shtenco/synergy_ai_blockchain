@@ -77,6 +77,74 @@ struct DsaCase {
     reason: String,
 }
 
+
+#[derive(Debug, Deserialize)]
+struct SlhFixture {
+    provenance: SlhProvenance,
+    group: SlhGroup,
+    tests: Vec<SlhCase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlhProvenance {
+    standard: String,
+    algorithm: String,
+    source_repository: String,
+    source_commit: String,
+    source_prompt_path: String,
+    source_prompt_blob_sha: String,
+    source_expected_results_path: String,
+    source_expected_results_blob_sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct SlhGroup {
+    tgId: u64,
+    testType: String,
+    parameterSet: String,
+    signatureInterface: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct SlhCase {
+    tcId: u64,
+    testPassed: bool,
+    pk: String,
+    message: String,
+    signature: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WycheproofKemFixture {
+    provenance: WycheproofProvenance,
+    tests: Vec<WycheproofKemCase>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct WycheproofProvenance {
+    suite: String,
+    algorithm: String,
+    parameterSet: String,
+    source_repository: String,
+    source_commit: String,
+    source_path: String,
+    source_blob_sha: String,
+    source_schema: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct WycheproofKemCase {
+    tcId: u64,
+    comment: String,
+    c: String,
+    result: String,
+    flags: Vec<String>,
+}
+
 fn decode_hex(input: &str) -> Vec<u8> {
     hex::decode(input).expect("fixture must contain valid hex")
 }
@@ -198,4 +266,116 @@ fn fixture_provenance_is_pinned_to_expected_upstream_blobs() {
     );
     assert_eq!(dsa.provenance.source_repository, "RustCrypto/signatures");
     assert_eq!(dsa.provenance.source_path, "ml-dsa/tests/sig-ver.json");
+}
+
+#[test]
+fn slh_dsa_shake_256s_fips205_acvp_valid_and_invalid_cases_are_enforced() {
+    let fixture: SlhFixture =
+        serde_json::from_str(include_str!("vectors/slh-dsa-shake-256s-acvp-subset.json"))
+            .expect("SLH-DSA FIPS 205 ACVP fixture JSON");
+
+    assert_eq!(fixture.provenance.standard, "FIPS 205");
+    assert_eq!(fixture.provenance.algorithm, "SLH-DSA-SHAKE-256s");
+    assert_eq!(fixture.provenance.source_repository, "usnistgov/ACVP-Server");
+    assert_eq!(
+        fixture.provenance.source_commit,
+        "975de31eb83d87039ec88934fdc47d8c312b892d"
+    );
+    assert_eq!(
+        fixture.provenance.source_prompt_blob_sha,
+        "85134f8b1fc3c6cd51378f6cf9e451efc7728e59"
+    );
+    assert_eq!(
+        fixture.provenance.source_expected_results_blob_sha,
+        "a04d2c683ba2a2cba2028e0922b137d30166a9cd"
+    );
+    assert_eq!(
+        fixture.provenance.source_prompt_path,
+        "gen-val/json-files/SLH-DSA-sigVer-FIPS205/prompt.json"
+    );
+    assert_eq!(
+        fixture.provenance.source_expected_results_path,
+        "gen-val/json-files/SLH-DSA-sigVer-FIPS205/expectedResults.json"
+    );
+    assert_eq!(fixture.group.tgId, 36);
+    assert_eq!(fixture.group.testType, "AFT");
+    assert_eq!(fixture.group.parameterSet, "SLH-DSA-SHAKE-256s");
+    assert_eq!(fixture.group.signatureInterface, "internal");
+
+    let verifier = ReferencePqSignatureVerifier;
+
+    let valid = fixture
+        .tests
+        .iter()
+        .find(|case| case.tcId == 491)
+        .expect("FIPS 205 valid tcId=491");
+    assert!(valid.testPassed);
+    assert!(verifier.verify(
+        AuthScheme::SlhDsaShake256s,
+        &decode_hex(&valid.pk),
+        &decode_hex(&valid.message),
+        &decode_hex(&valid.signature),
+    ));
+
+    let invalid = fixture
+        .tests
+        .iter()
+        .find(|case| case.tcId == 492)
+        .expect("FIPS 205 invalid tcId=492");
+    assert!(!invalid.testPassed);
+    assert!(!verifier.verify(
+        AuthScheme::SlhDsaShake256s,
+        &decode_hex(&invalid.pk),
+        &decode_hex(&invalid.message),
+        &decode_hex(&invalid.signature),
+    ));
+}
+
+#[test]
+fn ml_kem_1024_wycheproof_rejects_incorrect_ciphertext_lengths() {
+    use synergy_pq_evm_core::ReferenceMlKem1024Provider;
+    use synergy_pq_evm_core::network::MlKem1024Provider;
+
+    let fixture: WycheproofKemFixture =
+        serde_json::from_str(include_str!("vectors/ml-kem-1024-wycheproof-negative-subset.json"))
+            .expect("ML-KEM Wycheproof fixture JSON");
+
+    assert_eq!(fixture.provenance.suite, "Wycheproof");
+    assert_eq!(fixture.provenance.algorithm, "ML-KEM");
+    assert_eq!(fixture.provenance.parameterSet, "ML-KEM-1024");
+    assert_eq!(fixture.provenance.source_repository, "C2SP/wycheproof");
+    assert_eq!(
+        fixture.provenance.source_commit,
+        "3fa63dd0344abb611f1fb1d77e119938603ea230"
+    );
+    assert_eq!(
+        fixture.provenance.source_path,
+        "testvectors_v1/mlkem_1024_semi_expanded_decaps_test.json"
+    );
+    assert_eq!(
+        fixture.provenance.source_blob_sha,
+        "d67b741ff0e0357964a045c8faa41b067bea4b49"
+    );
+    assert_eq!(
+        fixture.provenance.source_schema,
+        "mlkem_semi_expanded_decaps_test_schema.json"
+    );
+
+    let mut provider = ReferenceMlKem1024Provider::new();
+    let (handle, _public_key) = provider.generate_keypair();
+
+    assert_eq!(fixture.tests.len(), 2);
+    for case in &fixture.tests {
+        assert_eq!(case.result, "invalid");
+        assert!(case.flags.iter().any(|flag| flag == "IncorrectCiphertextLength"));
+        assert!(case.comment.contains("Ciphertext"));
+        assert!(matches!(case.tcId, 2 | 3));
+        assert!(
+            provider
+                .decapsulate(&handle, &decode_hex(&case.c))
+                .is_none(),
+            "Wycheproof tcId={} must fail closed before ML-KEM decapsulation",
+            case.tcId
+        );
+    }
 }
