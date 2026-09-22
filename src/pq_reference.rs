@@ -118,9 +118,10 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         rand::rngs::OsRng.try_fill_bytes(&mut randomness).ok()?;
         let randomness = B32::try_from(randomness.as_slice()).ok()?;
 
-        let (ciphertext, shared) = ek.encapsulate_deterministic(&randomness);
-        let shared = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
-        Some((ciphertext.as_ref().to_vec(), shared))
+        let (ciphertext, mut shared) = ek.encapsulate_deterministic(&randomness);
+        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
+        zeroize::Zeroize::zeroize(&mut shared);
+        Some((ciphertext.as_ref().to_vec(), wrapped))
     }
 
     fn decapsulate(
@@ -133,8 +134,10 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         }
         let dk = self.secrets.get(secret_key_handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
-        let shared = dk.decapsulate(&ciphertext);
-        MlKemSharedSecret::try_from_slice(shared.as_ref())
+        let mut shared = dk.decapsulate(&ciphertext);
+        let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref())?;
+        zeroize::Zeroize::zeroize(&mut shared);
+        Some(wrapped)
     }
 }
 
@@ -402,7 +405,7 @@ mod tests {
         let (ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("decapsulation");
 
-        assert_eq!(sender_shared, receiver_shared);
+        assert_eq!(sender_shared.as_bytes(), receiver_shared.as_bytes());
         assert_eq!(sender_shared.as_bytes().len(), 32);
     }
 
