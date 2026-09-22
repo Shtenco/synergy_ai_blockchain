@@ -239,4 +239,12 @@ require(
     "legacy KEX/classical secret DoS bounds missing",
 )
 
+require(
+    "transcript_hash: [u8; 32]" in network
+    and "pub transcript_hash: [u8; 32]" not in network
+    and "pub fn transcript_hash(&self) -> &[u8; 32]" in network
+    and "if transcript_hash == [0u8; 32]" in network,
+    "transport transcript commitment must be immutable and fail closed",
+)
+
 print("M2 static guard: PASS")
