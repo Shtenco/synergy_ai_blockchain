@@ -67,6 +67,8 @@ pub struct AuthorizationEnvelope {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuthorizationValidationContext {
     pub expected_chain_id: [u8; 32],
+    pub expected_domain: AuthorizationDomain,
+    pub expected_policy: AuthPolicy,
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub now: u64,
@@ -90,6 +92,9 @@ impl AuthorizationEnvelope {
         self.validate()?;
         if self.chain_id != context.expected_chain_id {
             return Err("authorization chain mismatch");
+        }
+        if self.domain != context.expected_domain {
+            return Err("authorization domain mismatch");
         }
         if self.epoch != context.expected_epoch {
             return Err("authorization epoch mismatch");
@@ -428,7 +433,9 @@ pub fn verify_envelope_authorization<V: ContextSignatureVerifier>(
     envelope: &AuthorizationEnvelope,
     validation: &AuthorizationValidationContext,
 ) -> bool {
-    if envelope.validate_in_context(validation).is_err() {
+    if envelope.validate_in_context(validation).is_err()
+        || authorization.policy != validation.expected_policy
+    {
         return false;
     }
 
@@ -741,6 +748,8 @@ mod tests {
 
         let validation = AuthorizationValidationContext {
             expected_chain_id: envelope.chain_id,
+            expected_domain: envelope.domain,
+            expected_policy: auth.policy,
             expected_epoch: envelope.epoch,
             expected_nonce: envelope.nonce,
             now: envelope.expires_at,
@@ -775,6 +784,8 @@ mod tests {
 
         let ok = AuthorizationValidationContext {
             expected_chain_id: [0x91; 32],
+            expected_domain: AuthorizationDomain::Governance,
+            expected_policy: AuthPolicy::PqOnly,
             expected_epoch: 12,
             expected_nonce: 44,
             now: 1_000,
@@ -783,6 +794,10 @@ mod tests {
 
         let mut bad = ok;
         bad.expected_chain_id = [0x90; 32];
+        assert!(envelope.validate_in_context(&bad).is_err());
+
+        let mut bad = ok;
+        bad.expected_domain = AuthorizationDomain::Transaction;
         assert!(envelope.validate_in_context(&bad).is_err());
 
         let mut bad = ok;
