@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +20,13 @@ def main() -> int:
     metadata_path = Path(sys.argv[1])
     output_path = Path(sys.argv[2])
 
-    data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata_bytes = metadata_path.read_bytes()
+    data = json.loads(metadata_bytes.decode("utf-8"))
+    metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()
+
+    epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
+    created = datetime.fromtimestamp(epoch, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
     packages = data.get("packages", [])
     resolve = data.get("resolve") or {}
     nodes = resolve.get("nodes", [])
@@ -35,9 +43,9 @@ def main() -> int:
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "SYNERGY M2 locked Cargo dependency SBOM",
-        "documentNamespace": "https://synergy.local/spdx/m2/cargo-metadata-locked",
+        "documentNamespace": f"https://synergy.local/spdx/m2/cargo-metadata-{metadata_sha256}",
         "creationInfo": {
-            "created": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "created": created,
             "creators": ["Tool: scripts/m2_spdx_from_cargo_metadata.py"],
         },
         "packages": [],
