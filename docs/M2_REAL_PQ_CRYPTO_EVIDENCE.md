@@ -129,7 +129,14 @@ The authorization succeeds only when all three lanes validate. Corrupting only t
 - SPHINCS+ commit `eccdc43a99e194f52d5ef0e4030ef4dd1e31828b` for the documented SLH-DSA KAT lineage;
 - exact target parameter sets and import rules.
 
-This is provenance preparation, not a claim that the local external-vector subset has already executed.
+The external evidence is now stronger than provenance-only preparation:
+
+- ML-KEM-1024 ACVP deterministic encapsulation fixture is wired to exact ciphertext/shared-key assertions;
+- ML-DSA-87 ACVP valid/invalid verification cases are wired to the real verifier;
+- SLH-DSA-SHAKE-256s FIPS 205 ACVP `tgId=36`, valid `tcId=491` and invalid `tcId=492`, are wired to the real verifier;
+- a pinned Wycheproof ML-KEM-1024 negative subset rejects 1567-byte and 1569-byte ciphertexts at the provider boundary.
+
+These are executable tests in source. They are **not yet execution evidence** until Rust actually runs them.
 
 ## CI gate
 
@@ -142,7 +149,9 @@ cargo test --all-targets --features reference-pq
 
 ### Current infrastructure status
 
-As of 2026-09-22, GitHub Actions runs for this branch terminate before any step starts:
+As of 2026-09-22, the latest post-vector commit `fb3b3e86fa281f542be0d79fe6a7ae9437821c31` triggered workflow run `35764263197`. The sole job `rust-core` concluded `failure`, but GitHub returned no executed steps and no job log blob. Therefore this is still an infrastructure scheduling failure, not a Rust test failure.
+
+GitHub Actions runs for this branch terminate before any step starts:
 
 - runner_id = 0
 - runner_name = empty
@@ -161,9 +170,9 @@ This is tracked as an infrastructure validation blocker, not proof of a source-c
 - all default-feature tests green;
 - all `reference-pq` tests green;
 - official/traceable known-answer vectors committed or reproducibly fetched in CI;
-- ML-KEM negative/Wycheproof vector subset;
-- ML-DSA known-answer and invalid-signature vector subset;
-- SLH-DSA ACVP/KAT subset;
+- ~~ML-KEM negative/Wycheproof vector subset~~ — committed and wired to tests; execution pending;
+- ~~ML-DSA known-answer and invalid-signature vector subset~~ — committed and wired to tests; execution pending;
+- ~~SLH-DSA ACVP/KAT subset~~ — FIPS 205 valid/invalid subset committed and wired to tests; execution pending;
 - explicit context/domain test vectors;
 - dependency lockfile committed;
 - SBOM/dependency provenance record;
