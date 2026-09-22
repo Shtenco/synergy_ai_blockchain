@@ -211,3 +211,32 @@ The transport transcript commitment directly pins:
 The dependency is used without default features for SHA-256 transcript commitment. It shares the stable SHA-2/digest generation already present in the SLH-DSA dependency family rather than introducing a novel hash construction.
 
 `TransportTranscript::commitment` domain-separates `SYNERGY/PQ-TRANSPORT/V1`, binds transport policy, initiator/responder role order, both node identities and advertised KEX keys, ML-KEM ciphertext and the optional classical transcript commitment. `HybridSharedSecret` can only be constructed from a validated transcript and retains the bound transport policy.
+
+
+## Static pre-Cargo audit additions
+
+The pre-Cargo audit now also pins the transport transcript hash primitive:
+
+- SHA-256: `RustCrypto/hashes`, tag `sha2-v0.10.9`, commit `82c36a428f8d6f05f3bfccdedb243e9d1f85359d`.
+
+The crate uses the exact dependency:
+
+```text
+sha2 = =0.10.9
+```
+
+The M2 static guard now checks the following before any Cargo step can run:
+
+- exact direct dependency pins and Rust 1.85 MSRV;
+- no public no-context PQ authorization downgrade path;
+- nominal non-Copy zeroizing capability handles;
+- exact ML-KEM / ML-DSA / SLH-DSA serialized sizes;
+- fallible OS randomness and bounded handle-allocation attempts;
+- transaction chain / nonce / authorization epoch / expiry / policy binding;
+- typed zeroizing transport secrets with redacted Debug;
+- canonical SHA-256 transport transcript commitment;
+- transport policy binding and rekey limits;
+- classical authorization / transport byte caps;
+- immutable transcript commitment after derivation.
+
+A bug in the guard itself was found during this audit: it originally split `pq_reference.rs` at the first `#[cfg(test)]` attribute, which occurred on a small helper before the production provider. Commit `cfc2b89527199b8fd09012e29574ea1225af10f3` changes the boundary to the actual `#[cfg(test)] mod tests` module, so the entire production provider is now inspected.
