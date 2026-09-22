@@ -143,17 +143,40 @@ require(
 
 
 require(
-    'impl Drop for HybridSharedSecret' in network
-    and 'self.pq_shared.zeroize();' in network
-    and 'self.classical_shared.zeroize();' in network,
-    "transport shared secrets must zeroize on drop",
+    'pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);' in network
+    and 'impl Drop for MlKemSharedSecret' in network
+    and 'self.0.zeroize();' in network,
+    "ML-KEM shared secret must remain opaque and zeroize on drop",
 )
 require(
-    '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' in network,
-    "HybridSharedSecret must not derive Clone or raw Debug",
+    'pub struct SecretBytes(Vec<u8>);' in network
+    and 'impl Drop for SecretBytes' in network,
+    "classical secret bytes must remain opaque and zeroize on drop",
+)
+require(
+    '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' in network
+    and 'pq_shared: MlKemSharedSecret' in network
+    and 'classical_shared: Option<SecretBytes>' in network,
+    "HybridSharedSecret must contain typed secret wrappers and remain non-Clone",
 )
 require(
     'field("pq_shared", &"<redacted>")' in network
-    and 'field("classical_shared", &"<redacted>")' in network,
+    and 'field("classical_shared", &"<redacted>")' in network
+    and 'MlKemSharedSecret(<redacted>)' in network
+    and 'SecretBytes(<redacted>)' in network,
     "HybridSharedSecret Debug must remain redacted",
+)
+
+
+require(
+    "MAX_REKEY_MESSAGES: u64 = 1 << 20" in network
+    and "MAX_REKEY_SECONDS: u64 = 300" in network
+    and "pub fn should_rekey" in network
+    and "self.validate().is_err()" in network,
+    "transport rekey policy must remain bounded and fail closed",
+)
+require(
+    "Option<(Vec<u8>, MlKemSharedSecret)>" in network
+    and "Option<MlKemSharedSecret>" in network,
+    "ML-KEM provider must return typed zeroizing shared secrets",
 )
