@@ -138,6 +138,37 @@ The external evidence is now stronger than provenance-only preparation:
 
 These are executable tests in source. They are **not yet execution evidence** until Rust actually runs them.
 
+### 10. FIPS 204/205 cryptographic context separation
+
+The protocol now has a second, cryptographic domain-separation layer in addition to the canonical signed message.
+
+`AuthorizationEnvelope::fips_signature_context(policy)` derives a bounded context from:
+
+- protocol/version prefix `SYNERGY/PQ-FIPS-CONTEXT/V1`;
+- chain ID;
+- authorization domain;
+- authorization policy.
+
+Epoch, nonce, expiry and payload commitment remain in the canonical message, so the FIPS context is a stable protocol namespace rather than a per-signature transcript.
+
+A separate `ContextSignatureVerifier` boundary ensures:
+
+- ML-DSA-87 uses FIPS 204 `verify_with_context`;
+- SLH-DSA-SHAKE-256s uses FIPS 205 `try_verify_with_context`;
+- context length greater than 255 bytes fails closed;
+- Secp256k1 / Ed25519 lanes are not reinterpreted as having FIPS context semantics;
+- scheme routing still prevents a PQ backend from satisfying a classical lane.
+
+Reference-provider tests now require correct-context acceptance, wrong-context rejection, tampered-message rejection, 256-byte-context rejection, and a dual-PQ `PQ_ONLY` authorization where both PQ lanes share the exact derived context. Changing domain or policy changes the context and must invalidate the authorization.
+
+Implementation/test-definition commits:
+- `db4c8b79fbc22c03b7e843890814e1f93b469588`
+- `c08296bd8c1c1ffd628daecf2047321936a9d77d`
+- `2de22b4fbcf6efca67da559beda790ea0c5ec318`
+- `ee87ec4f3c27f69e57e2ac7c8629fa40085b4b61`
+
+This closes M2.10b at implementation/test-definition level. It is not execution evidence until the Rust test commands actually run.
+
 ## CI gate
 
 The workflow now contains two intended test passes:
@@ -173,7 +204,7 @@ This is tracked as an infrastructure validation blocker, not proof of a source-c
 - ~~ML-KEM negative/Wycheproof vector subset~~ — committed and wired to tests; execution pending;
 - ~~ML-DSA known-answer and invalid-signature vector subset~~ — committed and wired to tests; execution pending;
 - ~~SLH-DSA ACVP/KAT subset~~ — FIPS 205 valid/invalid subset committed and wired to tests; execution pending;
-- explicit context/domain test vectors;
+- ~~explicit context/domain separation tests~~ — implementation and real-provider tests committed; execution pending;
 - dependency lockfile committed;
 - SBOM/dependency provenance record;
 - secret-key zeroization evidence for production-selected backend;
