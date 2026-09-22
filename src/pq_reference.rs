@@ -459,7 +459,7 @@ mod tests {
         let wrong_shared = provider
             .decapsulate(&wrong_handle, &ciphertext)
             .expect("ML-KEM implicit rejection");
-        assert_ne!(wrong_shared, sender_shared);
+        assert_ne!(wrong_shared.as_bytes(), sender_shared.as_bytes());
     }
 
     #[test]
@@ -475,7 +475,7 @@ mod tests {
         let (mut ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
         ciphertext[0] ^= 0x01;
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
-        assert_ne!(sender_shared, receiver_shared);
+        assert_ne!(sender_shared.as_bytes(), receiver_shared.as_bytes());
     }
 
     #[test]
