@@ -9,7 +9,10 @@
 //! and keep the same opaque-handle boundary.
 
 use crate::network::MlKem1024Provider;
-use crate::pq::{AuthScheme, ContextSignatureVerifier, SignatureVerifier};
+use crate::pq::{
+    AuthScheme, ContextSignatureSigner, ContextSignatureVerifier, PqSigningKeyHandle,
+    SignatureVerifier,
+};
 use std::collections::BTreeMap;
 
 use ml_kem::{
@@ -80,6 +83,93 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let dk = self.secrets.get(&handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
         Some(dk.decapsulate(&ciphertext).as_ref().to_vec())
+    }
+}
+
+
+/// Reference ML-DSA-87 signer with opaque key handles.
+///
+/// This signer intentionally supports ML-DSA only. The pinned stable
+/// `slh-dsa = 0.1.0` dependency does not provide zeroize-on-drop for signing
+/// keys, so SLH signing remains verification-only until a reviewed zeroizing
+/// backend (or HSM/keystore integration) is selected.
+#[derive(Default)]
+pub struct ReferencePqSigner {
+    next_handle: u64,
+    ml_dsa_keys: BTreeMap<PqSigningKeyHandle, ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
+}
+
+impl ReferencePqSigner {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn contains_key(&self, handle: &PqSigningKeyHandle) -> bool {
+        self.ml_dsa_keys.contains_key(handle)
+    }
+
+    fn allocate_handle(&mut self) -> PqSigningKeyHandle {
+        self.next_handle = self
+            .next_handle
+            .checked_add(1)
+            .expect("PQ signing handle counter overflow");
+        let mut handle = [0u8; 32];
+        handle[..8].copy_from_slice(&self.next_handle.to_be_bytes());
+        handle[8..16].copy_from_slice(b"MLDSA87\0");
+        handle
+    }
+}
+
+impl ContextSignatureSigner for ReferencePqSigner {
+    fn generate_keypair(
+        &mut self,
+        scheme: AuthScheme,
+    ) -> Option<(PqSigningKeyHandle, Vec<u8>)> {
+        use ml_dsa::{Generate, Keypair, MlDsa87, SigningKey};
+
+        if scheme != AuthScheme::MlDsa87 {
+            return None;
+        }
+
+        let signing_key = SigningKey::<MlDsa87>::generate();
+        let public_key = signing_key.verifying_key().encode().to_vec();
+        let handle = self.allocate_handle();
+        let replaced = self.ml_dsa_keys.insert(handle, signing_key);
+        debug_assert!(replaced.is_none());
+
+        Some((handle, public_key))
+    }
+
+    fn sign_with_context(
+        &self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+        message: &[u8],
+        context: &[u8],
+    ) -> Option<Vec<u8>> {
+        use ml_dsa::SignatureEncoding;
+
+        if scheme != AuthScheme::MlDsa87 || context.len() > 255 {
+            return None;
+        }
+
+        let signing_key = self.ml_dsa_keys.get(secret_key_handle)?;
+        signing_key
+            .expanded_key()
+            .sign_deterministic(message, context)
+            .ok()
+            .map(|signature| signature.to_vec())
+    }
+
+    fn remove_key(
+        &mut self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+    ) -> bool {
+        if scheme != AuthScheme::MlDsa87 {
+            return false;
+        }
+        self.ml_dsa_keys.remove(secret_key_handle).is_some()
     }
 }
 
@@ -261,6 +351,79 @@ mod tests {
         ciphertext[0] ^= 0x01;
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
         assert_ne!(sender_shared, receiver_shared);
+    }
+
+    #[test]
+    fn ml_dsa_reference_signer_uses_opaque_handle_and_context() {
+        use crate::pq::{ContextSignatureSigner, sign_envelope_evidence, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope};
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x81; 32],
+            domain: AuthorizationDomain::ValidatorVote,
+            epoch: 3,
+            nonce: 7,
+            expires_at: 10_000,
+            payload_commitment: [0x82; 32],
+        };
+
+        let mut signer = ReferencePqSigner::new();
+        let (handle, public_key) = signer
+            .generate_keypair(AuthScheme::MlDsa87)
+            .expect("ML-DSA keypair");
+        assert!(signer.contains_key(&handle));
+
+        let evidence = sign_envelope_evidence(
+            &signer,
+            AuthScheme::MlDsa87,
+            &handle,
+            &public_key,
+            AuthPolicy::PqOnly,
+            &envelope,
+        )
+        .expect("ML-DSA envelope evidence");
+
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &evidence.public_key,
+            &message,
+            &context,
+            &evidence.signature,
+        ));
+
+        let mut wrong_domain = envelope.clone();
+        wrong_domain.domain = AuthorizationDomain::Governance;
+        let wrong_context = wrong_domain.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        assert!(!verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            &evidence.public_key,
+            &message,
+            &wrong_context,
+            &evidence.signature,
+        ));
+
+        assert!(signer.remove_key(AuthScheme::MlDsa87, &handle));
+        assert!(!signer.contains_key(&handle));
+        assert!(sign_envelope_evidence(
+            &signer,
+            AuthScheme::MlDsa87,
+            &handle,
+            &public_key,
+            AuthPolicy::PqOnly,
+            &envelope,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn reference_signer_rejects_slh_until_zeroizing_backend_exists() {
+        use crate::pq::ContextSignatureSigner;
+
+        let mut signer = ReferencePqSigner::new();
+        assert!(signer.generate_keypair(AuthScheme::SlhDsaShake256s).is_none());
+        assert!(signer.generate_keypair(AuthScheme::Secp256k1).is_none());
     }
 
     #[test]
