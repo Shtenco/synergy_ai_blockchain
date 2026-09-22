@@ -348,6 +348,7 @@ impl<C: SignatureVerifier, P: ContextSignatureVerifier> ContextSignatureVerifier
     }
 }
 
+#[cfg(test)]
 pub(crate) fn verify_authorization<V: SignatureVerifier>(
     verifier: &V,
     authorization: &HybridAuthorization,
