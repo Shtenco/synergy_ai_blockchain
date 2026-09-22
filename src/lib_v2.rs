@@ -15,6 +15,8 @@ pub mod nexus;
 pub mod payment_funding;
 pub mod payments;
 pub mod pq;
+#[cfg(feature = "reference-pq")]
+pub mod pq_reference;
 pub mod scheduling;
 pub mod service_planes;
 pub mod storage;
@@ -57,6 +59,8 @@ pub use payment_funding::{
 };
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{AuthPolicy, AuthScheme, HybridAuthorization};
+#[cfg(feature = "reference-pq")]
+pub use pq_reference::{MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier};
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
 pub use service_planes::{ServicePlaneCapacityEnvelope, ServicePlaneRoots};
 pub use storage::{
