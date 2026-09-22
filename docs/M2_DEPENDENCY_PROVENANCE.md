@@ -152,3 +152,21 @@ At exact upstream tag `ml-dsa/v0.1.1`, commit `f75d5b829948988f18d9463f286805fb9
 Therefore ML-DSA signing-key lifecycle is now closed at source level for the reference in-memory provider, pending executable tests.
 
 The same reference signer intentionally refuses `SLH-DSA-SHAKE-256s`. Stable `slh-dsa/v0.1.0` lacks a zeroize-on-drop signing-key guarantee. A newer `slh-dsa/v0.2.0-rc.5` has such support, but M2 does not silently upgrade a pinned stable cryptographic dependency to a release candidate without executable Cargo compatibility testing. Production SLH signing remains delegated to a future zeroizing keystore/HSM/provider boundary.
+
+
+## Locked SBOM generation path
+
+The branch now includes `scripts/m2_spdx_from_cargo_metadata.py`, a dependency-free SPDX 2.3 JSON generator.
+
+Inputs are deliberately restricted to the real locked resolver output:
+
+```bash
+cargo metadata --locked --format-version 1 > m2-cargo-metadata.json
+cargo tree --locked --edges normal,build,dev > m2-cargo-tree.txt
+SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
+  python3 scripts/m2_spdx_from_cargo_metadata.py \
+    m2-cargo-metadata.json \
+    m2-spdx.json
+```
+
+The generator enumerates Cargo-resolved packages and `DEPENDS_ON` relationships. It cannot close M2.10d in the absence of a real `Cargo.lock` and successful `cargo metadata --locked`.
