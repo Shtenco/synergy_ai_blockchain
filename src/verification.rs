@@ -45,6 +45,8 @@ impl VerificationChallenge {
 pub struct VerifierReceipt {
     pub challenge_id: [u8; 32],
     pub verifier_id: [u8; 32],
+    /// Zero is allowed only for an inconclusive verifier that could not complete
+    /// deterministic recomputation before the challenge deadline.
     pub recomputed_output_commitment: [u8; 32],
     pub trace_commitment: [u8; 32],
     pub signature_commitment: [u8; 32],
@@ -58,7 +60,6 @@ impl VerifierReceipt {
             return Err("receipt/challenge mismatch");
         }
         if self.verifier_id == [0; 32]
-            || self.recomputed_output_commitment == [0; 32]
             || self.trace_commitment == [0; 32]
             || self.signature_commitment == [0; 32]
         {
@@ -67,13 +68,27 @@ impl VerifierReceipt {
         if self.completed_at < challenge.opened_at || self.completed_at > challenge.closes_at {
             return Err("verifier receipt outside challenge window");
         }
-        let expected = if self.recomputed_output_commitment == challenge.challenged_output_commitment {
-            VerificationVerdict::Match
-        } else {
-            VerificationVerdict::Mismatch
-        };
-        if self.verdict != expected {
-            return Err("verdict/output commitment inconsistency");
+
+        match self.verdict {
+            VerificationVerdict::Inconclusive => {
+                if self.recomputed_output_commitment != [0; 32] {
+                    return Err("inconclusive receipt must not claim a recomputed output");
+                }
+            }
+            VerificationVerdict::Match => {
+                if self.recomputed_output_commitment == [0; 32]
+                    || self.recomputed_output_commitment != challenge.challenged_output_commitment
+                {
+                    return Err("match verdict/output commitment inconsistency");
+                }
+            }
+            VerificationVerdict::Mismatch => {
+                if self.recomputed_output_commitment == [0; 32]
+                    || self.recomputed_output_commitment == challenge.challenged_output_commitment
+                {
+                    return Err("mismatch verdict/output commitment inconsistency");
+                }
+            }
         }
         Ok(())
     }
@@ -144,6 +159,36 @@ mod tests {
             completed_at: 15,
         };
         assert!(r.validate_against(&c).is_err());
+    }
+
+    #[test]
+    fn inconclusive_cannot_smuggle_an_output_commitment() {
+        let c = challenge();
+        let r = VerifierReceipt {
+            challenge_id: c.challenge_id,
+            verifier_id: [5; 32],
+            recomputed_output_commitment: [9; 32],
+            trace_commitment: [6; 32],
+            signature_commitment: [7; 32],
+            verdict: VerificationVerdict::Inconclusive,
+            completed_at: 15,
+        };
+        assert!(r.validate_against(&c).is_err());
+    }
+
+    #[test]
+    fn valid_inconclusive_has_no_output_commitment() {
+        let c = challenge();
+        let r = VerifierReceipt {
+            challenge_id: c.challenge_id,
+            verifier_id: [5; 32],
+            recomputed_output_commitment: [0; 32],
+            trace_commitment: [6; 32],
+            signature_commitment: [7; 32],
+            verdict: VerificationVerdict::Inconclusive,
+            completed_at: 15,
+        };
+        assert_eq!(r.validate_against(&c), Ok(()));
     }
 
     #[test]
