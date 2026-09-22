@@ -211,7 +211,19 @@ pub trait ContextSignatureVerifier {
 ///
 /// Protocol code never receives raw private-key bytes. A provider may back this
 /// handle with an in-process zeroizing key, an OS keystore, HSM or remote signer.
-pub type PqSigningKeyHandle = [u8; 32];
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PqSigningKeyHandle([u8; 32]);
+
+impl PqSigningKeyHandle {
+    pub(crate) fn from_random_bytes(bytes: [u8; 32]) -> Option<Self> {
+        (bytes != [0u8; 32]).then_some(Self(bytes))
+    }
+
+    #[cfg(test)]
+    fn is_zero(&self) -> bool {
+        self.0 == [0u8; 32]
+    }
+}
 
 /// Context-aware signing boundary for the FIPS 204/205 lanes.
 ///
@@ -551,7 +563,7 @@ mod tests {
                 return None;
             }
             self.live = true;
-            Some(([0xAB; 32], vec![0xCD]))
+            Some((PqSigningKeyHandle([0xAB; 32]), vec![0xCD]))
         }
 
         fn public_key(
@@ -561,7 +573,7 @@ mod tests {
         ) -> Option<Vec<u8>> {
             (self.live
                 && matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
-                && secret_key_handle == &[0xAB; 32])
+                && secret_key_handle == &PqSigningKeyHandle([0xAB; 32]))
                 .then_some(vec![0xCD])
         }
 
@@ -574,7 +586,7 @@ mod tests {
         ) -> Option<Vec<u8>> {
             (self.live
                 && matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
-                && secret_key_handle == &[0xAB; 32]
+                && secret_key_handle == &PqSigningKeyHandle([0xAB; 32])
                 && !message.is_empty()
                 && !context.is_empty()
                 && context.len() <= 255)
@@ -586,7 +598,7 @@ mod tests {
             _scheme: AuthScheme,
             secret_key_handle: &PqSigningKeyHandle,
         ) -> bool {
-            if self.live && secret_key_handle == &[0xAB; 32] {
+            if self.live && secret_key_handle == &PqSigningKeyHandle([0xAB; 32]) {
                 self.live = false;
                 true
             } else {
