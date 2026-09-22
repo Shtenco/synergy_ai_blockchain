@@ -68,7 +68,7 @@ for gate in (
     require(gate in pq, f"missing protocol PQ serialized-size gate: {gate}")
 
 # Production provider must fail closed instead of panicking on local conditions.
-prod = pq_ref.split("#[cfg(test)]", 1)[0]
+prod = pq_ref.split("\n#[cfg(test)]\nmod tests", 1)[0]
 for forbidden in (".unwrap(", ".expect(", "panic!(", "debug_assert!(", ".fill_bytes("):
     require(forbidden not in prod, f"production pq_reference contains forbidden pattern {forbidden}")
 
@@ -140,7 +140,7 @@ require(
     "transport ML-KEM/transcript validation regressed",
 )
 require(
-    ".encapsulate()" not in pq_ref.split("#[cfg(test)]", 1)[0]
+    ".encapsulate()" not in pq_ref.split("\n#[cfg(test)]\nmod tests", 1)[0]
     and "encapsulate_deterministic" in pq_ref,
     "production ML-KEM encapsulation must remain fallible and deterministic-from-randomness",
 )
