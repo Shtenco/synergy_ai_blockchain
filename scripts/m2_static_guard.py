@@ -76,9 +76,6 @@ require("::try_generate().ok()?" in prod, "fallible RustCrypto key generation mi
 require(".try_fill_bytes(" in prod, "fallible capability RNG missing")
 require("for _ in 0..32" in prod, "capability allocation attempts must remain bounded")
 
-print("M2 static guard: PASS")
-
-
 # Actual transaction path must be state-aware and FIPS-context aware.
 require(
     "pub struct TxValidationContext" in tx,
@@ -132,7 +129,8 @@ require(
 require(
     "validate_for_policy" in network
     and "transcript_hash == [0u8; 32]" in network
-    and "secret.pq_shared.len() != ML_KEM_SHARED_SECRET_BYTES" in network,
+    and "pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);" in network
+    and "MlKemSharedSecret::try_from_slice" in network,
     "transport ML-KEM/transcript validation regressed",
 )
 require(
@@ -180,3 +178,5 @@ require(
     and "Option<MlKemSharedSecret>" in network,
     "ML-KEM provider must return typed zeroizing shared secrets",
 )
+
+print("M2 static guard: PASS")
