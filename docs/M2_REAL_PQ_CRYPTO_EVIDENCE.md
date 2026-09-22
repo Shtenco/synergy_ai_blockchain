@@ -195,6 +195,26 @@ A local fallback was attempted, but the working container has no Rust toolchain 
 
 This is tracked as an infrastructure validation blocker, not proof of a source-code failure.
 
+Explicit runner-image experiment:
+
+- workflow changed from `ubuntu-latest` to `ubuntu-24.04`;
+- run `35767666405` still completed `failure`;
+- job `rust-core` still exposed no executed steps and no log URL.
+
+Therefore the blocker is not currently attributable to the floating `ubuntu-latest` alias.
+
+## Dependency provenance boundary
+
+`docs/M2_DEPENDENCY_PROVENANCE.md` now records:
+
+- exact direct crate pins and feature selection;
+- `rust-version = 1.85`;
+- the source repositories used by the reference crypto line;
+- the explicit prohibition on fabricating a `Cargo.lock`;
+- the exact commands required to generate the lockfile, inspect locked metadata and run locked tests.
+
+This closes direct dependency provenance at source level, but transitive resolution/SBOM remain blocked until Cargo executes.
+
 ## Still required before M2 can become GREEN
 
 - executable Rust compilation on Rust >= 1.85;
