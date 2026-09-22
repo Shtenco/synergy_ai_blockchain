@@ -89,6 +89,32 @@ impl AuthorizationEnvelope {
         out.extend_from_slice(&self.payload_commitment);
         Ok(out)
     }
+
+    /// FIPS 204/205 context for the PQ signature lanes.
+    ///
+    /// The context is intentionally independent from the canonical message.
+    /// It binds the cryptographic signature API to the SYNERGY protocol,
+    /// chain, authorization domain and policy a second time. Epoch/nonce/expiry
+    /// remain in the canonical message so the context stays a short protocol
+    /// namespace rather than a per-signature transcript.
+    pub fn fips_signature_context(
+        &self,
+        policy: AuthPolicy,
+    ) -> Result<Vec<u8>, &'static str> {
+        self.validate()?;
+        const PREFIX: &[u8] = b"SYNERGY/PQ-FIPS-CONTEXT/V1\0";
+        let mut out = Vec::with_capacity(PREFIX.len() + 32 + 2);
+        out.extend_from_slice(PREFIX);
+        out.extend_from_slice(&self.chain_id);
+        out.push(self.domain.protocol_code());
+        out.push(policy.protocol_code());
+
+        // FIPS 204 and FIPS 205 limit ctx to at most 255 bytes.
+        if out.len() > 255 {
+            return Err("FIPS signature context exceeds 255 bytes");
+        }
+        Ok(out)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -164,6 +190,22 @@ pub trait SignatureVerifier {
     fn verify(&self, scheme: AuthScheme, public_key: &[u8], message: &[u8], signature: &[u8]) -> bool;
 }
 
+/// Context-aware verification boundary for FIPS 204/205 signature lanes.
+///
+/// Classical algorithms do not gain FIPS context semantics. Scheme routing below
+/// sends the context only to the PQ backend while classical verification continues
+/// to authenticate the already domain-separated canonical message.
+pub trait ContextSignatureVerifier {
+    fn verify_with_context(
+        &self,
+        scheme: AuthScheme,
+        public_key: &[u8],
+        message: &[u8],
+        context: &[u8],
+        signature: &[u8],
+    ) -> bool;
+}
+
 /// Routes classical and post-quantum signature families to separate backends.
 ///
 /// This is deliberately scheme-routed rather than "try backend A OR backend B";
@@ -192,6 +234,29 @@ impl<C: SignatureVerifier, P: SignatureVerifier> SignatureVerifier for SchemeRou
     }
 }
 
+impl<C: SignatureVerifier, P: ContextSignatureVerifier> ContextSignatureVerifier
+    for SchemeRoutedVerifier<C, P>
+{
+    fn verify_with_context(
+        &self,
+        scheme: AuthScheme,
+        public_key: &[u8],
+        message: &[u8],
+        context: &[u8],
+        signature: &[u8],
+    ) -> bool {
+        match scheme {
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => {
+                self.classical.verify(scheme, public_key, message, signature)
+            }
+            AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s => {
+                self.pq
+                    .verify_with_context(scheme, public_key, message, context, signature)
+            }
+        }
+    }
+}
+
 pub fn verify_authorization<V: SignatureVerifier>(
     verifier: &V,
     authorization: &HybridAuthorization,
@@ -206,6 +271,33 @@ pub fn verify_authorization<V: SignatureVerifier>(
             .iter()
             .find(|e| &e.scheme == required)
             .map(|e| verifier.verify(e.scheme, &e.public_key, message, &e.signature))
+            .unwrap_or(false)
+    })
+}
+
+pub fn verify_authorization_with_context<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorization: &HybridAuthorization,
+    message: &[u8],
+    context: &[u8],
+) -> bool {
+    if context.len() > 255 || authorization.validate_structure().is_err() {
+        return false;
+    }
+    authorization.required_schemes().iter().all(|required| {
+        authorization
+            .evidence
+            .iter()
+            .find(|e| &e.scheme == required)
+            .map(|e| {
+                verifier.verify_with_context(
+                    e.scheme,
+                    &e.public_key,
+                    message,
+                    context,
+                    &e.signature,
+                )
+            })
             .unwrap_or(false)
     })
 }
@@ -303,6 +395,50 @@ mod tests {
         assert_ne!(tx_online, tx_pq_only);
     }
 
+    #[test]
+    fn fips_context_is_bounded_and_separated_from_chain_domain_and_policy() {
+        let base = AuthorizationEnvelope {
+            chain_id: [0xA5; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 5,
+            nonce: 9,
+            expires_at: 100,
+            payload_commitment: [0x5A; 32],
+        };
+
+        let tx_online = base.fips_signature_context(AuthPolicy::Online).unwrap();
+        assert!(tx_online.len() <= 255);
+
+        let tx_pq = base.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        assert_ne!(tx_online, tx_pq);
+
+        let mut other_domain = base.clone();
+        other_domain.domain = AuthorizationDomain::Governance;
+        assert_ne!(
+            tx_online,
+            other_domain.fips_signature_context(AuthPolicy::Online).unwrap()
+        );
+
+        let mut other_chain = base.clone();
+        other_chain.chain_id = [0xA6; 32];
+        assert_ne!(
+            tx_online,
+            other_chain.fips_signature_context(AuthPolicy::Online).unwrap()
+        );
+
+        // Dynamic replay fields remain message-bound, not context-bound.
+        let mut next_nonce = base.clone();
+        next_nonce.nonce += 1;
+        assert_eq!(
+            tx_online,
+            next_nonce.fips_signature_context(AuthPolicy::Online).unwrap()
+        );
+        assert_ne!(
+            base.canonical_message(AuthPolicy::Online).unwrap(),
+            next_nonce.canonical_message(AuthPolicy::Online).unwrap()
+        );
+    }
+
     #[derive(Clone, Copy)]
     struct LaneVerifier {
         pq: bool,
@@ -323,6 +459,21 @@ mod tests {
         }
     }
 
+    impl ContextSignatureVerifier for LaneVerifier {
+        fn verify_with_context(
+            &self,
+            scheme: AuthScheme,
+            _public_key: &[u8],
+            _message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+                && self.pq
+                && context == b"expected-context"
+        }
+    }
+
     #[test]
     fn routed_verifier_cannot_cross_satisfy_lanes() {
         let verifier = SchemeRoutedVerifier {
@@ -331,5 +482,36 @@ mod tests {
         };
         assert!(verifier.verify(AuthScheme::Secp256k1, b"k", b"m", b"s"));
         assert!(verifier.verify(AuthScheme::MlDsa87, b"k", b"m", b"s"));
+    }
+
+    #[test]
+    fn routed_context_verifier_applies_fips_context_only_to_pq_lanes() {
+        let verifier = SchemeRoutedVerifier {
+            classical: LaneVerifier { pq: false },
+            pq: LaneVerifier { pq: true },
+        };
+
+        assert!(verifier.verify_with_context(
+            AuthScheme::Secp256k1,
+            b"k",
+            b"canonical-message",
+            b"wrong-context-does-not-alter-classical-semantics",
+            b"s",
+        ));
+
+        assert!(verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            b"k",
+            b"canonical-message",
+            b"expected-context",
+            b"s",
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::MlDsa87,
+            b"k",
+            b"canonical-message",
+            b"wrong-context",
+            b"s",
+        ));
     }
 }
