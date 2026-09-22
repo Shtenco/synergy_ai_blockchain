@@ -19,8 +19,17 @@ pub struct PqEvmTransaction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TxValidationContext {
+    pub expected_chain_id: u64,
+    pub expected_nonce: u64,
+    pub max_calldata_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxError {
     ZeroChainId,
+    WrongChainId,
+    NonceMismatch,
     ZeroGasLimit,
     DataTooLarge,
     AuthorizationFailed,
@@ -105,15 +114,21 @@ impl PqEvmTransaction {
     pub fn validate<V: ContextSignatureVerifier>(
         &self,
         verifier: &V,
-        max_calldata_bytes: usize,
+        context: TxValidationContext,
     ) -> Result<(), TxError> {
         if self.chain_id == 0 {
             return Err(TxError::ZeroChainId);
         }
+        if self.chain_id != context.expected_chain_id {
+            return Err(TxError::WrongChainId);
+        }
+        if self.nonce != context.expected_nonce {
+            return Err(TxError::NonceMismatch);
+        }
         if self.gas_limit == 0 {
             return Err(TxError::ZeroGasLimit);
         }
-        if self.data.len() > max_calldata_bytes {
+        if self.data.len() > context.max_calldata_bytes {
             return Err(TxError::DataTooLarge);
         }
         let message = self.signing_preimage();
@@ -127,5 +142,118 @@ impl PqEvmTransaction {
             return Err(TxError::AuthorizationFailed);
         }
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pq::{AuthPolicy, AuthScheme, ContextSignatureVerifier, SignatureEvidence};
+
+    #[derive(Clone)]
+    struct ExpectedTxVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedTxVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn test_tx() -> PqEvmTransaction {
+        PqEvmTransaction {
+            chain_id: 8453,
+            sender_account: [0x11; 32],
+            nonce: 7,
+            gas_limit: 100_000,
+            max_fee_per_gas: [0x22; 32],
+            to: Some([0x33; 20]),
+            value: [0x44; 32],
+            data: vec![1, 2, 3],
+            authorization: HybridAuthorization {
+                policy: AuthPolicy::PqOnly,
+                evidence: vec![
+                    SignatureEvidence {
+                        scheme: AuthScheme::MlDsa87,
+                        public_key: vec![1],
+                        signature: vec![2],
+                    },
+                    SignatureEvidence {
+                        scheme: AuthScheme::SlhDsaShake256s,
+                        public_key: vec![3],
+                        signature: vec![4],
+                    },
+                ],
+            },
+        }
+    }
+
+    #[test]
+    fn transaction_validation_is_chain_nonce_and_fips_context_bound() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Ok(())
+        );
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 1,
+                    expected_nonce: 7,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::WrongChainId)
+        );
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 8,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::NonceMismatch)
+        );
+    }
+
+    #[test]
+    fn transaction_fips_context_changes_with_chain_or_policy() {
+        let tx = test_tx();
+        let base = tx.fips_signature_context();
+
+        let mut other_chain = tx.clone();
+        other_chain.chain_id = 1;
+        assert_ne!(base, other_chain.fips_signature_context());
+
+        let mut other_policy = tx.clone();
+        other_policy.authorization.policy = AuthPolicy::Online;
+        assert_ne!(base, other_policy.fips_signature_context());
     }
 }
