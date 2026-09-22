@@ -294,3 +294,12 @@ workflow run_duration_ms = 4000
 This evidence strongly localizes the current blocker above repository source/test execution: the GitHub-hosted VM is not being provisioned. Changing `ubuntu-latest` to `ubuntu-24.04` did not change the failure mode.
 
 Therefore M2.11 remains an infrastructure blocker. No source-code failure should be inferred from these zero-step runs.
+
+
+## Secret-key zeroization hardening
+
+ML-KEM handle storage was hardened in commit `869cd817cbe2b29d86eba8706ecef3bba90f4cf0`: the provider stores `MlKem1024DecapsulationKey` directly instead of a raw seed array. Because the pinned `ml-kem/v0.3.2` dependency is compiled with `zeroize`, its own `Drop` implementation clears the sensitive decapsulation components.
+
+Commit `8a39fed2d52edeab8a419f4ef24fc5c33c29c146` adds a local lifecycle test requiring key removal to revoke the opaque handle and make subsequent decapsulation fail closed.
+
+This partially advances the remaining zeroization gate. It does **not** close production key custody for every algorithm: SLH-DSA 0.1.0 signing keys do not carry an equivalent zeroize-on-drop guarantee, and the current provider does not retain SLH private keys.
