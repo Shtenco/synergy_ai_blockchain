@@ -11,7 +11,8 @@
 use crate::network::MlKem1024Provider;
 use crate::pq::{
     AuthScheme, ContextSignatureSigner, ContextSignatureVerifier, PqSigningKeyHandle,
-    SignatureVerifier,
+    SignatureVerifier, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+    SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
 };
 use std::collections::BTreeMap;
 
@@ -44,10 +45,6 @@ impl MlKemSecretHandle {
 
 const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
-const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
-const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
-const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
-const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
 
 /// Reference ML-KEM provider.
 ///
