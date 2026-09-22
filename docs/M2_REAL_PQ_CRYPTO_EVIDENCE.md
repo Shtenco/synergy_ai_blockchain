@@ -476,3 +476,22 @@ This closes the transport shared-secret lifecycle at source level, pending execu
 The latest explicitly inspected workflow in this audit line, run `35795271723` (#262), still concluded failure with `steps=[]`. No source checkout, Python guard, Rust toolchain, Cargo resolver, compilation or tests executed.
 
 Therefore all items above are source/test-definition evidence only. M2 remains YELLOW.
+
+
+## M2 static pre-Cargo audit: current result
+
+The static audit uncovered and corrected several defects before a Rust runner became available:
+
+- duplicate `MAX_CLASSICAL_PUBLIC_KEY_BYTES` / `MAX_CLASSICAL_SIGNATURE_BYTES` definitions that would have been a guaranteed Rust compile error;
+- stale ML-KEM tests using ordinary equality after secret-bearing types intentionally lost `PartialEq/Eq`;
+- transaction authorization lacked explicit authorization epoch and expiry fields;
+- the static guard itself truncated production-provider inspection at an early helper-level `#[cfg(test)]`;
+- the guard temporarily contained contradictory legacy-KEX limits and premature `PASS` output;
+- raw ML-KEM shared-secret temporaries could have skipped explicit zeroization on an early wrapper-conversion return path;
+- `HybridSharedSecret.transcript_hash` was mutable from outside the module after transcript derivation.
+
+All of those issues have been corrected at source level.
+
+An equivalent connector-side evaluation of the corrected production-boundary checks confirmed the previously failing fallible-keygen/RNG invariants after the guard boundary fix. This is useful source-level evidence, but it is **not** a substitute for Rust compilation.
+
+Latest GitHub Actions run checked during this pass: `35796955251` (run #359). Its sole `rust-core` job again completed with `failure`, `steps=null` and `logs_url=null`, so no repository command executed.
