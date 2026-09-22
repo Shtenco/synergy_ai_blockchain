@@ -8,7 +8,9 @@
 //! Production deployments should place secret keys behind OS/hardware keystores
 //! and keep the same opaque-handle boundary.
 
-use crate::network::MlKem1024Provider;
+use crate::network::{
+    MlKem1024Provider, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES,
+};
 use crate::pq::{
     AuthScheme, ContextSignatureSigner, ContextSignatureVerifier, PqSigningKeyHandle,
     SignatureVerifier, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
@@ -43,8 +45,6 @@ impl MlKemSecretHandle {
     }
 }
 
-const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
-const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 
 /// Reference ML-KEM provider.
 ///
