@@ -352,3 +352,68 @@ SLH-DSA verification remains implemented and ACVP-backed, while production signi
 - a reviewed zeroizing stable SLH backend;
 - an HSM/OS-keystore/remote-signer provider implementing the same opaque-handle interface;
 - or an explicitly reviewed dependency upgrade once Cargo execution is available.
+
+
+## Static pre-Cargo hardening pass
+
+The M2 source-level audit was extended beyond vector correctness.
+
+### Fallible RNG and panic-free provider boundary
+
+Commit `a6f0600ee76206dcd2db3c534150b71dadd49966` removes infallible system-RNG paths from production PQ key generation:
+
+- ML-KEM decapsulation-key generation uses `try_generate()`;
+- ML-DSA signing-key generation uses `try_generate()`;
+- opaque capability IDs use `try_fill_bytes()`;
+- provider generation returns `Option` on RNG failure.
+
+Commit `0aa4a4d259a507d662cf347cc46fbb2d3a44ba2d` bounds capability-ID allocation to 32 attempts. Commit `5fe87ef74de50f7578fb6332d92b58cead9db08a` fixes zero-ID retry semantics so a zero draw is retried rather than terminating immediately.
+
+### Exact serialized-size fail-closed gates
+
+Commit `e6f9616d4317a3cd8ab20029fde587802d5664c9` rejects wrong-size objects before upstream parsing:
+
+- ML-KEM-1024 public key: 1568 bytes;
+- ML-KEM-1024 ciphertext: 1568 bytes;
+- ML-DSA-87 public key: 2592 bytes;
+- ML-DSA-87 signature: 4627 bytes;
+- SLH-DSA-SHAKE-256s public key: 64 bytes;
+- SLH-DSA-SHAKE-256s signature: 29792 bytes.
+
+### Nominal opaque capability types
+
+Commits `16dd6990cc2676595979a21cebd52e52deec7915` and `b7d771f691639cbabd64ef5cfa2ebfd2a793030f` make the ML-KEM provider expose an associated secret-handle type backed by an opaque nominal `MlKemSecretHandle`.
+
+Commits `e0a0513c36ba70b94fd3e7a31487f59865ac269f`, `295376cecebe21f0dcd3dcd8940acccc22eecb46` and `2271ddb3f3f10088bfc8af3daa1ea2b4e860b354` do the same for signing handles. Opaque handles intentionally do not implement `Debug`; test assertions were adjusted in `31e73289bff9f56f8adb0817e5fe34736aa26cad` so capability values are not required to be format-printable.
+
+### Transaction-path anti-downgrade and replay binding
+
+A later audit found that `PqEvmTransaction::validate` still called the legacy no-context authorization aggregator. Commit `ac916abf32c6683a390fe7ca7f4a541816b749dc` changes the actual transaction path to FIPS-context verification and adds a matching transaction signing helper.
+
+Commit `5b10d7803679910a61fe7894eb05fc704df96f53` makes transaction validation state-aware:
+
+- transaction chain ID must equal the expected chain;
+- transaction nonce must equal the state-provided expected nonce;
+- calldata bound remains enforced;
+- cryptographic verification then uses the transaction canonical preimage plus FIPS context.
+
+Commit `cd24e5758cfd09ca03d2c8a0aa2a26e694e44215` compiles the no-context authorization aggregator only under `#[cfg(test)]`. Production code therefore cannot call that aggregate downgrade path.
+
+### Generic envelope replay/expiry enforcement
+
+Commit `d8ad638a8055c052c68fc0728ed1df68ab0dcfc8` adds `AuthorizationValidationContext` and requires public envelope verification to check:
+
+- expected chain ID;
+- expected epoch;
+- expected nonce;
+- current time against `expires_at`.
+
+The fields are therefore both signed and state-validated.
+
+### Automated static guard
+
+`scripts/m2_static_guard.py` was added in commit `bc92b8552352e150c97dfd96a631eb10140e0eb3` and wired before Rust setup in commit `71765ddbffc3f2632a25ada932d2443f03ca85c8`.
+
+It guards dependency pins, Rust 1.85, context anti-downgrade, nominal handles, serialized sizes, fallible RNG, bounded handle generation, transaction state validation and generic envelope replay/expiry validation.
+
+Workflow run `35795271723` (run #262) still failed with `steps=[]`, so even this Python-only post-checkout guard did not execute. The hosted-runner blocker therefore remains above checkout and source execution.
