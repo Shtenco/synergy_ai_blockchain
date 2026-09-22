@@ -238,3 +238,12 @@ require(
     and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network,
     "legacy KEX/classical secret DoS bounds missing",
 )
+
+require(
+    "MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 512" in network
+    and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network
+    and "legacy KEX public key exceeds protocol maximum" in network,
+    "classical transport material bounds missing",
+)
+
+print("M2 static guard: PASS")
