@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use ml_kem::{
     ml_kem_1024::{Ciphertext as MlKem1024Ciphertext, EncapsulationKey as MlKem1024EncapsulationKey},
-    Decapsulate, Encapsulate, Key, KeyExport, MlKem1024, Seed as MlKemSeed,
+    Decapsulate, Encapsulate, Kem, Key, KeyExport, MlKem1024, Seed as MlKemSeed,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
@@ -49,7 +49,7 @@ impl ReferenceMlKem1024Provider {
         let replaced = self.secrets.insert(handle, seed);
         debug_assert!(replaced.is_none());
 
-        (handle, ek.to_bytes().to_vec())
+        (handle, ek.to_bytes().as_ref().to_vec())
     }
 
     pub fn remove_key(&mut self, handle: &MlKemSecretHandle) -> bool {
@@ -68,7 +68,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         // the ML-KEM implementation. Do not replace this with unchecked casting.
         let ek = MlKem1024EncapsulationKey::new(&encoded).ok()?;
         let (ciphertext, shared) = ek.encapsulate();
-        Some((ciphertext.to_vec(), shared.to_vec()))
+        Some((ciphertext.as_ref().to_vec(), shared.as_ref().to_vec()))
     }
 
     fn decapsulate(&self, secret_key_handle: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
@@ -76,7 +76,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         let seed = self.secrets.get(&handle)?;
         let dk = ml_kem::DecapsulationKey::<MlKem1024>::from_seed(seed.clone());
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
-        Some(dk.decapsulate(&ciphertext).to_vec())
+        Some(dk.decapsulate(&ciphertext).as_ref().to_vec())
     }
 }
 
