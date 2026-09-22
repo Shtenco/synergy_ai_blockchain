@@ -53,12 +53,16 @@ require(
 for gate in (
     "ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568",
     "ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568",
+):
+    require(gate in pq_ref, f"missing ML-KEM serialized-size gate: {gate}")
+
+for gate in (
     "ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592",
     "ML_DSA_87_SIGNATURE_BYTES: usize = 4627",
     "SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64",
     "SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792",
 ):
-    require(gate in pq_ref, f"missing serialized-size gate: {gate}")
+    require(gate in pq, f"missing protocol PQ serialized-size gate: {gate}")
 
 # Production provider must fail closed instead of panicking on local conditions.
 prod = pq_ref.split("#[cfg(test)]", 1)[0]
@@ -114,4 +118,10 @@ require(
 require(
     "required_policy" in tx and "PolicyMismatch" in tx,
     "transaction verifier must enforce caller-required policy",
+)
+
+
+require(
+    "expected_public_key_bytes" in pq and "expected_signature_bytes" in pq,
+    "HybridAuthorization must enforce protocol PQ evidence sizes",
 )
