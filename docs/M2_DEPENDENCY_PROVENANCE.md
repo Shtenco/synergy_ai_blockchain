@@ -197,3 +197,17 @@ The core now directly pins `zeroize = 1.8.1` (RustCrypto/utils tag `zeroize-v1.8
 That exact release has MSRV Rust 1.60 and, with its default/`alloc` support, implements `Zeroize` for `Vec<Z>`. Its implementation clears initialized elements, clears the vector length and zeroizes spare capacity.
 
 `HybridSharedSecret` uses that primitive in its `Drop` implementation for both post-quantum and classical shared-secret vectors. The type no longer derives `Clone` or raw `Debug`; its custom debug output redacts both secret fields.
+
+
+## Canonical transport transcript dependency
+
+The transport transcript commitment directly pins:
+
+- `sha2 = 0.10.9`;
+- upstream repository: `RustCrypto/hashes`;
+- tag: `sha2-v0.10.9`;
+- commit: `82c36a428f8d6f05f3bfccdedb243e9d1f85359d`.
+
+The dependency is used without default features for SHA-256 transcript commitment. It shares the stable SHA-2/digest generation already present in the SLH-DSA dependency family rather than introducing a novel hash construction.
+
+`TransportTranscript::commitment` domain-separates `SYNERGY/PQ-TRANSPORT/V1`, binds transport policy, initiator/responder role order, both node identities and advertised KEX keys, ML-KEM ciphertext and the optional classical transcript commitment. `HybridSharedSecret` can only be constructed from a validated transcript and retains the bound transport policy.
