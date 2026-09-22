@@ -27,6 +27,13 @@ use ml_kem::{
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
 pub type MlKemSecretHandle = [u8; 32];
 
+const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
+const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
+const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
+const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
+const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
+const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
+
 /// Reference ML-KEM provider.
 ///
 /// Secret key material is stored internally as the ML-KEM decapsulation-key
@@ -78,6 +85,9 @@ impl ReferenceMlKem1024Provider {
 
 impl MlKem1024Provider for ReferenceMlKem1024Provider {
     fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+        if public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
+            return None;
+        }
         let encoded = Key::<MlKem1024EncapsulationKey>::try_from(public_key).ok()?;
         // EncapsulationKey::new performs the public-key validation required by
         // the ML-KEM implementation. Do not replace this with unchecked casting.
@@ -87,6 +97,9 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
     }
 
     fn decapsulate(&self, secret_key_handle: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
+        if ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
+            return None;
+        }
         let handle: MlKemSecretHandle = secret_key_handle.try_into().ok()?;
         let dk = self.secrets.get(&handle)?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
@@ -248,6 +261,12 @@ impl ContextSignatureVerifier for ReferencePqSignatureVerifier {
 fn verify_ml_dsa_87(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
     use ml_dsa::{MlDsa87, Signature, Verifier, VerifyingKey};
 
+    if public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
+        || signature.len() != ML_DSA_87_SIGNATURE_BYTES
+    {
+        return false;
+    }
+
     let encoded_key = match ml_dsa::EncodedVerifyingKey::<MlDsa87>::try_from(public_key) {
         Ok(value) => value,
         Err(_) => return false,
@@ -268,7 +287,10 @@ fn verify_ml_dsa_87_with_context(
 ) -> bool {
     use ml_dsa::{MlDsa87, Signature, VerifyingKey};
 
-    if context.len() > 255 {
+    if context.len() > 255
+        || public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
+        || signature.len() != ML_DSA_87_SIGNATURE_BYTES
+    {
         return false;
     }
     let encoded_key = match ml_dsa::EncodedVerifyingKey::<MlDsa87>::try_from(public_key) {
@@ -286,6 +308,12 @@ fn verify_ml_dsa_87_with_context(
 fn verify_slh_dsa_shake_256s(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
     use slh_dsa::{Shake256s, Signature, VerifyingKey};
     use slh_dsa::signature::Verifier;
+
+    if public_key.len() != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
+        || signature.len() != SLH_DSA_SHAKE_256S_SIGNATURE_BYTES
+    {
+        return false;
+    }
 
     let verifying_key = match VerifyingKey::<Shake256s>::try_from(public_key) {
         Ok(value) => value,
@@ -306,7 +334,10 @@ fn verify_slh_dsa_shake_256s_with_context(
 ) -> bool {
     use slh_dsa::{Shake256s, Signature, VerifyingKey};
 
-    if context.len() > 255 {
+    if context.len() > 255
+        || public_key.len() != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
+        || signature.len() != SLH_DSA_SHAKE_256S_SIGNATURE_BYTES
+    {
         return false;
     }
     let verifying_key = match VerifyingKey::<Shake256s>::try_from(public_key) {
@@ -389,6 +420,46 @@ mod tests {
         ciphertext[0] ^= 0x01;
         let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
         assert_ne!(sender_shared, receiver_shared);
+    }
+
+    #[test]
+    fn serialized_size_guards_fail_closed_before_crypto_parsing() {
+        let mut kem = ReferenceMlKem1024Provider::new();
+        let (handle, public_key) = kem
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
+        let (ciphertext, _) = kem.encapsulate(&public_key).expect("encapsulation");
+
+        assert_eq!(public_key.len(), ML_KEM_1024_PUBLIC_KEY_BYTES);
+        assert_eq!(ciphertext.len(), ML_KEM_1024_CIPHERTEXT_BYTES);
+        assert!(kem.encapsulate(&public_key[..public_key.len() - 1]).is_none());
+        assert!(kem.decapsulate(&handle, &ciphertext[..ciphertext.len() - 1]).is_none());
+
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(!verifier.verify(
+            AuthScheme::MlDsa87,
+            &vec![0u8; ML_DSA_87_PUBLIC_KEY_BYTES - 1],
+            b"m",
+            &vec![0u8; ML_DSA_87_SIGNATURE_BYTES],
+        ));
+        assert!(!verifier.verify(
+            AuthScheme::MlDsa87,
+            &vec![0u8; ML_DSA_87_PUBLIC_KEY_BYTES],
+            b"m",
+            &vec![0u8; ML_DSA_87_SIGNATURE_BYTES + 1],
+        ));
+        assert!(!verifier.verify(
+            AuthScheme::SlhDsaShake256s,
+            &vec![0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES + 1],
+            b"m",
+            &vec![0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+        ));
+        assert!(!verifier.verify(
+            AuthScheme::SlhDsaShake256s,
+            &vec![0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+            b"m",
+            &vec![0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES - 1],
+        ));
     }
 
     #[test]
