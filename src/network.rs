@@ -20,8 +20,14 @@ pub struct HybridSharedSecret {
 
 /// Provider boundary for a reviewed ML-KEM-1024 implementation.
 pub trait MlKem1024Provider {
+    type SecretHandle;
+
     fn encapsulate(&self, public_key: &[u8]) -> Option<(Vec<u8>, Vec<u8>)>;
-    fn decapsulate(&self, secret_key_handle: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>>;
+    fn decapsulate(
+        &self,
+        secret_key_handle: &Self::SecretHandle,
+        ciphertext: &[u8],
+    ) -> Option<Vec<u8>>;
 }
 
 /// Consensus code does not implement a transport cipher here. The networking
