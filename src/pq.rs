@@ -257,7 +257,7 @@ impl<C: SignatureVerifier, P: ContextSignatureVerifier> ContextSignatureVerifier
     }
 }
 
-pub fn verify_authorization<V: SignatureVerifier>(
+pub(crate) fn verify_authorization<V: SignatureVerifier>(
     verifier: &V,
     authorization: &HybridAuthorization,
     message: &[u8],
@@ -300,6 +300,28 @@ pub fn verify_authorization_with_context<V: ContextSignatureVerifier>(
             })
             .unwrap_or(false)
     })
+}
+
+pub fn verify_envelope_authorization<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorization: &HybridAuthorization,
+    envelope: &AuthorizationEnvelope,
+) -> bool {
+    let message = match envelope.canonical_message(authorization.policy) {
+        Ok(message) => message,
+        Err(_) => return false,
+    };
+    let context = match envelope.fips_signature_context(authorization.policy) {
+        Ok(context) => context,
+        Err(_) => return false,
+    };
+
+    verify_authorization_with_context(
+        verifier,
+        authorization,
+        &message,
+        &context,
+    )
 }
 
 #[cfg(test)]
@@ -437,6 +459,61 @@ mod tests {
             base.canonical_message(AuthPolicy::Online).unwrap(),
             next_nonce.canonical_message(AuthPolicy::Online).unwrap()
         );
+    }
+
+    #[test]
+    fn envelope_verifier_derives_message_and_context_from_same_policy() {
+        #[derive(Clone, Copy)]
+        struct EnvelopeVerifier {
+            expected_message_len: usize,
+            expected_context: [u8; 58],
+        }
+
+        impl ContextSignatureVerifier for EnvelopeVerifier {
+            fn verify_with_context(
+                &self,
+                scheme: AuthScheme,
+                _public_key: &[u8],
+                message: &[u8],
+                context: &[u8],
+                _signature: &[u8],
+            ) -> bool {
+                matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+                    && message.len() == self.expected_message_len
+                    && context == self.expected_context
+            }
+        }
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x44; 32],
+            domain: AuthorizationDomain::InferenceReceipt,
+            epoch: 7,
+            nonce: 9,
+            expires_at: 1000,
+            payload_commitment: [0x55; 32],
+        };
+        let policy = AuthPolicy::PqOnly;
+        let expected_message = envelope.canonical_message(policy).unwrap();
+        let expected_context_vec = envelope.fips_signature_context(policy).unwrap();
+        let expected_context: [u8; 58] = expected_context_vec.try_into().unwrap();
+
+        let auth = HybridAuthorization {
+            policy,
+            evidence: vec![
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let verifier = EnvelopeVerifier {
+            expected_message_len: expected_message.len(),
+            expected_context,
+        };
+
+        assert!(verify_envelope_authorization(&verifier, &auth, &envelope));
+
+        let mut wrong_domain = envelope.clone();
+        wrong_domain.domain = AuthorizationDomain::Governance;
+        assert!(!verify_envelope_authorization(&verifier, &auth, &wrong_domain));
     }
 
     #[derive(Clone, Copy)]
