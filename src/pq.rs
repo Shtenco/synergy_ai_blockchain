@@ -223,6 +223,12 @@ pub trait ContextSignatureSigner {
         scheme: AuthScheme,
     ) -> Option<(PqSigningKeyHandle, Vec<u8>)>;
 
+    fn public_key(
+        &self,
+        scheme: AuthScheme,
+        secret_key_handle: &PqSigningKeyHandle,
+    ) -> Option<Vec<u8>>;
+
     fn sign_with_context(
         &self,
         scheme: AuthScheme,
@@ -244,13 +250,15 @@ pub fn sign_envelope_evidence<S: ContextSignatureSigner>(
     signer: &S,
     scheme: AuthScheme,
     secret_key_handle: &PqSigningKeyHandle,
-    public_key: &[u8],
     policy: AuthPolicy,
     envelope: &AuthorizationEnvelope,
 ) -> Option<SignatureEvidence> {
-    if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
-        || public_key.is_empty()
-    {
+    if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s) {
+        return None;
+    }
+
+    let public_key = signer.public_key(scheme, secret_key_handle)?;
+    if public_key.is_empty() {
         return None;
     }
 
@@ -269,7 +277,7 @@ pub fn sign_envelope_evidence<S: ContextSignatureSigner>(
 
     Some(SignatureEvidence {
         scheme,
-        public_key: public_key.to_vec(),
+        public_key,
         signature,
     })
 }
@@ -546,6 +554,17 @@ mod tests {
             Some(([0xAB; 32], vec![0xCD]))
         }
 
+        fn public_key(
+            &self,
+            scheme: AuthScheme,
+            secret_key_handle: &PqSigningKeyHandle,
+        ) -> Option<Vec<u8>> {
+            (self.live
+                && matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+                && secret_key_handle == &[0xAB; 32])
+                .then_some(vec![0xCD])
+        }
+
         fn sign_with_context(
             &self,
             scheme: AuthScheme,
@@ -595,7 +614,6 @@ mod tests {
             &signer,
             AuthScheme::MlDsa87,
             &handle,
-            &public_key,
             AuthPolicy::PqOnly,
             &envelope,
         )
@@ -610,7 +628,6 @@ mod tests {
             &signer,
             AuthScheme::MlDsa87,
             &handle,
-            &public_key,
             AuthPolicy::PqOnly,
             &envelope,
         )
@@ -620,7 +637,6 @@ mod tests {
             &signer,
             AuthScheme::Secp256k1,
             &handle,
-            &public_key,
             AuthPolicy::Online,
             &envelope,
         )
