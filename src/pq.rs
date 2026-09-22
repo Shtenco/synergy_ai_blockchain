@@ -10,6 +10,8 @@ pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
 pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
+pub const MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 65;
+pub const MAX_CLASSICAL_SIGNATURE_BYTES: usize = 72;
 pub const MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 128;
 pub const MAX_CLASSICAL_SIGNATURE_BYTES: usize = 256;
 pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000;
@@ -604,6 +606,22 @@ mod tests {
                     scheme: AuthScheme::Secp256k1,
                     public_key: vec![1; 33],
                     signature: vec![2; MAX_CLASSICAL_SIGNATURE_BYTES + 1],
+                },
+                evidence(AuthScheme::MlDsa87),
+            ],
+        };
+        assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn oversized_classical_evidence_is_rejected_before_backend_dispatch() {
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: vec![1; MAX_CLASSICAL_PUBLIC_KEY_BYTES + 1],
+                    signature: vec![2; 64],
                 },
                 evidence(AuthScheme::MlDsa87),
             ],
