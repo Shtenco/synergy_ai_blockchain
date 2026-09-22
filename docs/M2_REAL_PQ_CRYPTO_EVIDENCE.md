@@ -495,3 +495,35 @@ All of those issues have been corrected at source level.
 An equivalent connector-side evaluation of the corrected production-boundary checks confirmed the previously failing fallible-keygen/RNG invariants after the guard boundary fix. This is useful source-level evidence, but it is **not** a substitute for Rust compilation.
 
 Latest GitHub Actions run checked during this pass: `35796955251` (run #359). Its sole `rust-core` job again completed with `failure`, `steps=null` and `logs_url=null`, so no repository command executed.
+
+
+## Static pre-Cargo audit continuation
+
+Additional source-level defects and hardening completed in this pass:
+
+- transaction authorization now signs and validates `authorization_epoch` and `authorization_expires_at`, closing the gap between generic envelope replay protection and the actual transaction path;
+- classical authorization evidence is bounded before backend verification;
+- classical transport public-key and shared-secret material is bounded;
+- ML-KEM temporary raw shared-secret buffers are explicitly zeroized on every return path;
+- the transport transcript is canonical, SHA-256 committed and policy-bound;
+- the derived transcript commitment is private/read-only after `HybridSharedSecret` construction;
+- duplicate classical-evidence constants that would have prevented Rust compilation were removed;
+- tests were repaired after secret-bearing types intentionally lost ordinary `PartialEq/Eq`;
+- static-guard production slicing was corrected to use the actual `#[cfg(test)] mod tests` boundary;
+- contradictory transport-size assertions and premature `PASS` markers in the static guard were removed.
+
+A connector-side evaluation of the corrected critical invariants found the previously reported four failures were all caused by the old guard slicing bug; after commit `cfc2b89527199b8fd09012e29574ea1225af10f3`, fallible KEM key generation, fallible RustCrypto key generation, fallible capability RNG and bounded allocation attempts are all present in the production section.
+
+The static sanity sweep also found no repeated top-level constant/type definitions after the duplicate-cap fix. Repeated method names observed in different `impl` blocks are valid Rust and not symbol conflicts.
+
+### Hosted-runner rerun evidence
+
+Workflow run `35796955251` was manually rerun after the source hardening. The rerun created job `106979201432`, which again completed with:
+
+```text
+conclusion = failure
+steps = null
+logs_url = null
+```
+
+Therefore even an explicit job rerun fails before runner provisioning. This further supports classifying M2.11 as an external GitHub Actions execution blocker rather than a repository test failure.
