@@ -235,3 +235,38 @@ This closes direct dependency provenance at source level, but transitive resolut
 Current state: **YELLOW / implemented, executable evidence blocked by runner infrastructure.**
 
 M3 must not be declared complete or production-ready until this gate is resolved.
+
+
+## Static release-tag compatibility audit
+
+The context-separation implementation was re-audited against the exact upstream release tags selected in `Cargo.toml`, rather than against moving `master` APIs:
+
+- `ml-dsa/v0.1.1` → commit `f75d5b829948988f18d9463f286805fb9410bcdd`;
+- `slh-dsa/v0.1.0` → commit `81526ad2de17bf58295d97d796ff35bc991ab1b7`;
+- `ml-kem/v0.3.2` → commit `440768245bba59784b504269cb3087a6c21af45c`.
+
+This audit found one real source-level compatibility defect before executable CI could report it: ML-DSA 0.1.1 exposes context-aware deterministic signing on `ExpandedSigningKey::sign_deterministic`, while `SigningKey`'s ordinary `Signer` implementation supports only an empty context. The tests were corrected in commit `74ea0f80b3678ee3aa756789e3af96acf5a86fa2` to use:
+
+```text
+SigningKey
+  -> expanded_key()
+  -> sign_deterministic(message, context)
+```
+
+Exact-tag inspection also confirmed the currently used ML-KEM 0.3.2 APIs (`EncapsulationKey::new`, `encapsulate_deterministic`, `DecapsulationKey::from_seed`) and SLH-DSA 0.1.0 context APIs (`try_sign_with_context`, `try_verify_with_context`).
+
+This reduces known compile risk but is still not a substitute for `cargo test`.
+
+## Lockfile bootstrap gate
+
+Workflow commit `320e777c35d100d6433796e6b58e3fc83998935b` changes CI so the first actually assigned hosted runner will:
+
+1. use an existing committed `Cargo.lock`, or generate a bootstrap lockfile with `cargo generate-lockfile` when absent;
+2. emit `cargo metadata --locked --format-version 1` to `m2-cargo-metadata.json`;
+3. run `cargo test --locked --all-targets`;
+4. run `cargo test --locked --all-targets --features reference-pq`;
+5. upload `Cargo.lock` and locked metadata as a workflow artifact even when later tests fail.
+
+A generated artifact does **not** itself close M2.10c. The exact Cargo-produced lockfile must be committed to the branch, followed by a later run that succeeds using that committed lockfile.
+
+Workflow run `35771551276` (run #175) was queued from this commit. Its result must be treated as pending until real job steps and logs exist.
