@@ -59,8 +59,8 @@ pub use payment_funding::{
 };
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{
-    AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, HybridAuthorization,
-    SchemeRoutedVerifier, SignatureEvidence,
+    AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, ContextSignatureVerifier,
+    HybridAuthorization, SchemeRoutedVerifier, SignatureEvidence, verify_authorization_with_context,
 };
 #[cfg(feature = "reference-pq")]
 pub use pq_reference::{MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier};
