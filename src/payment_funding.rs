@@ -4,7 +4,12 @@
 //! A source `(payer, asset)` balance must be reserved exactly once before any
 //! destination lane can consume it, preventing cross-lane double spending.
 
+use sha2::{Digest, Sha256};
+
 use crate::payments::PaymentIntent;
+
+const FUNDING_CONSUMPTION_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-CONSUMPTION/V1\0";
+const FUNDING_RELEASE_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-RELEASE/V1\0";
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,7 +92,24 @@ pub struct PaymentFundingConsumptionReceipt {
 }
 
 impl PaymentFundingConsumptionReceipt {
-    pub fn validate_against_intent(
+    pub fn canonical_root(
+        reservation: &PaymentFundingReservation,
+    ) -> Option<[u8; 32]> {
+        reservation.validate_reserved().ok()?;
+        let mut hasher = Sha256::new();
+        hasher.update(FUNDING_CONSUMPTION_DOMAIN);
+        hasher.update(reservation.reservation_root);
+        hasher.update(reservation.payment_intent_root);
+        hasher.update(reservation.payer_account_root);
+        hasher.update(reservation.source_asset_root);
+        hasher.update(reservation.amount.to_be_bytes());
+        hasher.update(reservation.account_sequence.to_be_bytes());
+        hasher.update(reservation.funding_shard.to_be_bytes());
+        hasher.update(reservation.epoch.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+
+    pub(crate) fn validate_against_intent(
         &self,
         reservation: &PaymentFundingReservation,
         intent: &PaymentIntent,
@@ -102,8 +124,10 @@ impl PaymentFundingConsumptionReceipt {
         reservation: &PaymentFundingReservation,
     ) -> Result<(), &'static str> {
         reservation.validate_reserved()?;
-        if self.consumption_root == [0; 32] {
-            return Err("funding consumption root required");
+        let expected_consumption_root =
+            Self::canonical_root(reservation).ok_or("funding consumption root unavailable")?;
+        if self.consumption_root != expected_consumption_root {
+            return Err("funding consumption root mismatch");
         }
         if self.reservation_root != reservation.reservation_root
             || self.payment_intent_root != reservation.payment_intent_root
@@ -117,6 +141,78 @@ impl PaymentFundingConsumptionReceipt {
             return Err("funding consumption does not match reservation");
         }
         Ok(())
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaymentFundingReleaseReceipt {
+    pub reservation_root: [u8; 32],
+    pub reason_root: [u8; 32],
+    pub release_root: [u8; 32],
+}
+
+impl PaymentFundingReleaseReceipt {
+    pub fn canonical_root(
+        reservation: &PaymentFundingReservation,
+        reason_root: [u8; 32],
+    ) -> Option<[u8; 32]> {
+        reservation.validate_reserved().ok()?;
+        if reason_root == [0u8; 32] {
+            return None;
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(FUNDING_RELEASE_DOMAIN);
+        hasher.update(reservation.reservation_root);
+        hasher.update(reservation.payment_intent_root);
+        hasher.update(reservation.payer_account_root);
+        hasher.update(reservation.source_asset_root);
+        hasher.update(reservation.amount.to_be_bytes());
+        hasher.update(reservation.account_sequence.to_be_bytes());
+        hasher.update(reservation.funding_shard.to_be_bytes());
+        hasher.update(reservation.epoch.to_be_bytes());
+        hasher.update(reason_root);
+        Some(hasher.finalize().into())
+    }
+
+    pub fn validate_against(
+        &self,
+        reservation: &PaymentFundingReservation,
+    ) -> Result<(), &'static str> {
+        if self.reservation_root != reservation.reservation_root || self.reason_root == [0u8; 32] {
+            return Err("funding release does not match reservation");
+        }
+        let expected = Self::canonical_root(reservation, self.reason_root)
+            .ok_or("funding release root unavailable")?;
+        if self.release_root != expected {
+            return Err("funding release root mismatch");
+        }
+        Ok(())
+    }
+}
+
+impl PaymentFundingReservation {
+    pub fn consume_once(
+        &mut self,
+        receipt: &PaymentFundingConsumptionReceipt,
+        intent: &PaymentIntent,
+        now: u64,
+    ) -> Result<[u8; 32], &'static str> {
+        receipt.validate_against_intent(self, intent, now)?;
+        let root = receipt.consumption_root;
+        self.status = FundingStatus::Consumed;
+        Ok(root)
+    }
+
+    pub fn release_once(
+        &mut self,
+        receipt: &PaymentFundingReleaseReceipt,
+    ) -> Result<[u8; 32], &'static str> {
+        self.validate_reserved()?;
+        receipt.validate_against(self)?;
+        let root = receipt.release_root;
+        self.status = FundingStatus::Released;
+        Ok(root)
     }
 }
 
@@ -203,7 +299,8 @@ mod tests {
         let r = reservation();
         let mut c = PaymentFundingConsumptionReceipt {
             reservation_root: r.reservation_root,
-            consumption_root: [6; 32],
+            consumption_root: PaymentFundingConsumptionReceipt::canonical_root(&r)
+                .expect("canonical consumption root"),
             payment_intent_root: r.payment_intent_root,
             payer_account_root: r.payer_account_root,
             source_asset_root: r.source_asset_root,
@@ -226,7 +323,8 @@ mod tests {
         let intent = intent();
         let receipt = PaymentFundingConsumptionReceipt {
             reservation_root: r.reservation_root,
-            consumption_root: [6; 32],
+            consumption_root: PaymentFundingConsumptionReceipt::canonical_root(&r)
+                .expect("canonical consumption root"),
             payment_intent_root: r.payment_intent_root,
             payer_account_root: r.payer_account_root,
             source_asset_root: r.source_asset_root,
@@ -242,6 +340,44 @@ mod tests {
         let mut changed = intent;
         changed.amount += 1;
         assert!(receipt.validate_against_intent(&r, &changed, 100).is_err());
+    }
+
+    #[test]
+    fn funding_reservation_consumes_exactly_once() {
+        let mut reservation = reservation();
+        let intent = intent();
+        let receipt = PaymentFundingConsumptionReceipt {
+            reservation_root: reservation.reservation_root,
+            consumption_root: PaymentFundingConsumptionReceipt::canonical_root(&reservation)
+                .expect("canonical consumption root"),
+            payment_intent_root: reservation.payment_intent_root,
+            payer_account_root: reservation.payer_account_root,
+            source_asset_root: reservation.source_asset_root,
+            amount: reservation.amount,
+            account_sequence: reservation.account_sequence,
+            funding_shard: reservation.funding_shard,
+            epoch: reservation.epoch,
+        };
+
+        assert!(reservation.consume_once(&receipt, &intent, 100).is_ok());
+        assert_eq!(reservation.status, FundingStatus::Consumed);
+        assert!(reservation.consume_once(&receipt, &intent, 100).is_err());
+    }
+
+    #[test]
+    fn funding_reservation_releases_exactly_once() {
+        let mut reservation = reservation();
+        let reason_root = [0x77; 32];
+        let receipt = PaymentFundingReleaseReceipt {
+            reservation_root: reservation.reservation_root,
+            reason_root,
+            release_root: PaymentFundingReleaseReceipt::canonical_root(&reservation, reason_root)
+                .expect("canonical release root"),
+        };
+
+        assert!(reservation.release_once(&receipt).is_ok());
+        assert_eq!(reservation.status, FundingStatus::Released);
+        assert!(reservation.release_once(&receipt).is_err());
     }
 
     #[test]
