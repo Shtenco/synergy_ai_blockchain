@@ -45,9 +45,11 @@ pub enum TxError {
     AuthorizationFailed,
 }
 
-fn put_len_prefixed(out: &mut Vec<u8>, field: &[u8]) {
-    out.extend_from_slice(&(field.len() as u64).to_be_bytes());
+fn put_len_prefixed(out: &mut Vec<u8>, field: &[u8]) -> Option<()> {
+    let len = u64::try_from(field.len()).ok()?;
+    out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(field);
+    Some(())
 }
 
 impl PqEvmTransaction {
@@ -82,7 +84,7 @@ impl PqEvmTransaction {
             return None;
         }
 
-        let message = self.signing_preimage();
+        let message = self.signing_preimage()?;
         let context = self.fips_signature_context();
         let signature =
             signer.sign_with_context(scheme, secret_key_handle, &message, &context)?;
@@ -96,9 +98,13 @@ impl PqEvmTransaction {
 
     /// Canonical signing preimage shared by every authorization lane. Signature
     /// bytes themselves are excluded, preventing circular encoding.
-    pub fn signing_preimage(&self) -> Vec<u8> {
+    pub fn signing_preimage(&self) -> Option<Vec<u8>> {
+        if self.data.len() > MAX_TX_CALLDATA_BYTES {
+            return None;
+        }
+
         let mut out = Vec::with_capacity(256 + self.data.len());
-        put_len_prefixed(&mut out, PQ_TX_DOMAIN);
+        put_len_prefixed(&mut out, PQ_TX_DOMAIN)?;
         out.extend_from_slice(&self.chain_id.to_be_bytes());
         out.extend_from_slice(&self.sender_account);
         out.extend_from_slice(&self.nonce.to_be_bytes());
@@ -114,7 +120,7 @@ impl PqEvmTransaction {
             None => out.push(0),
         }
         out.extend_from_slice(&self.value);
-        put_len_prefixed(&mut out, &self.data);
+        put_len_prefixed(&mut out, &self.data)?;
 
         // Classical and PQ lanes must authenticate the same cryptographic
         // semantics. Bind profile, authorization domain, policy and the ordered
@@ -124,11 +130,12 @@ impl PqEvmTransaction {
         out.push(AuthorizationDomain::Transaction.protocol_code());
         out.push(self.authorization.policy.protocol_code());
         let schemes = self.authorization.policy.required_schemes();
-        out.push(schemes.len() as u8);
+        let scheme_count = u8::try_from(schemes.len()).ok()?;
+        out.push(scheme_count);
         for scheme in schemes {
             out.push(scheme.protocol_code());
         }
-        out
+        Some(out)
     }
 
     pub fn validate<V: ContextSignatureVerifier>(
@@ -176,7 +183,9 @@ impl PqEvmTransaction {
         {
             return Err(TxError::DataTooLarge);
         }
-        let message = self.signing_preimage();
+        let message = self
+            .signing_preimage()
+            .ok_or(TxError::DataTooLarge)?;
         let context = self.fips_signature_context();
         if !verify_authorization_with_context(
             verifier,
@@ -258,7 +267,7 @@ mod tests {
     fn transaction_validation_is_chain_nonce_and_fips_context_bound() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -315,7 +324,7 @@ mod tests {
     fn transaction_validation_rejects_wrong_epoch_and_expiry() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -356,7 +365,7 @@ mod tests {
     fn transaction_validation_rejects_expiry_beyond_policy_horizon() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -378,10 +387,17 @@ mod tests {
     }
 
     #[test]
+    fn oversized_transaction_has_no_canonical_signing_preimage() {
+        let mut tx = test_tx();
+        tx.data = vec![0u8; MAX_TX_CALLDATA_BYTES + 1];
+        assert!(tx.signing_preimage().is_none());
+    }
+
+    #[test]
     fn transaction_calldata_policy_cannot_exceed_protocol_ceiling() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -408,7 +424,7 @@ mod tests {
         tx.authorization.evidence[0].public_key[0] ^= 1;
 
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -433,7 +449,7 @@ mod tests {
     fn transaction_validation_rejects_weaker_or_different_policy() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage(),
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -457,13 +473,18 @@ mod tests {
     #[test]
     fn transaction_preimage_binds_crypto_profile_and_algorithm_suite() {
         let tx = test_tx();
-        let preimage = tx.signing_preimage();
+        let preimage = tx
+            .signing_preimage()
+            .expect("canonical transaction preimage");
         let version = crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes();
         assert!(preimage.windows(version.len()).any(|window| window == version));
 
         let mut other_policy = tx.clone();
         other_policy.authorization.policy = AuthPolicy::Max;
-        assert_ne!(preimage, other_policy.signing_preimage());
+        assert_ne!(
+            Some(preimage),
+            other_policy.signing_preimage()
+        );
     }
 
     #[test]
