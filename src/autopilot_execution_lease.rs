@@ -46,13 +46,27 @@ impl AutopilotExecutionLease {
         Some(hasher.finalize().into())
     }
 
-    pub fn validate_new(
+    pub fn validate_binding(
         &self,
         reservation: &AutopilotBudgetReservation,
         call: &AutopilotBudgetBoundCall,
-        now: u64,
     ) -> Result<(), &'static str> {
-        call.validate_against(reservation, now)?;
+        reservation.validate()?;
+        if call.reservation_root != reservation.reservation_root
+            || call.policy_root != reservation.policy_root
+            || call.proposal_root == [0u8; 32]
+            || call.calldata_hash == [0u8; 32]
+            || call.target == [0u8; 20]
+            || call.value > reservation.reserved_value
+        {
+            return Err("execution lease call/reservation binding invalid");
+        }
+        if let Some(expected) = reservation.company_graph_root {
+            if call.company_graph_root != Some(expected) {
+                return Err("execution lease company graph mismatch");
+            }
+        }
+
         let call_root = call
             .authorization_commitment(reservation)
             .ok_or("budget-bound call commitment unavailable")?;
@@ -71,6 +85,17 @@ impl AutopilotExecutionLease {
         if self.proposal_root != call.proposal_root {
             return Err("execution lease proposal mismatch");
         }
+        Ok(())
+    }
+
+    pub fn validate_new(
+        &self,
+        reservation: &AutopilotBudgetReservation,
+        call: &AutopilotBudgetBoundCall,
+        now: u64,
+    ) -> Result<(), &'static str> {
+        call.validate_against(reservation, now)?;
+        self.validate_binding(reservation, call)?;
         if self.status != AutopilotExecutionLeaseStatus::ExecutionLocked {
             return Err("new execution lease must be locked");
         }
@@ -236,7 +261,8 @@ fn verify_autopilot_lease_terminal<V: ContextSignatureVerifier>(
     authorized: &AutopilotLeaseTerminalAuthorization,
     validation: &AutopilotLeaseTerminalValidationContext,
 ) -> bool {
-    if lease.status != AutopilotExecutionLeaseStatus::ExecutionLocked
+    if lease.validate_binding(reservation, call).is_err()
+        || lease.status != AutopilotExecutionLeaseStatus::ExecutionLocked
         || lease.lease_root != validation.expected_lease_root
         || authorized.terminal.lease_root != lease.lease_root
         || reservation.owner_account != validation.expected_owner_account
@@ -688,6 +714,23 @@ mod tests {
         .is_err());
         assert_eq!(lease.status, AutopilotExecutionLeaseStatus::ExecutionLocked);
         assert_eq!(replay.next_nonce(), 21);
+    }
+
+    #[test]
+    fn terminal_path_rejects_lease_not_bound_to_signed_call() {
+        let (reservation, call) = reservation_and_call();
+        let mut lease = AutopilotExecutionLease {
+            lease_root: AutopilotExecutionLease::canonical_root(&reservation, &call)
+                .expect("lease root"),
+            reservation_root: reservation.reservation_root,
+            budget_bound_call_root: call
+                .authorization_commitment(&reservation)
+                .expect("call root"),
+            proposal_root: call.proposal_root,
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+        lease.proposal_root[0] ^= 1;
+        assert!(lease.validate_binding(&reservation, &call).is_err());
     }
 
     #[test]
