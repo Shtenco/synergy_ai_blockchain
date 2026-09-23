@@ -141,6 +141,8 @@ pub enum AuthorizationDomain {
     AutopilotExecution,
     PaymentIntent,
     SettlementBatch,
+    StorageProof,
+    CognitiveEvidence,
 }
 
 impl AuthorizationDomain {
@@ -158,6 +160,8 @@ impl AuthorizationDomain {
             Self::AutopilotExecution => 10,
             Self::PaymentIntent => 11,
             Self::SettlementBatch => 12,
+            Self::StorageProof => 13,
+            Self::CognitiveEvidence => 14,
         }
     }
 }
@@ -1045,6 +1049,8 @@ mod tests {
             AuthorizationDomain::AutopilotExecution.protocol_code(),
             AuthorizationDomain::PaymentIntent.protocol_code(),
             AuthorizationDomain::SettlementBatch.protocol_code(),
+            AuthorizationDomain::StorageProof.protocol_code(),
+            AuthorizationDomain::CognitiveEvidence.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
