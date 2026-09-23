@@ -36,6 +36,7 @@ jobs:
           cargo --version
           rustfmt --version
           cargo clippy --version
+          python3 --version
 
       - name: Resolve reproducibility bootstrap
         shell: bash
@@ -60,6 +61,27 @@ jobs:
           python3 scripts/m2_spdx_from_cargo_metadata.py \
             m2-cargo-metadata-reference-pq.json \
             m2-spdx-reference-pq.json
+
+          {
+            echo "git_commit=$(git rev-parse HEAD)"
+            echo "rustc=$(rustc --version)"
+            echo "cargo=$(cargo --version)"
+            echo "rustfmt=$(rustfmt --version)"
+            echo "clippy=$(cargo clippy --version)"
+            echo "python=$(python3 --version 2>&1)"
+          } > m2-build-environment.txt
+
+          sha256sum \
+            Cargo.lock \
+            m2-cargo-metadata-core.json \
+            m2-cargo-metadata-reference-pq.json \
+            m2-cargo-tree-core.txt \
+            m2-cargo-tree-reference-pq.txt \
+            m2-cargo-duplicates-reference-pq.txt \
+            m2-spdx-core.json \
+            m2-spdx-reference-pq.json \
+            m2-build-environment.txt \
+            > m2-evidence-sha256.txt
 
       - name: Formatting gate
         run: cargo fmt --all -- --check
@@ -99,5 +121,7 @@ jobs:
             m2-cargo-duplicates-reference-pq.txt
             m2-spdx-core.json
             m2-spdx-reference-pq.json
+            m2-build-environment.txt
+            m2-evidence-sha256.txt
           if-no-files-found: warn
           retention-days: 30
