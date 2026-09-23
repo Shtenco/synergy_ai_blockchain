@@ -1601,4 +1601,11 @@ require(
     "cognitive reward accounting must reject over-cap or invalid normalized arithmetic without clipping",
 )
 
+
+require(
+    "10_000u64.checked_sub(self.archive_to_raw_bps()?)" in storage
+    and "saturating_sub(self.archive_to_raw_bps()?)" not in storage,
+    "storage compression savings must fail closed on archive expansion instead of clipping",
+)
+
 print("M2 static guard: PASS")
