@@ -715,4 +715,20 @@ require(
     "consensus/service authorization domain codes missing or changed",
 )
 
+
+require(
+    "current_block" in consensus
+    and "min_activation_delay_blocks" in consensus
+    and "checked_add(validation.min_activation_delay_blocks)" in consensus
+    and "validation.min_activation_delay_blocks == 0" in consensus,
+    "consensus activation must reject retroactive/zero-delay activation",
+)
+
+require(
+    "current_service_plane_epoch" in service_planes
+    and "checked_add(1)" in service_planes
+    and "validation.expected_service_plane_epoch != next_epoch" in service_planes,
+    "service-plane checkpoint epochs must remain strictly monotonic",
+)
+
 print("M2 static guard: PASS")
