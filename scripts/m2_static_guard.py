@@ -34,6 +34,7 @@ payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
 storage = (ROOT / "src/storage.rs").read_text(encoding="utf-8")
 cognitive = (ROOT / "src/cognitive.rs").read_text(encoding="utf-8")
 nexus = (ROOT / "src/nexus.rs").read_text(encoding="utf-8")
+kv_cache = (ROOT / "src/kv_cache.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -1035,6 +1036,18 @@ require(
     and "public_key[0] = 0xff" in pq_ref
     and "public_key[1] = (public_key[1] & 0xf0) | 0x0f" in pq_ref,
     "ML-KEM regression must reject correct-length noncanonical modulus encoding",
+)
+
+
+require(
+    "Self::KvReplicaReceipt => 15" in pq
+    and "MAX_KV_REPLICAS: usize = 32" in kv_cache
+    and "pub(crate) fn verify_kv_replica_receipt" in kv_cache
+    and "pub fn verify_kv_replica_receipt_and_consume" in kv_cache
+    and "AuthorizationDomain::KvReplicaReceipt" in kv_cache
+    and "expected_worker_keyset_commitment" in kv_cache
+    and "replay.consume_verified" in kv_cache,
+    "KV-cache replica evidence must remain PQ-authorized, bounded and replay-consuming",
 )
 
 print("M2 static guard: PASS")
