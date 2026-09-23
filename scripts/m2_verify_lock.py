@@ -98,7 +98,12 @@ def main() -> int:
     required_features = {
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
-        ("slh-dsa", "0.1.0"): {"alloc"},
+        ("slh-dsa", "0.1.0"): {"alloc", "default"},
+    }
+    allowed_features = {
+        ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
+        ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
+        ("slh-dsa", "0.1.0"): {"alloc", "default"},
     }
     package_by_id = {pkg.get("id"): pkg for pkg in meta_packages}
     observed_feature_targets = set()
@@ -114,6 +119,9 @@ def main() -> int:
         missing = sorted(expected - observed)
         if missing:
             fail(f"required features missing for {key[0]} {key[1]}: {missing}")
+        unexpected = sorted(observed - allowed_features[key])
+        if unexpected:
+            fail(f"unexpected features enabled for {key[0]} {key[1]}: {unexpected}")
         observed_feature_targets.add(key)
 
     missing_targets = sorted(set(required_features) - observed_feature_targets)
