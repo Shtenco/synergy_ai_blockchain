@@ -170,10 +170,9 @@ impl ServicePlaneCapacityEnvelope {
         if self.logical_storage_bytes == 0 {
             return None;
         }
-        let value = self.physical_storage_bytes
-            .saturating_mul(10_000)
-            / self.logical_storage_bytes;
-        Some(value.min(u64::MAX as u128) as u64)
+        let numerator = self.physical_storage_bytes.checked_mul(10_000)?;
+        let value = numerator.checked_div(self.logical_storage_bytes)?;
+        u64::try_from(value).ok()
     }
 }
 
@@ -361,6 +360,18 @@ mod tests {
             service_finality_root: [7; 32],
         };
         assert_eq!(roots.validate(), Ok(()));
+    }
+
+    #[test]
+    fn aggregate_storage_ratio_fails_closed_on_overflow() {
+        let capacity = ServicePlaneCapacityEnvelope {
+            payment_items: 0,
+            logical_storage_bytes: 1,
+            physical_storage_bytes: u128::MAX,
+            cognitive_receipts: 0,
+            authorized_autopilot_actions: 0,
+        };
+        assert_eq!(capacity.physical_to_logical_storage_bps(), None);
     }
 
     #[test]
