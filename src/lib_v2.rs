@@ -85,7 +85,9 @@ pub use network::{
     TRANSPORT_TRANSCRIPT_DOMAIN,
     X25519_PUBLIC_KEY_BYTES,
 };
-pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
+pub use nexus::{
+    infer_reference_metered, NexusError, NexusManifest, NexusMode, NexusRequest, NexusResponse,
+};
 pub use payment_funding::{
     FundedSettlementCommitment, FundingStatus, PaymentFundingConsumptionReceipt,
     PaymentFundingReservation,
