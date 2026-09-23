@@ -3,19 +3,23 @@
   "fixtures": [
     {
       "path": "tests/vectors/ml-kem-1024-acvp-subset.json",
-      "git_blob_sha1": "85d2478cea6c1843c36a70cee59b7182ad8be569"
+      "git_blob_sha1": "85d2478cea6c1843c36a70cee59b7182ad8be569",
+      "sha256": "87ad6233a5659ee1b2820664278d603fd9f24ddcb16623ba75a34150ae5e79df"
     },
     {
       "path": "tests/vectors/ml-dsa-87-acvp-subset.json",
-      "git_blob_sha1": "622357b8aec4f98d8ee7f69160e3ab076f6725be"
+      "git_blob_sha1": "622357b8aec4f98d8ee7f69160e3ab076f6725be",
+      "sha256": "5d62d2cc651feb3afca68d472e974ffd86c5c898e9573a42aff2d39fabaa3701"
     },
     {
       "path": "tests/vectors/slh-dsa-shake-256s-acvp-subset.json",
-      "git_blob_sha1": "1ff3f07f314283f0ded5e33de2e4d4b7dd1079b5"
+      "git_blob_sha1": "1ff3f07f314283f0ded5e33de2e4d4b7dd1079b5",
+      "sha256": "7405321d73128d14172bb1ee1af8fc5b5488a0f1a37f5f58da8e23bf257d264e"
     },
     {
       "path": "tests/vectors/ml-kem-1024-wycheproof-negative-subset.json",
-      "git_blob_sha1": "a90c6ac1b858012f8d8e680d51e77d50dfe10d40"
+      "git_blob_sha1": "a90c6ac1b858012f8d8e680d51e77d50dfe10d40",
+      "sha256": "120aac9e0c8ae2455e15dd680e18a127639ec22ab1dee215646089fd6773439f"
     }
   ]
 }
