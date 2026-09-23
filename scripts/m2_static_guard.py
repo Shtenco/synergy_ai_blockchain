@@ -1193,4 +1193,33 @@ require(
     "cognitive provenance must remain bound to operational role and implementation",
 )
 
+
+require(
+    "expected_payer_keyset_commitment" in payments
+    and "primary_account_identity_commitment()" in payments
+    and "Some(authorized.intent.payer)" in payments
+    and "Some(validation.expected_payer_keyset_commitment)" in payments,
+    "payment payer identity must remain stable-account-bound with separate current keyset",
+)
+
+require(
+    "expected_owner_keyset_commitment" in autopilot_budget
+    and "primary_account_identity_commitment()" in autopilot_budget
+    and "Some(reservation.owner_account)" in autopilot_budget
+    and "Some(validation.expected_owner_keyset_commitment)" in autopilot_budget,
+    "Autopilot owner identity must remain stable-account-bound with separate current keyset",
+)
+
+require(
+    "binding.binding.synergy_account_id" in migration
+    and "replay.consume_verified_for_subject" in migration,
+    "bridge migration replay subject must remain the stable target account identity",
+)
+
+require(
+    "funding reservation payer account mismatch" in payment_funding
+    and "self.payer_account_root != intent.payer" in payment_funding,
+    "funding reservation must remain bound to the exact payer account",
+)
+
 print("M2 static guard: PASS")
