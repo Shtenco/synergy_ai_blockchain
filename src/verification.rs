@@ -225,7 +225,9 @@ fn canonical_receipt_set(
     let mut hasher = Sha256::new();
     hasher.update(VERIFICATION_RECEIPT_SET_DOMAIN);
     hasher.update(challenge.challenge_id);
-    hasher.update((receipts.len() as u64).to_be_bytes());
+    let receipt_count_u64 =
+        u64::try_from(receipts.len()).map_err(|_| "verifier receipt count exceeds u64")?;
+    hasher.update(receipt_count_u64.to_be_bytes());
 
     let mut previous_verifier: Option<[u8; 32]> = None;
     let mut matches = 0u16;
@@ -282,8 +284,10 @@ impl VerificationAggregate {
         if self.challenge_id != challenge.challenge_id || self.receipt_root == [0; 32] {
             return Err("verification aggregate mismatch");
         }
-        let total = self.matches as u32 + self.mismatches as u32 + self.inconclusive as u32;
-        if total != self.distinct_verifiers as u32 {
+        let total = u32::from(self.matches)
+            + u32::from(self.mismatches)
+            + u32::from(self.inconclusive);
+        if total != u32::from(self.distinct_verifiers) {
             return Err("verification receipt accounting mismatch");
         }
         if self.distinct_verifiers < challenge.required_replications {
@@ -302,7 +306,7 @@ impl VerificationAggregate {
         let (root, matches, mismatches, inconclusive) =
             canonical_receipt_set(challenge, receipts)?;
 
-        if receipts.len() != self.distinct_verifiers as usize
+        if receipts.len() != usize::from(self.distinct_verifiers)
             || root != self.receipt_root
             || matches != self.matches
             || mismatches != self.mismatches
