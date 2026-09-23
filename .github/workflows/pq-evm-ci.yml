@@ -71,6 +71,9 @@ jobs:
             echo "python=$(python3 --version 2>&1)"
           } > m2-build-environment.txt
 
+          cargo fetch --locked
+          echo "CARGO_NET_OFFLINE=true" >> "$GITHUB_ENV"
+
           sha256sum \
             Cargo.lock \
             m2-cargo-metadata-core.json \
