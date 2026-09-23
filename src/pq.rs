@@ -6,6 +6,7 @@ pub enum AuthScheme {
     SlhDsaShake256s,
 }
 
+pub const CRYPTO_PROFILE_VERSION: u16 = 1;
 pub const SECP256K1_PUBLIC_KEY_BYTES: usize = 33;
 pub const SECP256K1_SIGNATURE_BYTES: usize = 65;
 pub const ED25519_PUBLIC_KEY_BYTES: usize = 32;
@@ -140,9 +141,10 @@ impl AuthorizationEnvelope {
 
     pub fn canonical_message(&self, policy: AuthPolicy) -> Result<Vec<u8>, &'static str> {
         self.validate()?;
-        const PREFIX: &[u8] = b"SYNERGY/PQ-AUTH/V1\0";
-        let mut out = Vec::with_capacity(PREFIX.len() + 32 + 2 + 8 * 3 + 32);
+        const PREFIX: &[u8] = b"SYNERGY/PQ-AUTH\0";
+        let mut out = Vec::with_capacity(PREFIX.len() + 2 + 32 + 2 + 8 * 3 + 32);
         out.extend_from_slice(PREFIX);
+        out.extend_from_slice(&CRYPTO_PROFILE_VERSION.to_be_bytes());
         out.extend_from_slice(&self.chain_id);
         out.push(self.domain.protocol_code());
         out.push(policy.protocol_code());
@@ -174,9 +176,10 @@ pub fn fips_signature_context(
     domain: AuthorizationDomain,
     policy: AuthPolicy,
 ) -> Vec<u8> {
-    const PREFIX: &[u8] = b"SYNERGY/PQ-FIPS-CONTEXT/V1\0";
-    let mut out = Vec::with_capacity(PREFIX.len() + 32 + 2);
+    const PREFIX: &[u8] = b"SYNERGY/PQ-FIPS-CONTEXT\0";
+    let mut out = Vec::with_capacity(PREFIX.len() + 2 + 32 + 2);
     out.extend_from_slice(PREFIX);
+    out.extend_from_slice(&CRYPTO_PROFILE_VERSION.to_be_bytes());
     out.extend_from_slice(chain_id);
     out.push(domain.protocol_code());
     out.push(policy.protocol_code());
@@ -631,6 +634,25 @@ mod tests {
             evidence: vec![bad, evidence(AuthScheme::SlhDsaShake256s)],
         };
         assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn crypto_profile_version_is_bound_into_message_and_fips_context() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x31; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 1,
+            nonce: 2,
+            expires_at: 100,
+            payload_commitment: [0x32; 32],
+        };
+
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        let version = CRYPTO_PROFILE_VERSION.to_be_bytes();
+
+        assert!(message.windows(version.len()).any(|window| window == version));
+        assert!(context.windows(version.len()).any(|window| window == version));
     }
 
     #[test]
