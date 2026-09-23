@@ -326,7 +326,11 @@ pub fn verify_storage_proof_and_consume<V: ContextSignatureVerifier>(
         Some(envelope) => envelope,
         None => return false,
     };
-    replay.consume_verified(&authorized.authorization, &envelope)
+    replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &envelope,
+        validation.expected_provider_keyset_commitment,
+    )
 }
 
 #[cfg(test)]
