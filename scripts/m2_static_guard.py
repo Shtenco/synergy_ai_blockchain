@@ -948,4 +948,13 @@ require(
     "Ed25519 must remain reserved/inactive in crypto profile v1",
 )
 
+
+require(
+    "MAX_AUTHORIZATION_LIFETIME_SECONDS: u64 = 86_400" in pq
+    and "max_lifetime_seconds" in pq
+    and "authorization lifetime policy exceeds protocol ceiling" in pq
+    and "AuthorizationDomain::Transaction.max_lifetime_seconds()" in tx,
+    "authorization lifetime must remain bounded by protocol, not caller policy",
+)
+
 print("M2 static guard: PASS")
