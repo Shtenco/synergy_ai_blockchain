@@ -36,8 +36,10 @@ pub use autopilot_budget::{
     AutopilotRealizedExecutionReceipt,
 };
 pub use autopilot_execution_lease::{
-    authorize_and_lock_autopilot_execution, AutopilotExecutionLease,
-    AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalReceipt,
+    authorize_and_lock_autopilot_execution, finalize_autopilot_lease_and_consume,
+    AutopilotExecutionLease, AutopilotExecutionLeaseStatus,
+    AutopilotLeaseTerminalAuthorization, AutopilotLeaseTerminalReceipt,
+    AutopilotLeaseTerminalValidationContext,
 };
 pub use cognitive::{
     verify_cognitive_evidence_and_consume, CognitiveEvidence, CognitiveEvidenceAuthorization,
