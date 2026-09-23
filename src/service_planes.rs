@@ -7,7 +7,9 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::autopilot_execution_lease::AutopilotLeaseTerminalAuthorization;
+use crate::autopilot_execution_lease::{
+    AutopilotExecutionLease, AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalAuthorization,
+};
 use crate::cognitive::{
     CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
 };
@@ -67,8 +69,16 @@ impl ServiceFinalityItem {
     }
 
     pub fn autopilot_terminal(
+        lease: &AutopilotExecutionLease,
         authorized: &AutopilotLeaseTerminalAuthorization,
     ) -> Option<Self> {
+        if lease.lease_root != authorized.terminal.lease_root
+            || lease.status == AutopilotExecutionLeaseStatus::ExecutionLocked
+            || lease.status != authorized.terminal.status
+        {
+            return None;
+        }
+
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
             source_chain_id: authorized.chain_id,
@@ -585,7 +595,14 @@ mod tests {
             },
             authorization: max_authorization(),
         };
-        let item = ServiceFinalityItem::autopilot_terminal(&terminal)
+        let terminal_lease = AutopilotExecutionLease {
+            lease_root: terminal.terminal.lease_root,
+            reservation_root: [0x69; 32],
+            budget_bound_call_root: [0x6A; 32],
+            proposal_root: [0x6B; 32],
+            status: terminal.terminal.status,
+        };
+        let item = ServiceFinalityItem::autopilot_terminal(&terminal_lease, &terminal)
             .expect("Autopilot terminal finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::AutopilotTerminal);
         assert_eq!(item.source_chain_id(), [0x66; 32]);
@@ -594,6 +611,38 @@ mod tests {
             item.root(),
             terminal.terminal.commitment().expect("terminal root")
         );
+    }
+
+    #[test]
+    fn autopilot_finality_requires_applied_terminal_lease_state() {
+        let terminal = AutopilotLeaseTerminalAuthorization {
+            chain_id: [0x66; 32],
+            epoch: 7,
+            nonce: 2,
+            expires_at: 100,
+            terminal: AutopilotLeaseTerminalReceipt {
+                lease_root: [0x67; 32],
+                execution_receipt_root: Some([0x68; 32]),
+                reason_root: None,
+                status: AutopilotExecutionLeaseStatus::Settled,
+            },
+            authorization: max_authorization(),
+        };
+        let mut lease = AutopilotExecutionLease {
+            lease_root: terminal.terminal.lease_root,
+            reservation_root: [0x69; 32],
+            budget_bound_call_root: [0x6A; 32],
+            proposal_root: [0x6B; 32],
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+
+        assert!(ServiceFinalityItem::autopilot_terminal(&lease, &terminal).is_none());
+
+        lease.status = AutopilotExecutionLeaseStatus::Settled;
+        assert!(ServiceFinalityItem::autopilot_terminal(&lease, &terminal).is_some());
+
+        lease.status = AutopilotExecutionLeaseStatus::Cancelled;
+        assert!(ServiceFinalityItem::autopilot_terminal(&lease, &terminal).is_none());
     }
 
     #[test]
