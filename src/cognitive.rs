@@ -317,6 +317,40 @@ pub struct CognitiveWorkReceipt {
     pub realized_utility_micros: i64,
 }
 
+impl CognitiveWorkReceipt {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.request_id == [0u8; 32]
+            || self.node_id == [0u8; 32]
+            || self.evidence_commitment == [0u8; 32]
+            || self.verifier_commitment == [0u8; 32]
+            || self.authority_commitment == [0u8; 32]
+        {
+            return Err("cognitive work receipt commitments required");
+        }
+        if !(-1_000_000..=1_000_000).contains(&self.realized_utility_micros) {
+            return Err("realized utility out of range");
+        }
+        match self.verdict {
+            WorkVerdict::Accepted => {
+                if self.slash_amount != 0 {
+                    return Err("accepted cognitive work cannot be slashed");
+                }
+            }
+            WorkVerdict::Rejected => {
+                if self.paid_amount != 0 {
+                    return Err("rejected cognitive work cannot be paid");
+                }
+            }
+            WorkVerdict::Abstained | WorkVerdict::Disputed => {
+                if self.paid_amount != 0 || self.slash_amount != 0 {
+                    return Err("non-final cognitive verdict cannot settle value");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 
 pub fn verify_cognitive_evidence_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
