@@ -53,8 +53,9 @@ pub use migration::{LegacyChain, LegacyIdentityBinding};
 pub use model_shard::{ModelLineageTransition, ModelManifestCommitment, ModelShardOutput};
 pub use network::{
     derive_transport_session_key, establish_shared_secret, validate_shared_secret,
-    ClassicalKexScheme, HybridSharedSecret, MlKem1024Provider, MlKemSharedSecret, RekeyPolicy,
-    SecretBytes, TransportPeerIdentity, TransportPolicy, TransportReplayGuard, TransportRole,
+    ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard, MlKem1024Provider,
+    MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerIdentity, TransportPolicy,
+    TransportReplayGuard, TransportRole,
     TransportSessionKey, TransportTranscript, TransportValidationContext,
     CLASSICAL_SHARED_SECRET_BYTES,
     MAX_REKEY_MESSAGES,
