@@ -20,7 +20,10 @@ def fail(message: str) -> None:
 
 def main() -> int:
     if len(sys.argv) != 3:
-        print("usage: m2_verify_lock.py <Cargo.lock> <cargo-metadata.json>", file=sys.stderr)
+        print(
+            "usage: m2_verify_lock.py <Cargo.lock> <reference-pq-metadata.json>",
+            file=sys.stderr,
+        )
         return 2
 
     lock_path = Path(sys.argv[1])
@@ -85,6 +88,37 @@ def main() -> int:
     root_pkg = next((p for p in meta_packages if p.get("id") == root), None)
     if not root_pkg or root_pkg.get("name") != "synergy-pq-evm-core":
         fail("locked metadata root is not synergy-pq-evm-core")
+
+    nodes = resolve.get("nodes", [])
+    node_by_id = {node.get("id"): node for node in nodes}
+    root_node = node_by_id.get(root)
+    if not root_node or "reference-pq" not in set(root_node.get("features", [])):
+        fail("metadata was not resolved with reference-pq enabled")
+
+    required_features = {
+        ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
+        ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
+        ("slh-dsa", "0.1.0"): {"alloc"},
+    }
+    package_by_id = {pkg.get("id"): pkg for pkg in meta_packages}
+    observed_feature_targets = set()
+    for node in nodes:
+        pkg = package_by_id.get(node.get("id"))
+        if not pkg:
+            continue
+        key = (pkg.get("name"), pkg.get("version"))
+        expected = required_features.get(key)
+        if expected is None:
+            continue
+        observed = set(node.get("features", []))
+        missing = sorted(expected - observed)
+        if missing:
+            fail(f"required features missing for {key[0]} {key[1]}: {missing}")
+        observed_feature_targets.add(key)
+
+    missing_targets = sorted(set(required_features) - observed_feature_targets)
+    if missing_targets:
+        fail(f"reference-pq metadata is missing required crypto nodes: {missing_targets}")
 
     for pkg in meta_packages:
         source = pkg.get("source")
