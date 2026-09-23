@@ -353,6 +353,52 @@ mod tests {
     }
 
     #[test]
+    fn migration_consuming_api_accepts_nonce_once() {
+        let binding = authorization();
+        let envelope = binding.envelope().expect("migration envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("migration message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("migration context"),
+        };
+        let validation = validation();
+        let mut replay = AuthorizationReplayState::new(
+            binding.chain_id,
+            AuthorizationDomain::BridgeMigration,
+            AuthPolicy::PqOnly,
+            binding.epoch,
+            binding.binding.nonce,
+        )
+        .expect("migration replay state");
+
+        assert_eq!(
+            verify_binding_and_consume(
+                &binding,
+                b"legacy-ok",
+                &LegacyOk,
+                &verifier,
+                &validation,
+                &mut replay,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            verify_binding_and_consume(
+                &binding,
+                b"legacy-ok",
+                &LegacyOk,
+                &verifier,
+                &validation,
+                &mut replay,
+            ),
+            Err(MigrationError::InvalidPqAuthorization)
+        );
+    }
+
+    #[test]
     fn migration_rejects_pq_keyset_substitution() {
         let mut binding = authorization();
         let envelope = binding.envelope().expect("migration envelope");
