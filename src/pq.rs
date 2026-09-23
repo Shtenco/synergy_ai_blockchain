@@ -253,6 +253,44 @@ pub struct HybridAuthorization {
     pub evidence: Vec<SignatureEvidence>,
 }
 
+pub fn authorization_keyset_commitment(
+    policy: AuthPolicy,
+    keys: &[(AuthScheme, &[u8])],
+) -> Option<[u8; 32]> {
+    let required = policy.required_schemes();
+    if keys.len() != required.len() {
+        return None;
+    }
+
+    const DOMAIN: &[u8] = b"SYNERGY/PQ-AUTH-KEYSET/V1\0";
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
+    hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
+    hasher.update([policy.protocol_code()]);
+    hasher.update([keys.len() as u8]);
+
+    for (index, (scheme, public_key)) in keys.iter().enumerate() {
+        if *scheme != required[index] {
+            return None;
+        }
+        let expected = scheme.expected_public_key_bytes()?;
+        if public_key.len() != expected || public_key.iter().all(|byte| *byte == 0) {
+            return None;
+        }
+        if *scheme == AuthScheme::Secp256k1
+            && !matches!(public_key.first(), Some(0x02 | 0x03))
+        {
+            return None;
+        }
+
+        hasher.update([scheme.protocol_code()]);
+        hasher.update((public_key.len() as u64).to_be_bytes());
+        hasher.update(public_key);
+    }
+
+    Some(hasher.finalize().into())
+}
+
 impl HybridAuthorization {
     pub fn required_schemes(&self) -> &'static [AuthScheme] {
         self.policy.required_schemes()
@@ -335,21 +373,12 @@ impl HybridAuthorization {
 
     pub fn keyset_commitment(&self) -> Option<[u8; 32]> {
         self.validate_structure().ok()?;
-
-        const DOMAIN: &[u8] = b"SYNERGY/PQ-AUTH-KEYSET/V1\0";
-        let mut hasher = Sha256::new();
-        hasher.update(DOMAIN);
-        hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
-        hasher.update([self.policy.protocol_code()]);
-        hasher.update([self.evidence.len() as u8]);
-
-        for evidence in &self.evidence {
-            hasher.update([evidence.scheme.protocol_code()]);
-            hasher.update((evidence.public_key.len() as u64).to_be_bytes());
-            hasher.update(&evidence.public_key);
-        }
-
-        Some(hasher.finalize().into())
+        let keys = self
+            .evidence
+            .iter()
+            .map(|evidence| (evidence.scheme, evidence.public_key.as_slice()))
+            .collect::<Vec<_>>();
+        authorization_keyset_commitment(self.policy, &keys)
     }
 
     pub fn structurally_complete(&self) -> bool {
@@ -675,6 +704,36 @@ mod tests {
             ],
         };
         assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn keyset_identity_can_be_derived_without_signature_bytes() {
+        let ml = vec![0x31; ML_DSA_87_PUBLIC_KEY_BYTES];
+        let slh = vec![0x32; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES];
+        let keys = [
+            (AuthScheme::MlDsa87, ml.as_slice()),
+            (AuthScheme::SlhDsaShake256s, slh.as_slice()),
+        ];
+
+        let direct = authorization_keyset_commitment(AuthPolicy::PqOnly, &keys)
+            .expect("direct keyset commitment");
+
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: ml,
+                    signature: vec![0x41; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: slh,
+                    signature: vec![0x42; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        };
+        assert_eq!(direct, auth.keyset_commitment().expect("authorization keyset"));
     }
 
     #[test]
