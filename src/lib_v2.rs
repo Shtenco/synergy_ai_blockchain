@@ -44,7 +44,10 @@ pub use cognitive_registry::{
     independent_prefix_count, structural_independence, CognitiveNodeProvenance,
     IndependenceVerdict,
 };
-pub use consensus::{PrecompileAddress, PrecompileGasSchedule};
+pub use consensus::{
+    verify_consensus_activation, ConsensusActivation, ConsensusActivationAuthorization,
+    ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
+};
 pub use inference::{
     verify_inference_receipt, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
@@ -93,7 +96,11 @@ pub use pq_reference::{
     MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier, ReferencePqSigner,
 };
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
-pub use service_planes::{ServicePlaneCapacityEnvelope, ServicePlaneRoots};
+pub use service_planes::{
+    verify_service_plane_checkpoint, ServicePlaneCapacityEnvelope,
+    ServicePlaneCheckpointAuthorization, ServicePlaneCheckpointValidationContext,
+    ServicePlaneRoots,
+};
 pub use storage::{
     ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
     ProofOfStorageReceipt, StorageBid, StorageClass,
