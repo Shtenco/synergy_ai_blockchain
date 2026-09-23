@@ -46,6 +46,9 @@ impl PaymentFundingReservation {
         if self.amount != intent.amount {
             return Err("funding reservation amount/intention mismatch");
         }
+        if self.payer_account_root != intent.payer {
+            return Err("funding reservation payer account mismatch");
+        }
         Ok(())
     }
 }
@@ -166,7 +169,7 @@ mod tests {
             reservation_id: [1; 32],
             reservation_root: [2; 32],
             payment_intent_root,
-            payer_account_root: [4; 32],
+            payer_account_root: intent().payer,
             source_asset_root: [5; 32],
             amount: 700,
             account_sequence: 9,
@@ -174,6 +177,14 @@ mod tests {
             epoch: 7,
             status: FundingStatus::Reserved,
         }
+    }
+
+    #[test]
+    fn reservation_rejects_cross_account_funding_substitution() {
+        let mut r = reservation();
+        let intent = intent();
+        r.payer_account_root[0] ^= 1;
+        assert!(r.validate_against_intent(&intent, 100).is_err());
     }
 
     #[test]
