@@ -117,12 +117,14 @@ impl ModelLineageTransition {
         hasher.update(self.generation.to_be_bytes());
         hasher.update(self.activation_epoch.to_be_bytes());
 
-        hasher.update((self.consumed_shards.len() as u64).to_be_bytes());
+        let consumed_len = u64::try_from(self.consumed_shards.len()).ok()?;
+        hasher.update(consumed_len.to_be_bytes());
         for consumed in &self.consumed_shards {
             hasher.update(consumed);
         }
 
-        hasher.update((self.created_shards.len() as u64).to_be_bytes());
+        let created_len = u64::try_from(self.created_shards.len()).ok()?;
+        hasher.update(created_len.to_be_bytes());
         for shard in &self.created_shards {
             hasher.update(shard.shard_commitment);
             hasher.update(shard.model_root);
