@@ -835,4 +835,25 @@ for name, source in (
         f"{name} inner module docs must precede all Rust items",
     )
 
+
+require(
+    "u64::try_from(input_bytes).ok()?" in consensus
+    and "u64::try_from(output_bytes).ok()?" in consensus
+    and "u64::try_from(nodes).ok()?" in consensus,
+    "consensus gas accounting must use checked architecture-safe size conversion",
+)
+
+require(
+    "pub fn archive_to_raw_bps(&self) -> Option<u64>" in storage
+    and "pub fn unique_to_logical_bps(&self) -> Option<u64>" in storage
+    and "u64::try_from(ratio).ok()" in storage,
+    "storage ratio conversion must remain fail-closed and non-truncating",
+)
+
+require(
+    "u64::try_from(self.consumed_shards.len()).ok()?" in model_shard
+    and "u64::try_from(self.created_shards.len()).ok()?" in model_shard,
+    "model lineage vector lengths must remain architecture-safe in canonical serialization",
+)
+
 print("M2 static guard: PASS")
