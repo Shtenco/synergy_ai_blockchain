@@ -18,7 +18,7 @@ use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
-use crate::storage::StorageProofAuthorization;
+use crate::storage::{ArchiveReceipt, StorageProofAuthorization};
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
@@ -77,7 +77,18 @@ impl ServiceFinalityItem {
         })
     }
 
-    pub fn storage_receipt(authorized: &StorageProofAuthorization) -> Option<Self> {
+    pub fn storage_receipt(
+        archive: &ArchiveReceipt,
+        authorized: &StorageProofAuthorization,
+    ) -> Option<Self> {
+        let archive_commitment = archive.commitment()?;
+        if authorized.receipt.object_id != archive.object_id
+            || authorized.receipt.archive_commitment != archive_commitment
+            || authorized.receipt.epoch >= archive.expires_at_epoch
+        {
+            return None;
+        }
+
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
             source_chain_id: authorized.chain_id,
