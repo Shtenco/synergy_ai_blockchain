@@ -67,8 +67,11 @@ pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, 
 pub use pq::{
     sign_envelope_evidence, verify_envelope_authorization, AuthPolicy, AuthScheme,
     AuthorizationDomain, AuthorizationEnvelope, AuthorizationValidationContext,
-    ContextSignatureSigner, ContextSignatureVerifier,
-    HybridAuthorization, PqSigningKeyHandle, SchemeRoutedVerifier, SignatureEvidence,
+    ContextSignatureSigner, ContextSignatureVerifier, HybridAuthorization, PqSigningKeyHandle,
+    SchemeRoutedVerifier, SignatureEvidence, ED25519_PUBLIC_KEY_BYTES, ED25519_SIGNATURE_BYTES,
+    MAX_AUTHORIZATION_EVIDENCE_BYTES, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+    SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
+    SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
 };
 #[cfg(feature = "reference-pq")]
 pub use pq_reference::{
