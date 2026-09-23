@@ -11,6 +11,7 @@ use crate::pq::{
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
+const ARCHIVE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/ARCHIVE-RECEIPT/V1\0";
 const STORAGE_PROOF_DOMAIN: &[u8] = b"SYNERGY/STORAGE-PROOF/V1\0";
 
 
@@ -90,6 +91,33 @@ impl ArchiveReceipt {
     /// invalid zero-length raw object instead of panicking.
     pub fn saving_bps(&self) -> Option<u64> {
         10_000u64.checked_sub(self.archive_to_raw_bps()?)
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(ARCHIVE_RECEIPT_DOMAIN);
+        hasher.update(self.object_id);
+        hasher.update(self.raw_sha256);
+        hasher.update(self.archive_sha256);
+        hasher.update(self.codec_id);
+        hasher.update(self.codec_version_commitment);
+        hasher.update(self.raw_bytes.to_be_bytes());
+        hasher.update(self.archive_bytes.to_be_bytes());
+        hasher.update(self.chunk_root);
+        hasher.update(self.replicas.to_be_bytes());
+        hasher.update(self.erasure_k.to_be_bytes());
+        hasher.update(self.erasure_n.to_be_bytes());
+        hasher.update([match self.storage_class {
+            StorageClass::Hot => 1,
+            StorageClass::Warm => 2,
+            StorageClass::Archive => 3,
+            StorageClass::DeepArchive => 4,
+        }]);
+        hasher.update(self.random_access_amplification_milli.to_be_bytes());
+        hasher.update(self.expires_at_epoch.to_be_bytes());
+        Some(hasher.finalize().into())
     }
 }
 
@@ -255,6 +283,7 @@ impl StorageBid {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofOfStorageReceipt {
     pub object_id: [u8; 32],
+    pub archive_commitment: [u8; 32],
     pub provider_id: [u8; 32],
     pub epoch: u64,
     pub challenge_commitment: [u8; 32],
@@ -266,6 +295,7 @@ pub struct ProofOfStorageReceipt {
 impl ProofOfStorageReceipt {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.object_id == [0u8; 32]
+            || self.archive_commitment == [0u8; 32]
             || self.provider_id == [0u8; 32]
             || self.challenge_commitment == [0u8; 32]
             || self.proof_commitment == [0u8; 32]
@@ -283,6 +313,7 @@ impl ProofOfStorageReceipt {
         let mut hasher = Sha256::new();
         hasher.update(STORAGE_PROOF_DOMAIN);
         hasher.update(self.object_id);
+        hasher.update(self.archive_commitment);
         hasher.update(self.provider_id);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(self.challenge_commitment);
@@ -328,10 +359,19 @@ pub struct StorageProofValidationContext {
 
 pub(crate) fn verify_storage_proof<V: ContextSignatureVerifier>(
     verifier: &V,
+    archive: &ArchiveReceipt,
     authorized: &StorageProofAuthorization,
     validation: &StorageProofValidationContext,
 ) -> bool {
+    let archive_commitment = match archive.commitment() {
+        Some(commitment) => commitment,
+        None => return false,
+    };
+
     if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.object_id != archive.object_id
+        || authorized.receipt.archive_commitment != archive_commitment
+        || authorized.receipt.epoch >= archive.expires_at_epoch
         || authorized.receipt.object_id != validation.expected_object_id
         || authorized.receipt.provider_id != validation.expected_provider_id
         || authorized.receipt.epoch != validation.expected_epoch
@@ -368,11 +408,12 @@ pub(crate) fn verify_storage_proof<V: ContextSignatureVerifier>(
 
 pub fn verify_storage_proof_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
+    archive: &ArchiveReceipt,
     authorized: &StorageProofAuthorization,
     validation: &StorageProofValidationContext,
     replay: &mut AuthorizationReplayState,
 ) -> bool {
-    if !verify_storage_proof(verifier, authorized, validation) {
+    if !verify_storage_proof(verifier, archive, authorized, validation) {
         return false;
     }
     let envelope = match authorized.envelope() {
@@ -453,6 +494,7 @@ mod tests {
 
     #[test]
     fn storage_proof_requires_registered_provider_keyset() {
+        let archive = archive();
         let authorization = pq_only_authorization();
         let provider_keyset = authorization
             .keyset_commitment()
@@ -462,7 +504,8 @@ mod tests {
             nonce: 9,
             expires_at: 200,
             receipt: ProofOfStorageReceipt {
-                object_id: [0x41; 32],
+                object_id: archive.object_id,
+                archive_commitment: archive.commitment().expect("archive commitment"),
                 provider_id: [0x42; 32],
                 epoch: 7,
                 challenge_commitment: [0x43; 32],
@@ -484,7 +527,7 @@ mod tests {
             expected_chain_id: [0xE1; 32],
             expected_nonce: 9,
             expected_epoch: 7,
-            expected_object_id: [0x41; 32],
+            expected_object_id: archive.object_id,
             expected_provider_id: [0x42; 32],
             expected_provider_keyset_commitment: provider_keyset,
             now: 100,
@@ -493,6 +536,7 @@ mod tests {
 
         assert!(verify_storage_proof(
             &verifier,
+            &archive,
             &authorized,
             &validation,
         ));
@@ -501,8 +545,79 @@ mod tests {
         wrong.expected_provider_keyset_commitment[0] ^= 1;
         assert!(!verify_storage_proof(
             &verifier,
+            &archive,
             &authorized,
             &wrong,
+        ));
+    }
+
+    #[test]
+    fn storage_proof_is_bound_to_exact_unexpired_archive() {
+        let archive = archive();
+        let authorization = pq_only_authorization();
+        let provider_keyset = authorization
+            .keyset_commitment()
+            .expect("provider keyset");
+        let mut authorized = StorageProofAuthorization {
+            chain_id: [0xE1; 32],
+            nonce: 9,
+            expires_at: 200,
+            receipt: ProofOfStorageReceipt {
+                object_id: archive.object_id,
+                archive_commitment: archive.commitment().expect("archive commitment"),
+                provider_id: [0x42; 32],
+                epoch: 99,
+                challenge_commitment: [0x43; 32],
+                proof_commitment: [0x44; 32],
+                served_bytes: 4096,
+            },
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("storage envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let validation = StorageProofValidationContext {
+            expected_chain_id: [0xE1; 32],
+            expected_nonce: 9,
+            expected_epoch: 99,
+            expected_object_id: archive.object_id,
+            expected_provider_id: [0x42; 32],
+            expected_provider_keyset_commitment: provider_keyset,
+            now: 50,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &validation,
+        ));
+
+        let mut changed_archive = archive.clone();
+        changed_archive.chunk_root[0] ^= 1;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &changed_archive,
+            &authorized,
+            &validation,
+        ));
+
+        authorized.receipt.epoch = archive.expires_at_epoch;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &StorageProofValidationContext {
+                expected_epoch: archive.expires_at_epoch,
+                ..validation
+            },
         ));
     }
 
