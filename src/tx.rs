@@ -4,6 +4,7 @@ use crate::pq::{
 };
 
 pub const PQ_TX_DOMAIN: &[u8] = b"SYNERGY-PQ-EVM-TX/1";
+pub const MAX_TX_CALLDATA_BYTES: usize = 1_048_576;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PqEvmTransaction {
@@ -70,7 +71,9 @@ impl PqEvmTransaction {
         scheme: AuthScheme,
         secret_key_handle: &PqSigningKeyHandle,
     ) -> Option<SignatureEvidence> {
-        if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s) {
+        if !matches!(scheme, AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s)
+            || self.data.len() > MAX_TX_CALLDATA_BYTES
+        {
             return None;
         }
 
@@ -157,7 +160,11 @@ impl PqEvmTransaction {
         if self.gas_limit == 0 {
             return Err(TxError::ZeroGasLimit);
         }
-        if self.data.len() > context.max_calldata_bytes {
+        if context.max_calldata_bytes == 0
+            || context.max_calldata_bytes > MAX_TX_CALLDATA_BYTES
+            || self.data.len() > context.max_calldata_bytes
+            || self.data.len() > MAX_TX_CALLDATA_BYTES
+        {
             return Err(TxError::DataTooLarge);
         }
         let message = self.signing_preimage();
@@ -353,6 +360,31 @@ mod tests {
                 },
             ),
             Err(TxError::AuthorizationExpired)
+        );
+    }
+
+    #[test]
+    fn transaction_calldata_policy_cannot_exceed_protocol_ceiling() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 999,
+                    max_authorization_future_seconds: 60,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: MAX_TX_CALLDATA_BYTES + 1,
+                },
+            ),
+            Err(TxError::DataTooLarge)
         );
     }
 
