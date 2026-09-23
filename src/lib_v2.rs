@@ -54,7 +54,7 @@ pub use model_shard::{ModelLineageTransition, ModelManifestCommitment, ModelShar
 pub use network::{
     validate_shared_secret, ClassicalKexScheme, HybridSharedSecret, MlKem1024Provider,
     MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerIdentity, TransportPolicy,
-    TransportTranscript, MAX_CLASSICAL_SHARED_SECRET_BYTES, MAX_REKEY_MESSAGES,
+    TransportTranscript, CLASSICAL_SHARED_SECRET_BYTES, MAX_REKEY_MESSAGES,
     MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
     ML_KEM_1024_PUBLIC_KEY_BYTES, ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES,
     TRANSPORT_TRANSCRIPT_DOMAIN,
