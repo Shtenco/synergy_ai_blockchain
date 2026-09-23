@@ -672,3 +672,20 @@ M2 transport now separates key agreement from peer authentication explicitly.
 - `InMemoryTransportReplayGuard` exposes a domain-separated replay-state commitment over network, epoch and consumed session IDs for persistence/rollback detection, and rejects epoch zero.
 
 This closes the source-level unauthenticated-ML-KEM MITM surface. Executable confirmation remains blocked by the hosted Rust runner.
+
+
+## Solidity / PQ-EVM parity hardening
+
+The active Solidity facade is source-hardened to match the Rust M2 authorization model:
+
+- PQ precompile calls carry explicit message bytes and FIPS context, with exact ML-DSA-87 and SLH-DSA-SHAKE-256s key/signature sizes;
+- empty messages and empty/oversized FIPS contexts are rejected before the precompile call;
+- `PQSmartAccount` is mandatory dual-PQ with no deployment-time single-PQ downgrade flag;
+- account key material must be exact-length and nonzero;
+- authorization binds crypto profile, chain, account address, Transaction domain, PQ-only policy, authorization epoch, target, value, calldata hash, nonce and expiry;
+- expiry uses the same 86,400-second hard protocol ceiling;
+- a cryptographically valid account nonce is consumed before downstream execution and is not resurrected merely because the target call returns failure;
+- nested/reentrant signed execution is rejected so pre-signed nonce N+1 cannot execute inside the intermediate state of nonce N;
+- the active Solidity NEXUS facade exposes only the implemented Score mode.
+
+These Solidity changes remain source-level evidence until a Solidity compiler/test runner executes them.
