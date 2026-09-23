@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const PAYMENT_INTENT_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-INTENT/V1\0";
@@ -147,7 +147,7 @@ pub struct PaymentIntentValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_payment_intent<V: ContextSignatureVerifier>(
+pub(crate) fn verify_payment_intent<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &PaymentIntentAuthorization,
     validation: &PaymentIntentValidationContext,
@@ -281,7 +281,7 @@ pub struct SettlementBatchValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_settlement_batch<V: ContextSignatureVerifier>(
+pub(crate) fn verify_settlement_batch<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &SettlementBatchAuthorization,
     validation: &SettlementBatchValidationContext,
@@ -333,6 +333,40 @@ pub struct PaymentLaneKey {
     pub asset_class: u16,
     pub corridor_bucket: u32,
     pub epoch: u64,
+}
+
+
+pub fn verify_payment_intent_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &PaymentIntentAuthorization,
+    validation: &PaymentIntentValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_payment_intent(verifier, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
+}
+
+
+pub fn verify_settlement_batch_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &SettlementBatchAuthorization,
+    validation: &SettlementBatchValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_settlement_batch(verifier, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
