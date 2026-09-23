@@ -130,13 +130,13 @@ Large upstream corpora should not be copied wholesale. M2 should commit a small 
 M2 can become GREEN only when CI can execute:
 
 ```text
-cargo test --all-targets
-cargo test --all-targets --features reference-pq
+cargo test --frozen --all-targets
+cargo test --frozen --all-targets --features reference-pq
 ```
 
 and the external-vector subset is executed as part of the latter command.
 
-As of branch head after commits `35fab7cada339e229a8326eb50e2fe6f87201e6e` and `fb3b3e86fa281f542be0d79fe6a7ae9437821c31`, the external subsets are committed and connected to executable Rust tests. Their **execution result remains pending** because GitHub Actions run `35764263197` failed before any step was scheduled (`steps=[]`) and the available local container has no `cargo`/`rustc`.
+The external and internal parity fixtures are committed and wired to executable tests/manifest checks. Their **execution result remains pending** because current GitHub Actions jobs still terminate before checkout or any step execution (`steps=null`, `logs_url=null`), while the available local container has no `cargo`/`rustc`.
 
 
 ## FIPS context-separation evidence
@@ -146,10 +146,13 @@ FIPS 204 and FIPS 205 expose explicit application-context inputs with a maximum 
 The derived context intentionally contains only stable namespace fields:
 
 ```text
-SYNERGY/PQ-FIPS-CONTEXT/V1\0
-|| chain_id
-|| authorization_domain
-|| authorization_policy
+SYNERGY/PQ-FIPS-CONTEXT\0
+|| crypto_profile_version_u16_be
+|| chain_id_32_bytes
+|| authorization_domain_u8
+|| authorization_policy_u8
+|| required_suite_count_u8
+|| ordered_required_scheme_codes
 ```
 
 Dynamic replay/freshness fields remain in the canonical signed message. This gives two independent bindings:
@@ -159,7 +162,7 @@ canonical message:
   chain + domain + policy + epoch + nonce + expiry + payload commitment
 
 FIPS context:
-  protocol + chain + domain + policy
+  protocol prefix + explicit crypto profile + chain + domain + policy + ordered required suite
 ```
 
 Tests deliberately mutate domain/policy context without mutating the signed message to prove that the FIPS API itself enforces the second boundary.
