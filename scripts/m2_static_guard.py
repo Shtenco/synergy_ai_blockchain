@@ -16,6 +16,9 @@ tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
 workflow = (ROOT / ".github/workflows/pq-evm-ci.yml").read_text(encoding="utf-8")
 toolchain = (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")
 lock_policy = (ROOT / "scripts/m2_verify_lock.py").read_text(encoding="utf-8")
+fixture_manifest = (ROOT / "tests/vectors/M2_FIXTURE_MANIFEST.json").read_text(encoding="utf-8")
+fixture_verifier = (ROOT / "scripts/m2_verify_fixture_manifest.py").read_text(encoding="utf-8")
+spdx_generator = (ROOT / "scripts/m2_spdx_from_cargo_metadata.py").read_text(encoding="utf-8")
 validator = (ROOT / "src/validator.rs").read_text(encoding="utf-8")
 migration = (ROOT / "src/migration.rs").read_text(encoding="utf-8")
 model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
@@ -645,6 +648,35 @@ require(
     "VerificationReceipt" in pq
     and "Self::VerificationReceipt => 7" in pq,
     "verification receipt authorization domain code missing or changed",
+)
+
+
+require(
+    "SECP256K1_HALF_ORDER" in pq
+    and "is_canonical_secp256k1_signature" in pq
+    and "secp256k1 signature must use canonical low-S encoding" in pq,
+    "secp256k1 low-S canonicality gate missing",
+)
+
+require(
+    "synergy-m2-fixture-manifest-v1" in fixture_manifest
+    and "git_blob_sha1" in fixture_manifest
+    and "M2 fixture manifest: PASS" in fixture_verifier
+    and "python3 scripts/m2_verify_fixture_manifest.py" in workflow,
+    "tamper-evident local PQ fixture gate missing",
+)
+
+require(
+    "unexpected crate features are not covered by M2 CI" in lock_policy
+    and "default feature set must remain empty for consensus core" in lock_policy,
+    "Cargo feature-surface policy missing",
+)
+
+require(
+    "Cargo.lock" in spdx_generator
+    and '"checksums"' in spdx_generator
+    and "Cargo.lock source" in spdx_generator,
+    "SPDX output must remain bound to locked package checksums/sources",
 )
 
 print("M2 static guard: PASS")
