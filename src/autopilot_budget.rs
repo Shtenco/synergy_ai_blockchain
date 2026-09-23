@@ -17,6 +17,7 @@ const AUTOPILOT_EXECUTION_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION/V1\0";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutopilotBudgetReservation {
     pub reservation_id: [u8; 32],
+    pub owner_account: [u8; 32],
     pub reservation_root: [u8; 32],
     pub policy_root: [u8; 32],
     pub grant_root: [u8; 32],
@@ -30,6 +31,7 @@ pub struct AutopilotBudgetReservation {
 impl AutopilotBudgetReservation {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.reservation_id == [0; 32]
+            || self.owner_account == [0; 32]
             || self.reservation_root == [0; 32]
             || self.policy_root == [0; 32]
             || self.grant_root == [0; 32]
@@ -100,6 +102,7 @@ impl AutopilotBudgetBoundCall {
         let mut hasher = Sha256::new();
         hasher.update(AUTOPILOT_EXECUTION_DOMAIN);
         hasher.update(reservation.reservation_id);
+        hasher.update(reservation.owner_account);
         hasher.update(reservation.reservation_root);
         hasher.update(reservation.policy_root);
         hasher.update(reservation.grant_root);
@@ -183,7 +186,8 @@ pub fn verify_autopilot_execution<V: ContextSignatureVerifier>(
     validation: &AutopilotExecutionValidationContext,
 ) -> bool {
     if authorized.authorization.policy != AuthPolicy::Max
-        || authorized.authorization.keyset_commitment() != Some(validation.expected_owner_account)
+        || reservation.owner_account != validation.expected_owner_account
+        || authorized.authorization.keyset_commitment() != Some(reservation.owner_account)
         || reservation.reservation_root != validation.expected_reservation_root
         || reservation.policy_root != validation.expected_policy_root
         || authorized.call.validate_against(reservation, validation.now).is_err()
@@ -298,8 +302,15 @@ mod tests {
     }
 
     fn reservation() -> AutopilotBudgetReservation {
+        let owner_account = max_authorization()
+            .keyset_commitment()
+            .expect("owner keyset commitment");
         AutopilotBudgetReservation {
+            owner_account,
             reservation_id: [1; 32],
+            owner_account: max_authorization()
+                .keyset_commitment()
+                .expect("owner keyset commitment"),
             reservation_root: [2; 32],
             policy_root: [3; 32],
             grant_root: [4; 32],
@@ -369,6 +380,47 @@ mod tests {
             &reservation,
             &authorized,
             &wrong_owner,
+        ));
+    }
+
+    #[test]
+    fn autopilot_execution_rejects_reservation_owned_by_different_account() {
+        let mut reservation = reservation();
+        let authorization = max_authorization();
+        let owner_account = authorization
+            .keyset_commitment()
+            .expect("owner keyset commitment");
+        reservation.owner_account[0] ^= 1;
+
+        let authorized = AutopilotExecutionAuthorization {
+            chain_id: [0xB1; 32],
+            nonce: 9,
+            authorization_expires_at: 170,
+            call: call(100),
+            authorization,
+        };
+        let envelope = authorized
+            .envelope(&reservation)
+            .expect("autopilot envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
+            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+        };
+        let validation = AutopilotExecutionValidationContext {
+            expected_chain_id: [0xB1; 32],
+            expected_nonce: 9,
+            expected_owner_account: owner_account,
+            expected_reservation_root: reservation.reservation_root,
+            expected_policy_root: reservation.policy_root,
+            now: 120,
+            max_future_seconds: 100,
+        };
+
+        assert!(!verify_autopilot_execution(
+            &verifier,
+            &reservation,
+            &authorized,
+            &validation,
         ));
     }
 
