@@ -67,7 +67,7 @@ pub struct InMemoryTransportReplayGuard {
 
 impl InMemoryTransportReplayGuard {
     pub fn new(network_id: [u8; 32], epoch: u64) -> Option<Self> {
-        if network_id == [0u8; 32] {
+        if network_id == [0u8; 32] || epoch == 0 {
             return None;
         }
         Some(Self {
@@ -83,6 +83,23 @@ impl InMemoryTransportReplayGuard {
 
     pub fn consumed_sessions(&self) -> usize {
         self.consumed.len()
+    }
+
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        const DOMAIN: &[u8] = b"SYNERGY/TRANSPORT-REPLAY-STATE/V1\0";
+        let count = u64::try_from(self.consumed.len()).ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update(self.network_id);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(count.to_be_bytes());
+        for session_id in &self.consumed {
+            hasher.update(session_id);
+        }
+        Some(hasher.finalize().into())
     }
 
     pub fn rotate_epoch(&mut self, new_epoch: u64) -> bool {
@@ -1043,6 +1060,33 @@ mod tests {
         assert_eq!(guard.epoch(), 8);
         assert_eq!(guard.consumed_sessions(), 0);
         assert!(guard.consume_session(&network_id, 8, &session, &transcript));
+    }
+
+    #[test]
+    fn transport_replay_state_commitment_changes_on_consume_and_epoch_rotation() {
+        let network_id = [0xD1; 32];
+        let mut guard = InMemoryTransportReplayGuard::new(network_id, 1)
+            .expect("valid replay guard");
+        let initial = guard.commitment().expect("initial replay commitment");
+
+        assert!(guard.consume_session(
+            &network_id,
+            1,
+            &[0xD2; 32],
+            &[0xD3; 32],
+        ));
+        let consumed = guard.commitment().expect("consumed replay commitment");
+        assert_ne!(initial, consumed);
+
+        assert!(guard.rotate_epoch(2));
+        let rotated = guard.commitment().expect("rotated replay commitment");
+        assert_ne!(consumed, rotated);
+        assert_eq!(guard.consumed_sessions(), 0);
+    }
+
+    #[test]
+    fn transport_replay_guard_rejects_zero_epoch() {
+        assert!(InMemoryTransportReplayGuard::new([0xD1; 32], 0).is_none());
     }
 
     #[test]
