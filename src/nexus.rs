@@ -40,11 +40,12 @@ impl NexusManifest {
 
     pub fn validate(&self) -> Result<(), NexusError> {
         if self.model_root == [0u8; 32]
-            || self.nodes == 0
-            || self.layers == 0
+            || self.source_checkpoint_sha256_hex != Self::V18_SOURCE_CHECKPOINT
+            || self.nodes != 16
+            || self.layers != 3
             || self.q_bits != 16
-            || self.max_input_values == 0
-            || self.max_output_values == 0
+            || self.max_input_values != 512
+            || self.max_output_values != 64
         {
             return Err(NexusError::InvalidManifest);
         }
@@ -160,6 +161,27 @@ pub fn infer_reference(
     }
 
     let nodes = usize::from(manifest.nodes);
+    let output_len = usize::min(usize::from(request.max_output_values), nodes);
+    let input_bytes = request
+        .input_q16
+        .len()
+        .checked_mul(core::mem::size_of::<i64>())
+        .ok_or(NexusError::GasOverflow)?;
+    let output_bytes = output_len
+        .checked_mul(core::mem::size_of::<i64>())
+        .ok_or(NexusError::GasOverflow)?;
+    let edges = nodes.checked_mul(3).ok_or(NexusError::GasOverflow)?;
+    let gas_used = gas
+        .nexus_cost(
+            input_bytes,
+            output_bytes,
+            nodes,
+            edges,
+            usize::from(manifest.layers),
+        )
+        .ok_or(NexusError::GasOverflow)?;
+
+    // Gas/shape feasibility is established before allocation and graph execution.
     let mut state = vec![0i64; nodes];
     for (i, v) in request.input_q16.iter().enumerate() {
         state[i % nodes] = qadd_saturating(state[i % nodes], *v);
@@ -169,21 +191,34 @@ pub fn infer_reference(
         state = residual_mix(&state);
     }
 
-    let output_len = usize::min(usize::from(request.max_output_values), state.len());
     let output = state[..output_len].to_vec();
-    let input_bytes = request.input_q16.len() * 8;
-    let output_bytes = output.len() * 8;
-    let edges = nodes * 3;
-    let gas_used = gas
-        .nexus_cost(input_bytes, output_bytes, nodes, edges, usize::from(manifest.layers))
-        .ok_or(NexusError::GasOverflow)?;
-
     Ok(NexusResponse { output_q16: output, gas_used })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_v1_rejects_manifest_parameter_drift() {
+        let base = NexusManifest::v18_consensus_profile([7u8; 32]);
+
+        let mut changed = base.clone();
+        changed.nodes = 17;
+        assert_eq!(changed.validate(), Err(NexusError::InvalidManifest));
+
+        let mut changed = base.clone();
+        changed.layers = 4;
+        assert_eq!(changed.validate(), Err(NexusError::InvalidManifest));
+
+        let mut changed = base.clone();
+        changed.max_input_values = 513;
+        assert_eq!(changed.validate(), Err(NexusError::InvalidManifest));
+
+        let mut changed = base;
+        changed.source_checkpoint_sha256_hex = "00";
+        assert_eq!(changed.validate(), Err(NexusError::InvalidManifest));
+    }
 
     #[test]
     fn rejects_zero_node_manifest_without_panicking() {
