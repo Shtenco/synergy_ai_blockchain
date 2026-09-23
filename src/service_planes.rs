@@ -613,6 +613,66 @@ mod tests {
     }
 
     #[test]
+    fn finality_chain_mismatch_does_not_consume_service_authority_nonce() {
+        let authorization = max_authorization();
+        let authority_keyset = authorization
+            .keyset_commitment()
+            .expect("service authority keyset");
+        let authorized = ServicePlaneCheckpointAuthorization {
+            chain_id: [0xA1; 32],
+            authorization_epoch: 8,
+            nonce: 9,
+            expires_at: 1_100,
+            roots: roots(),
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("service checkpoint envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
+            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+        };
+        let validation = ServicePlaneCheckpointValidationContext {
+            expected_chain_id: [0xA1; 32],
+            expected_authorization_epoch: 8,
+            expected_nonce: 9,
+            current_service_plane_epoch: 6,
+            expected_service_plane_epoch: 7,
+            expected_authority_keyset_commitment: authority_keyset,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+        let mut replay = AuthorizationReplayState::new_for_subject(
+            [0xA1; 32],
+            AuthorizationDomain::ServicePlaneCheckpoint,
+            AuthPolicy::Max,
+            authority_keyset,
+            8,
+            9,
+        )
+        .expect("service replay state");
+
+        let mut wrong_chain = finality();
+        wrong_chain.chain_id = [0xB1; 32];
+        assert!(!verify_service_plane_checkpoint_with_finality_and_consume(
+            &verifier,
+            &authorized,
+            &wrong_chain,
+            &validation,
+            &mut replay,
+        ));
+        assert_eq!(replay.next_nonce(), 9);
+
+        assert!(verify_service_plane_checkpoint_with_finality_and_consume(
+            &verifier,
+            &authorized,
+            &finality(),
+            &validation,
+            &mut replay,
+        ));
+        assert_eq!(replay.next_nonce(), 10);
+    }
+
+    #[test]
     fn service_plane_checkpoint_requires_registered_max_authority() {
         let authorized = ServicePlaneCheckpointAuthorization {
             chain_id: [0xA1; 32],
