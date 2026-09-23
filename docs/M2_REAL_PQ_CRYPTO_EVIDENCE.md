@@ -556,3 +556,41 @@ The HKDF implementation has one explicit residual memory-hardening limitation:
 upstream RustCrypto HKDF/HMAC internal PRK state does not provide zeroize-on-drop.
 SYNERGY minimizes its lifetime and never stores it persistently, but M2 must not claim that
 library-internal PRK memory is guaranteed to be wiped.
+
+
+## Privileged-domain identity and state binding
+
+The M2 source boundary now enforces every currently defined `AuthorizationDomain`
+through a concrete state-aware path:
+
+- `Transaction`: sender account equals canonical authorization keyset commitment;
+- `ValidatorVote`: validator ID is a stable commitment to ML-DSA + SLH-DSA identity keys; PQ-only validator mode forbids retained legacy key material;
+- `BridgeMigration`: legacy ownership proof plus PQ-only authorization; target PQ identity equals the authorization keyset commitment and the target account ID equals that PQ identity;
+- `ModelUpgrade`: MAX authorization from the registered authority keyset, expected activation epoch, and closed parent/index lineage;
+- `InferenceReceipt`: PQ-only worker authorization from the registered worker keyset, bound to the stage assignment;
+- `Governance`: MAX authorization from the registered governance authority keyset, bound to proposal ID, governance state root and activation epoch.
+
+`authorization_keyset_commitment` can derive the same identity root directly
+from ordered public keys without signature bytes, allowing keysets to be
+registered before an authorization proof exists.
+
+AI verification aggregation is also hardened: `VerificationAggregate::validate_receipts`
+requires a canonical strictly ordered unique verifier-receipt set and recomputes
+the receipt root and verdict counters rather than trusting aggregate metadata.
+
+The detailed matrix is committed in `docs/M2_AUTHORIZATION_COVERAGE.md`.
+
+### Latest runner evidence
+
+At branch head before this documentation commit, workflow run `35835746225`
+(run #565) again produced one `rust-core` job, id `107098658051`, with:
+
+```text
+status = completed
+conclusion = failure
+steps = null
+logs_url = null
+```
+
+No repository step executed. M2 therefore remains YELLOW and no compilation or
+test PASS is claimed.
