@@ -497,7 +497,7 @@ require(
 require(
     "pub struct InMemoryTransportReplayGuard" in network
     and "MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536" in network
-    and "consumed: BTreeSet<[u8; 32]>" in network
+    and "consumed: BTreeMap<[u8; 32], [u8; 32]>" in network
     and "if new_epoch <= self.epoch" in network
     and "self.consumed.len() >= MAX_TRANSPORT_SESSIONS_PER_EPOCH" in network,
     "bounded monotonic reference replay guard missing",
@@ -1546,6 +1546,26 @@ require(
     and "root: funded.canonical_root(authorized)?" in service_planes
     and "root: authorized.batch.authorization_commitment()?" not in service_planes,
     "payment service finality must commit funded settlement root, never bare settlement root",
+)
+
+
+require(
+    "started_at: u64" in network
+    and "max_seconds: u64" in network
+    and "fn within_time_window(&self, now: u64) -> bool" in network
+    and "elapsed < self.max_seconds" in network
+    and "pub fn next_nonce(" in network
+    and "now: u64" in network
+    and "!self.within_time_window(now)" in network,
+    "transport record nonce issuance must enforce both message and time rekey bounds",
+)
+
+require(
+    "BTreeMap<[u8; 32], [u8; 32]>" in network
+    and "for (session_id, transcript_hash) in &self.consumed" in network
+    and "hasher.update(transcript_hash)" in network
+    and "self.consumed.insert(*session_id, *transcript_hash)" in network,
+    "transport replay-state commitment must bind each session ID to exact transcript hash",
 )
 
 print("M2 static guard: PASS")
