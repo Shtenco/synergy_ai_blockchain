@@ -38,6 +38,16 @@ pub struct TransportValidationContext {
     pub expected_session_id: [u8; 32],
 }
 
+pub trait TransportReplayGuard {
+    fn consume_session(
+        &mut self,
+        network_id: &[u8; 32],
+        epoch: u64,
+        session_id: &[u8; 32],
+        transcript_hash: &[u8; 32],
+    ) -> bool;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClassicalKexScheme {
     X25519,
@@ -310,7 +320,7 @@ pub struct HybridSharedSecret {
 }
 
 impl HybridSharedSecret {
-    pub fn from_transcript(
+    pub(crate) fn from_transcript(
         pq_shared: MlKemSharedSecret,
         classical_shared: Option<SecretBytes>,
         transcript: &TransportTranscript,
@@ -369,6 +379,31 @@ impl HybridSharedSecret {
     pub fn transcript_hash(&self) -> &[u8; 32] {
         &self.transcript_hash
     }
+}
+
+pub fn establish_shared_secret<G: TransportReplayGuard>(
+    replay_guard: &mut G,
+    pq_shared: MlKemSharedSecret,
+    classical_shared: Option<SecretBytes>,
+    transcript: &TransportTranscript,
+    validation: &TransportValidationContext,
+) -> Option<HybridSharedSecret> {
+    let transcript_hash = transcript.commitment_in_context(validation)?;
+    if !replay_guard.consume_session(
+        &transcript.network_id,
+        transcript.epoch,
+        &transcript.session_id,
+        &transcript_hash,
+    ) {
+        return None;
+    }
+
+    HybridSharedSecret::from_transcript(
+        pq_shared,
+        classical_shared,
+        transcript,
+        validation,
+    )
 }
 
 impl fmt::Debug for HybridSharedSecret {
@@ -567,10 +602,30 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct OneShotReplayGuard {
+        used: std::collections::BTreeSet<([u8; 32], u64, [u8; 32], [u8; 32])>,
+    }
+
+    impl TransportReplayGuard for OneShotReplayGuard {
+        fn consume_session(
+            &mut self,
+            network_id: &[u8; 32],
+            epoch: u64,
+            session_id: &[u8; 32],
+            transcript_hash: &[u8; 32],
+        ) -> bool {
+            self.used
+                .insert((*network_id, epoch, *session_id, *transcript_hash))
+        }
+    }
+
     fn valid_secret() -> HybridSharedSecret {
         let transcript = valid_transcript(TransportPolicy::Hybrid);
         let validation = validation_for(&transcript);
-        HybridSharedSecret::from_transcript(
+        let mut replay_guard = OneShotReplayGuard::default();
+        establish_shared_secret(
+            &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             SecretBytes::new(vec![2u8; 32]),
@@ -646,7 +701,9 @@ mod tests {
 
         let pq_transcript = valid_transcript(TransportPolicy::PqOnly);
         let pq_validation = validation_for(&pq_transcript);
-        let pq_only = HybridSharedSecret::from_transcript(
+        let mut replay_guard = OneShotReplayGuard::default();
+        let pq_only = establish_shared_secret(
+            &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             None,
@@ -662,7 +719,9 @@ mod tests {
     fn hybrid_secret_rejects_oversized_classical_secret() {
         let transcript = valid_transcript(TransportPolicy::Hybrid);
         let validation = validation_for(&transcript);
-        let secret = HybridSharedSecret::from_transcript(
+        let mut replay_guard = OneShotReplayGuard::default();
+        let secret = establish_shared_secret(
+            &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES + 1]),
@@ -670,6 +729,33 @@ mod tests {
             &validation,
         );
         assert!(secret.is_none());
+    }
+
+    #[test]
+    fn shared_secret_establishment_consumes_session_exactly_once() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let validation = validation_for(&transcript);
+        let mut replay_guard = OneShotReplayGuard::default();
+
+        let first = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("first ML-KEM shared secret"),
+            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &transcript,
+            &validation,
+        );
+        assert!(first.is_some());
+
+        let second = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[3u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("second ML-KEM shared secret"),
+            SecretBytes::new(vec![4u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &transcript,
+            &validation,
+        );
+        assert!(second.is_none());
     }
 
     #[test]
