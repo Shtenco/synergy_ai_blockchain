@@ -1608,4 +1608,17 @@ require(
     "storage compression savings must fail closed on archive expansion instead of clipping",
 )
 
+
+require(
+    "solidity-core:" in workflow
+    and "solc-linux-amd64-v0.8.26+commit.8a97fa7a" in workflow
+    and "d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef" in workflow
+    and "sha256sum --check --strict" in workflow
+    and "contracts/IPQVerifier.sol" in workflow
+    and "contracts/PQSmartAccount.sol" in workflow
+    and "contracts/INexusAI.sol" in workflow
+    and "m2-solidity-evidence-sha256.txt" in workflow,
+    "Solidity M2 gate must remain pinned to verified solc 0.8.26 and compile every consensus contract",
+)
+
 print("M2 static guard: PASS")
