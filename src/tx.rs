@@ -227,7 +227,11 @@ impl PqEvmTransaction {
         let envelope = self
             .authorization_envelope()
             .ok_or(TxError::AuthorizationFailed)?;
-        if !replay.consume_verified(&self.authorization, &envelope) {
+        if !replay.consume_verified_for_subject(
+            &self.authorization,
+            &envelope,
+            self.sender_account,
+        ) {
             return Err(TxError::AuthorizationFailed);
         }
         Ok(())
