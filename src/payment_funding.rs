@@ -83,6 +83,16 @@ pub struct PaymentFundingConsumptionReceipt {
 }
 
 impl PaymentFundingConsumptionReceipt {
+    pub fn validate_against_intent(
+        &self,
+        reservation: &PaymentFundingReservation,
+        intent: &PaymentIntent,
+        now: u64,
+    ) -> Result<(), &'static str> {
+        reservation.validate_against_intent(intent, now)?;
+        self.validate_against(reservation)
+    }
+
     pub fn validate_against(
         &self,
         reservation: &PaymentFundingReservation,
@@ -180,9 +190,9 @@ mod tests {
     fn consumption_must_match_source_reservation() {
         let r = reservation();
         let mut c = PaymentFundingConsumptionReceipt {
-            reservation_root: [2; 32],
+            reservation_root: r.reservation_root,
             consumption_root: [6; 32],
-            payment_intent_root: [3; 32],
+            payment_intent_root: r.payment_intent_root,
             payer_account_root: [4; 32],
             source_asset_root: [5; 32],
             amount: 700,
@@ -196,6 +206,30 @@ mod tests {
             c.validate_against(&r),
             Err("funding consumption does not match reservation")
         );
+    }
+
+    #[test]
+    fn funding_consumption_rechecks_intent_and_expiry() {
+        let r = reservation();
+        let intent = intent();
+        let receipt = PaymentFundingConsumptionReceipt {
+            reservation_root: r.reservation_root,
+            consumption_root: [6; 32],
+            payment_intent_root: r.payment_intent_root,
+            payer_account_root: r.payer_account_root,
+            source_asset_root: r.source_asset_root,
+            amount: r.amount,
+            account_sequence: r.account_sequence,
+            funding_shard: r.funding_shard,
+            epoch: r.epoch,
+        };
+
+        assert_eq!(receipt.validate_against_intent(&r, &intent, 999), Ok(()));
+        assert!(receipt.validate_against_intent(&r, &intent, 1_000).is_err());
+
+        let mut changed = intent;
+        changed.amount += 1;
+        assert!(receipt.validate_against_intent(&r, &changed, 100).is_err());
     }
 
     #[test]
