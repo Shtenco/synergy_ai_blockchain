@@ -21,6 +21,7 @@ migration = (ROOT / "src/migration.rs").read_text(encoding="utf-8")
 model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
 inference = (ROOT / "src/inference.rs").read_text(encoding="utf-8")
 governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
+verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -618,6 +619,15 @@ require(
     and "IntoIterator<Item = (AuthScheme, &'a [u8])>" in pq
     and "authorization_keyset_commitment(" in pq,
     "signature-independent allocation-free keyset registration primitive missing",
+)
+
+
+require(
+    "canonical_receipt_set" in verification
+    and "verifier receipts must be strictly ordered and unique" in verification
+    and "verification aggregate does not match canonical receipt set" in verification
+    and "pub fn validate_receipts" in verification,
+    "AI verification aggregate must remain bound to canonical unique verifier receipts",
 )
 
 print("M2 static guard: PASS")
