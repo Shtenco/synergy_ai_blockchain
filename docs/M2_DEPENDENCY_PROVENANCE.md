@@ -304,3 +304,12 @@ SLH-DSA remains fully available for verification/FIPS-205 evidence. Production S
 `AuthScheme::Ed25519` retains protocol code `2` for append-only registry stability, but it is explicitly inactive in `CRYPTO_PROFILE_VERSION = 1`. No `AuthPolicy` includes it.
 
 Activating Ed25519 in a future authorization policy requires an explicit crypto-profile revision plus executable compatibility/vector evidence; it must not be enabled by silently changing the policy-to-suite mapping under profile v1.
+
+
+## Resolved-graph SPDX determinism
+
+The SPDX 2.3 generator no longer derives its document namespace from raw `cargo metadata` bytes, because root package IDs can contain machine-specific absolute checkout paths. The namespace is now bound to `Cargo.lock` plus a canonical package/edge graph.
+
+The generator also emits only package IDs present in the active `resolve.nodes` graph. Disabled optional dependencies are excluded. This keeps the core SBOM and `reference-pq` SBOM semantically distinct and feature-accurate.
+
+Registry package download locations are rendered as deterministic crates.io package URLs while the exact Cargo source string remains preserved as an annotation.
