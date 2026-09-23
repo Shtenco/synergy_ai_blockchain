@@ -7,15 +7,19 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::autopilot_execution_lease::AutopilotLeaseTerminalReceipt;
-use crate::cognitive::{CognitiveEvidence, CognitiveNodeManifest, CognitiveWorkRequest};
-use crate::kv_cache::{KvCacheLease, KvReplicaReceipt};
-use crate::payments::SettlementBatch;
+use crate::autopilot_execution_lease::{
+    AutopilotLeaseTerminalAuthorization, AutopilotLeaseTerminalReceipt,
+};
+use crate::cognitive::{
+    CognitiveEvidence, CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
+};
+use crate::kv_cache::{KvCacheLease, KvReplicaReceipt, KvReplicaReceiptAuthorization};
+use crate::payments::{SettlementBatch, SettlementBatchAuthorization};
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
-use crate::storage::ProofOfStorageReceipt;
+use crate::storage::{ProofOfStorageReceipt, StorageProofAuthorization};
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
@@ -45,55 +49,68 @@ impl ServiceFinalityKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceFinalityItem {
     kind: ServiceFinalityKind,
+    source_epoch: u64,
     root: [u8; 32],
 }
 
 impl ServiceFinalityItem {
-    pub fn payment_settlement(batch: &SettlementBatch) -> Option<Self> {
+    pub fn payment_settlement(authorized: &SettlementBatchAuthorization) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::PaymentSettlement,
-            root: batch.authorization_commitment()?,
+            source_epoch: authorized.epoch,
+            root: authorized.batch.authorization_commitment()?,
         })
     }
 
-    pub fn autopilot_terminal(receipt: &AutopilotLeaseTerminalReceipt) -> Option<Self> {
+    pub fn autopilot_terminal(
+        authorized: &AutopilotLeaseTerminalAuthorization,
+    ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
-            root: receipt.commitment()?,
+            source_epoch: authorized.epoch,
+            root: authorized.terminal.commitment()?,
         })
     }
 
-    pub fn storage_receipt(receipt: &ProofOfStorageReceipt) -> Option<Self> {
+    pub fn storage_receipt(authorized: &StorageProofAuthorization) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
-            root: receipt.authorization_commitment()?,
+            source_epoch: authorized.receipt.epoch,
+            root: authorized.receipt.authorization_commitment()?,
         })
     }
 
     pub fn cognitive_receipt(
-        evidence: &CognitiveEvidence,
+        authorized: &CognitiveEvidenceAuthorization,
         request: &CognitiveWorkRequest,
         node: &CognitiveNodeManifest,
-        epoch: u64,
     ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::CognitiveReceipt,
-            root: evidence.authorization_commitment(request, node, epoch)?,
+            source_epoch: authorized.epoch,
+            root: authorized
+                .evidence
+                .authorization_commitment(request, node, authorized.epoch)?,
         })
     }
 
     pub fn kv_replica_receipt(
-        receipt: &KvReplicaReceipt,
+        authorized: &KvReplicaReceiptAuthorization,
         lease: &KvCacheLease,
     ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::KvReplicaReceipt,
-            root: receipt.authorization_commitment(lease)?,
+            source_epoch: authorized.epoch,
+            root: authorized.receipt.authorization_commitment(lease)?,
         })
     }
 
     pub const fn kind(&self) -> ServiceFinalityKind {
         self.kind
+    }
+
+    pub const fn source_epoch(&self) -> u64 {
+        self.source_epoch
     }
 
     pub const fn root(&self) -> [u8; 32] {
@@ -118,9 +135,16 @@ impl ServiceFinalityBatch {
         if self.items.iter().any(|item| item.root == [0u8; 32]) {
             return Err("service finality item root required");
         }
+        if self
+            .items
+            .iter()
+            .any(|item| item.source_epoch != self.epoch)
+        {
+            return Err("service finality source epoch mismatch");
+        }
 
         let mut ordered = self.items.clone();
-        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.root));
+        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.source_epoch, item.root));
         if ordered.windows(2).any(|pair| pair[0] == pair[1]) {
             return Err("duplicate service finality item");
         }
@@ -139,6 +163,7 @@ impl ServiceFinalityBatch {
         hasher.update(count.to_be_bytes());
         for item in ordered {
             hasher.update([item.kind.protocol_code()]);
+            hasher.update(item.source_epoch.to_be_bytes());
             hasher.update(item.root);
         }
         Some(hasher.finalize().into())
@@ -423,10 +448,12 @@ mod tests {
             items: vec![
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::PaymentSettlement,
+                    source_epoch: 7,
                     root: [0x71; 32],
                 },
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::AutopilotTerminal,
+                    source_epoch: 7,
                     root: [0x72; 32],
                 },
             ],
@@ -448,36 +475,65 @@ mod tests {
 
 
     #[test]
-    fn service_finality_items_are_derived_from_canonical_domain_commitments() {
-        let settlement = SettlementBatch {
-            lane_id: [0x61; 16],
-            sequence: 1,
-            intents_root: [0x62; 32],
-            accounting_root: [0x63; 32],
-            availability_root: [0x64; 32],
-            item_count: 1,
-            gross_amount: 100,
-            total_fees: 1,
-            finality_proof_commitment: [0x65; 32],
+    fn service_finality_items_are_derived_from_authorized_epoch_bound_objects() {
+        let settlement = SettlementBatchAuthorization {
+            chain_id: [0x60; 32],
+            epoch: 7,
+            nonce: 1,
+            expires_at: 100,
+            batch: SettlementBatch {
+                lane_id: [0x61; 16],
+                sequence: 1,
+                intents_root: [0x62; 32],
+                accounting_root: [0x63; 32],
+                availability_root: [0x64; 32],
+                item_count: 1,
+                gross_amount: 100,
+                total_fees: 1,
+                finality_proof_commitment: [0x65; 32],
+            },
+            authorization: max_authorization(),
         };
         let item = ServiceFinalityItem::payment_settlement(&settlement)
             .expect("payment finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::PaymentSettlement);
+        assert_eq!(item.source_epoch(), 7);
         assert_eq!(
             item.root(),
-            settlement.authorization_commitment().expect("settlement root")
+            settlement
+                .batch
+                .authorization_commitment()
+                .expect("settlement root")
         );
 
-        let terminal = AutopilotLeaseTerminalReceipt {
-            lease_root: [0x66; 32],
-            execution_receipt_root: Some([0x67; 32]),
-            reason_root: None,
-            status: crate::autopilot_execution_lease::AutopilotExecutionLeaseStatus::Settled,
+        let terminal = AutopilotLeaseTerminalAuthorization {
+            chain_id: [0x66; 32],
+            epoch: 7,
+            nonce: 2,
+            expires_at: 100,
+            terminal: AutopilotLeaseTerminalReceipt {
+                lease_root: [0x67; 32],
+                execution_receipt_root: Some([0x68; 32]),
+                reason_root: None,
+                status: crate::autopilot_execution_lease::AutopilotExecutionLeaseStatus::Settled,
+            },
+            authorization: max_authorization(),
         };
         let item = ServiceFinalityItem::autopilot_terminal(&terminal)
             .expect("Autopilot terminal finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::AutopilotTerminal);
-        assert_eq!(item.root(), terminal.commitment().expect("terminal root"));
+        assert_eq!(item.source_epoch(), 7);
+        assert_eq!(
+            item.root(),
+            terminal.terminal.commitment().expect("terminal root")
+        );
+    }
+
+    #[test]
+    fn service_finality_batch_rejects_cross_epoch_receipt_replay() {
+        let mut batch = finality();
+        batch.items[0].source_epoch = 6;
+        assert!(batch.commitment().is_none());
     }
 
     #[test]
