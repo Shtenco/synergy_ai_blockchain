@@ -5,7 +5,8 @@ use zeroize::Zeroize;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
-pub const MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096;
+pub const X25519_PUBLIC_KEY_BYTES: usize = 32;
+pub const SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33;
 pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,10 +15,33 @@ pub enum TransportPolicy {
     PqOnly,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClassicalKexScheme {
+    X25519,
+    Secp256k1,
+}
+
+impl ClassicalKexScheme {
+    pub const fn protocol_code(self) -> u8 {
+        match self {
+            Self::X25519 => 1,
+            Self::Secp256k1 => 2,
+        }
+    }
+
+    pub const fn expected_public_key_bytes(self) -> usize {
+        match self {
+            Self::X25519 => X25519_PUBLIC_KEY_BYTES,
+            Self::Secp256k1 => SECP256K1_KEX_PUBLIC_KEY_BYTES,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportPeerIdentity {
     pub node_id: [u8; 32],
     pub ml_kem1024_public_key: Vec<u8>,
+    pub legacy_kex_scheme: Option<ClassicalKexScheme>,
     pub legacy_kex_public_key: Vec<u8>,
 }
 
@@ -29,11 +53,20 @@ impl TransportPeerIdentity {
         if self.ml_kem1024_public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
             return Err("ML-KEM-1024 public key length mismatch");
         }
-        if self.legacy_kex_public_key.len() > MAX_LEGACY_KEX_PUBLIC_KEY_BYTES {
-            return Err("legacy KEX public key exceeds protocol maximum");
-        }
-        if matches!(policy, TransportPolicy::Hybrid) && self.legacy_kex_public_key.is_empty() {
-            return Err("hybrid transport requires legacy KEX public key");
+        match policy {
+            TransportPolicy::PqOnly => {
+                if self.legacy_kex_scheme.is_some() || !self.legacy_kex_public_key.is_empty() {
+                    return Err("PQ-only transport forbids classical KEX material");
+                }
+            }
+            TransportPolicy::Hybrid => {
+                let scheme = self
+                    .legacy_kex_scheme
+                    .ok_or("hybrid transport requires classical KEX scheme")?;
+                if self.legacy_kex_public_key.len() != scheme.expected_public_key_bytes() {
+                    return Err("classical KEX public key length mismatch");
+                }
+            }
         }
         Ok(())
     }
@@ -155,7 +188,16 @@ impl TransportTranscript {
         for peer in [&self.initiator, &self.responder] {
             hasher.update(peer.node_id);
             put_len_prefixed(&mut hasher, &peer.ml_kem1024_public_key);
-            put_len_prefixed(&mut hasher, &peer.legacy_kex_public_key);
+            match peer.legacy_kex_scheme {
+                Some(scheme) => {
+                    hasher.update([1, scheme.protocol_code()]);
+                    put_len_prefixed(&mut hasher, &peer.legacy_kex_public_key);
+                }
+                None => {
+                    hasher.update([0, 0]);
+                    put_len_prefixed(&mut hasher, &[]);
+                }
+            }
         }
 
         put_len_prefixed(&mut hasher, &self.ml_kem_ciphertext);
@@ -341,7 +383,8 @@ mod tests {
         let mut peer = TransportPeerIdentity {
             node_id: [1u8; 32],
             ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_public_key: vec![3u8; 33],
+            legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
+            legacy_kex_public_key: vec![3u8; SECP256K1_KEX_PUBLIC_KEY_BYTES],
         };
 
         assert_eq!(peer.validate_for_policy(TransportPolicy::Hybrid), Ok(()));
@@ -350,26 +393,37 @@ mod tests {
         assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
         peer.ml_kem1024_public_key = vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES];
-        peer.legacy_kex_public_key = vec![3u8; MAX_LEGACY_KEX_PUBLIC_KEY_BYTES + 1];
-        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
-
-        peer.legacy_kex_public_key.clear();
+        peer.legacy_kex_public_key.pop();
         assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+
+        peer.legacy_kex_scheme = None;
+        peer.legacy_kex_public_key.clear();
         assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
+        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
     }
 
     fn test_peer(node: u8) -> TransportPeerIdentity {
         TransportPeerIdentity {
             node_id: [node; 32],
             ml_kem1024_public_key: vec![node; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_public_key: vec![node; 33],
+            legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
+            legacy_kex_public_key: vec![node; SECP256K1_KEX_PUBLIC_KEY_BYTES],
         }
     }
 
     fn valid_transcript(policy: TransportPolicy) -> TransportTranscript {
+        let mut initiator = test_peer(1);
+        let mut responder = test_peer(2);
+        if matches!(policy, TransportPolicy::PqOnly) {
+            initiator.legacy_kex_scheme = None;
+            initiator.legacy_kex_public_key.clear();
+            responder.legacy_kex_scheme = None;
+            responder.legacy_kex_public_key.clear();
+        }
+
         TransportTranscript {
-            initiator: test_peer(1),
-            responder: test_peer(2),
+            initiator,
+            responder,
             policy,
             ml_kem_ciphertext: vec![3u8; ML_KEM_1024_CIPHERTEXT_BYTES],
             classical_transcript_hash: matches!(policy, TransportPolicy::Hybrid)
@@ -395,7 +449,8 @@ mod tests {
         let peer = TransportPeerIdentity {
             node_id: [1u8; 32],
             ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_public_key: vec![3u8; MAX_LEGACY_KEX_PUBLIC_KEY_BYTES + 1],
+            legacy_kex_scheme: Some(ClassicalKexScheme::X25519),
+            legacy_kex_public_key: vec![3u8; X25519_PUBLIC_KEY_BYTES + 1],
         };
         assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
         assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
