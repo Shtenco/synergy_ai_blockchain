@@ -1380,4 +1380,20 @@ require(
     "public crate surface must expose direction-separated transport keys only",
 )
 
+
+require(
+    "TRANSPORT_RECORD_NONCE_BYTES: usize = 12" in network
+    and "pub struct TransportRecordSequence" in network
+    and "if self.next_sequence >= self.max_messages" in network
+    and "self.next_sequence.checked_add(1)?" in network
+    and "nonce[1] = self.direction.protocol_code()" in network,
+    "transport record nonce sequence must remain directional, bounded and non-wrapping",
+)
+
+require(
+    "TransportRecordSequence" in lib_v2
+    and "TRANSPORT_RECORD_NONCE_BYTES" in lib_v2,
+    "public crate surface must expose bounded transport record sequencing",
+)
+
 print("M2 static guard: PASS")
