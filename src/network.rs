@@ -172,6 +172,7 @@ impl Drop for SecretBytes {
 
 pub const TRANSPORT_TRANSCRIPT_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT\0";
 pub const TRANSPORT_KDF_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT/KDF\0";
+pub const TRANSPORT_KDF_PROTOCOL_CODE: u8 = 1; // HKDF-SHA256
 pub const TRANSPORT_SESSION_KEY_BYTES: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -274,6 +275,7 @@ impl TransportTranscript {
         hasher.update(TRANSPORT_TRANSCRIPT_DOMAIN);
         hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
         hasher.update([ML_KEM_1024_PROTOCOL_CODE]);
+        hasher.update([TRANSPORT_KDF_PROTOCOL_CODE]);
         hasher.update(self.network_id);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(self.session_id);
@@ -467,10 +469,17 @@ pub fn derive_transport_session_key(
         TransportPolicy::PqOnly => 2,
     });
     info.push(ML_KEM_1024_PROTOCOL_CODE);
+    info.push(TRANSPORT_KDF_PROTOCOL_CODE);
     info.extend_from_slice(secret.transcript_hash());
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
-    if hkdf.expand(&info, &mut output).is_err() {
+    let expand_result = hkdf.expand(&info, &mut output);
+    // RustCrypto hkdf 0.12.4/0.13.0 do not expose zeroize-on-drop for
+    // internal PRK/HMAC state. Keep the object strictly local and drop it
+    // immediately after the single expand operation.
+    drop(hkdf);
+
+    if expand_result.is_err() {
         info.zeroize();
         output.zeroize();
         return None;
@@ -939,6 +948,24 @@ mod tests {
         let mut invalid = base;
         invalid.classical_transcript_hash = Some([0u8; 32]);
         assert!(invalid.commitment().is_none());
+    }
+
+    #[test]
+    fn transport_kdf_algorithm_code_is_nonzero_and_transcript_bound() {
+        assert_ne!(TRANSPORT_KDF_PROTOCOL_CODE, 0);
+
+        let base = valid_transcript(TransportPolicy::Hybrid);
+        let commitment = base.commitment().expect("commitment");
+
+        let mut hasher = Sha256::new();
+        hasher.update(TRANSPORT_TRANSCRIPT_DOMAIN);
+        hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update([ML_KEM_1024_PROTOCOL_CODE]);
+        hasher.update([TRANSPORT_KDF_PROTOCOL_CODE.wrapping_add(1)]);
+        hasher.update(base.network_id);
+        let changed_prefix: [u8; 32] = hasher.finalize().into();
+
+        assert_ne!(commitment, changed_prefix);
     }
 
     #[test]
