@@ -62,9 +62,9 @@ pub fn placement_score(node: &NodeCapacity, work: &WorkRequirements) -> Option<u
         Some(domain) if domain != node.locality_domain => 1_000_000u128,
         _ => 0,
     };
-    let memory_slack = (node.memory_bytes - work.minimum_memory_bytes) as u128;
-    let compute_slack = (node.max_compute_units - work.compute_units) as u128;
-    Some(locality_penalty + memory_slack / (1024 * 1024) as u128 + compute_slack)
+    let memory_slack = u128::from(node.memory_bytes - work.minimum_memory_bytes);
+    let compute_slack = u128::from(node.max_compute_units - work.compute_units);
+    Some(locality_penalty + memory_slack / 1_048_576u128 + compute_slack)
 }
 
 pub fn choose_node<'a>(nodes: &'a [NodeCapacity], work: &WorkRequirements) -> Option<&'a NodeCapacity> {
