@@ -26,6 +26,7 @@ pub struct TxValidationContext {
     pub expected_nonce: u64,
     pub expected_authorization_epoch: u64,
     pub now: u64,
+    pub max_authorization_future_seconds: u64,
     pub required_policy: crate::pq::AuthPolicy,
     pub max_calldata_bytes: usize,
 }
@@ -141,6 +142,15 @@ impl PqEvmTransaction {
         if self.authorization_expires_at == 0 || context.now >= self.authorization_expires_at {
             return Err(TxError::AuthorizationExpired);
         }
+        if context.max_authorization_future_seconds == 0
+            || self
+                .authorization_expires_at
+                .checked_sub(context.now)
+                .map(|remaining| remaining > context.max_authorization_future_seconds)
+                .unwrap_or(true)
+        {
+            return Err(TxError::AuthorizationExpired);
+        }
         if self.authorization.policy != context.required_policy {
             return Err(TxError::PolicyMismatch);
         }
@@ -239,6 +249,7 @@ mod tests {
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
                     now: 999,
+                    max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -254,6 +265,7 @@ mod tests {
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
                     now: 999,
+                    max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -269,6 +281,7 @@ mod tests {
                     expected_nonce: 8,
                     expected_authorization_epoch: 12,
                     now: 999,
+                    max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -293,6 +306,7 @@ mod tests {
                     expected_nonce: 7,
                     expected_authorization_epoch: 13,
                     now: 999,
+                    max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -308,6 +322,32 @@ mod tests {
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
                     now: 1_000,
+                    max_authorization_future_seconds: 60,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationExpired)
+        );
+    }
+
+    #[test]
+    fn transaction_validation_rejects_expiry_beyond_policy_horizon() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 900,
+                    max_authorization_future_seconds: 99,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -332,6 +372,7 @@ mod tests {
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
                     now: 999,
+                    max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::Max,
                     max_calldata_bytes: 1024,
                 },
