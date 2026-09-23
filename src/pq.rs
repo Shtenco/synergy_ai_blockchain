@@ -18,6 +18,15 @@ pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
 pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000;
 
 impl AuthScheme {
+    pub const fn protocol_code(self) -> u8 {
+        match self {
+            Self::Secp256k1 => 1,
+            Self::Ed25519 => 2,
+            Self::MlDsa87 => 3,
+            Self::SlhDsaShake256s => 4,
+        }
+    }
+
     pub fn expected_public_key_bytes(self) -> Option<usize> {
         match self {
             Self::Secp256k1 => Some(SECP256K1_PUBLIC_KEY_BYTES),
@@ -53,6 +62,22 @@ impl AuthPolicy {
             Self::Online => 1,
             Self::Max => 2,
             Self::PqOnly => 3,
+        }
+    }
+
+    pub const fn required_schemes(self) -> &'static [AuthScheme] {
+        const ONLINE: &[AuthScheme] = &[AuthScheme::Secp256k1, AuthScheme::MlDsa87];
+        const MAX: &[AuthScheme] = &[
+            AuthScheme::Secp256k1,
+            AuthScheme::MlDsa87,
+            AuthScheme::SlhDsaShake256s,
+        ];
+        const PQ_ONLY: &[AuthScheme] = &[AuthScheme::MlDsa87, AuthScheme::SlhDsaShake256s];
+
+        match self {
+            Self::Online => ONLINE,
+            Self::Max => MAX,
+            Self::PqOnly => PQ_ONLY,
         }
     }
 }
@@ -104,6 +129,14 @@ pub struct AuthorizationValidationContext {
     pub expected_nonce: u64,
     pub now: u64,
     pub max_future_seconds: u64,
+}
+
+fn append_policy_suite(out: &mut Vec<u8>, policy: AuthPolicy) {
+    let schemes = policy.required_schemes();
+    out.push(schemes.len() as u8);
+    for scheme in schemes {
+        out.push(scheme.protocol_code());
+    }
 }
 
 impl AuthorizationEnvelope {
@@ -159,6 +192,7 @@ impl AuthorizationEnvelope {
         out.extend_from_slice(&self.chain_id);
         out.push(self.domain.protocol_code());
         out.push(policy.protocol_code());
+        append_policy_suite(&mut out, policy);
         out.extend_from_slice(&self.epoch.to_be_bytes());
         out.extend_from_slice(&self.nonce.to_be_bytes());
         out.extend_from_slice(&self.expires_at.to_be_bytes());
@@ -194,6 +228,7 @@ pub fn fips_signature_context(
     out.extend_from_slice(chain_id);
     out.push(domain.protocol_code());
     out.push(policy.protocol_code());
+    append_policy_suite(&mut out, policy);
     out
 }
 
@@ -212,18 +247,7 @@ pub struct HybridAuthorization {
 
 impl HybridAuthorization {
     pub fn required_schemes(&self) -> &'static [AuthScheme] {
-        const ONLINE: &[AuthScheme] = &[AuthScheme::Secp256k1, AuthScheme::MlDsa87];
-        const MAX: &[AuthScheme] = &[
-            AuthScheme::Secp256k1,
-            AuthScheme::MlDsa87,
-            AuthScheme::SlhDsaShake256s,
-        ];
-        const PQ_ONLY: &[AuthScheme] = &[AuthScheme::MlDsa87, AuthScheme::SlhDsaShake256s];
-        match self.policy {
-            AuthPolicy::Online => ONLINE,
-            AuthPolicy::Max => MAX,
-            AuthPolicy::PqOnly => PQ_ONLY,
-        }
+        self.policy.required_schemes()
     }
 
     /// Canonical, fail-closed authorization shape.
@@ -660,6 +684,38 @@ mod tests {
             evidence: vec![bad, evidence(AuthScheme::SlhDsaShake256s)],
         };
         assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn policy_algorithm_suite_is_bound_into_message_and_context() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x21; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 1,
+            nonce: 1,
+            expires_at: 100,
+            payload_commitment: [0x22; 32],
+        };
+
+        let pq_message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let max_message = envelope.canonical_message(AuthPolicy::Max).unwrap();
+        let pq_context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        let max_context = envelope.fips_signature_context(AuthPolicy::Max).unwrap();
+
+        assert_ne!(pq_message, max_message);
+        assert_ne!(pq_context, max_context);
+
+        assert_eq!(
+            AuthPolicy::PqOnly
+                .required_schemes()
+                .iter()
+                .map(|scheme| scheme.protocol_code())
+                .collect::<Vec<_>>(),
+            vec![
+                AuthScheme::MlDsa87.protocol_code(),
+                AuthScheme::SlhDsaShake256s.protocol_code(),
+            ],
+        );
     }
 
     #[test]
