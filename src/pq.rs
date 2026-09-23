@@ -140,6 +140,7 @@ pub enum AuthorizationDomain {
     ServicePlaneCheckpoint,
     AutopilotExecution,
     PaymentIntent,
+    SettlementBatch,
 }
 
 impl AuthorizationDomain {
@@ -156,6 +157,7 @@ impl AuthorizationDomain {
             Self::ServicePlaneCheckpoint => 9,
             Self::AutopilotExecution => 10,
             Self::PaymentIntent => 11,
+            Self::SettlementBatch => 12,
         }
     }
 }
@@ -1042,6 +1044,7 @@ mod tests {
             AuthorizationDomain::ServicePlaneCheckpoint.protocol_code(),
             AuthorizationDomain::AutopilotExecution.protocol_code(),
             AuthorizationDomain::PaymentIntent.protocol_code(),
+            AuthorizationDomain::SettlementBatch.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
