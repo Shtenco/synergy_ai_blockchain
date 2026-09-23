@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::payments::{PaymentIntent, SettlementBatchAuthorization};
 
+const FUNDING_RESERVATION_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-RESERVATION/V1\0";
 const FUNDING_CONSUMPTION_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-CONSUMPTION/V1\0";
 const FUNDING_RELEASE_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-RELEASE/V1\0";
 const FUNDED_SETTLEMENT_DOMAIN: &[u8] = b"SYNERGY/FUNDED-SETTLEMENT/V1\0";
@@ -60,6 +61,31 @@ impl PaymentFundingReservation {
 }
 
 impl PaymentFundingReservation {
+    pub fn canonical_root(&self) -> Option<[u8; 32]> {
+        if self.reservation_id == [0; 32]
+            || self.payment_intent_root == [0; 32]
+            || self.payer_account_root == [0; 32]
+            || self.source_asset_root == [0; 32]
+            || self.amount == 0
+            || self.account_sequence == 0
+            || self.epoch == 0
+        {
+            return None;
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(FUNDING_RESERVATION_DOMAIN);
+        hasher.update(self.reservation_id);
+        hasher.update(self.payment_intent_root);
+        hasher.update(self.payer_account_root);
+        hasher.update(self.source_asset_root);
+        hasher.update(self.amount.to_be_bytes());
+        hasher.update(self.account_sequence.to_be_bytes());
+        hasher.update(self.funding_shard.to_be_bytes());
+        hasher.update(self.epoch.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+
     pub fn validate_reserved(&self) -> Result<(), &'static str> {
         if self.reservation_id == [0; 32]
             || self.reservation_root == [0; 32]
@@ -71,6 +97,9 @@ impl PaymentFundingReservation {
         }
         if self.amount == 0 || self.account_sequence == 0 || self.epoch == 0 {
             return Err("funding amount/sequence/epoch required");
+        }
+        if self.canonical_root() != Some(self.reservation_root) {
+            return Err("funding reservation root mismatch");
         }
         if self.status != FundingStatus::Reserved {
             return Err("funding reservation must be active");
@@ -297,9 +326,9 @@ mod tests {
         let payment_intent_root = intent()
             .authorization_commitment()
             .expect("intent commitment");
-        PaymentFundingReservation {
+        let mut reservation = PaymentFundingReservation {
             reservation_id: [1; 32],
-            reservation_root: [2; 32],
+            reservation_root: [0; 32],
             payment_intent_root,
             payer_account_root: intent().payer,
             source_asset_root: [5; 32],
@@ -308,7 +337,32 @@ mod tests {
             funding_shard: 12,
             epoch: 7,
             status: FundingStatus::Reserved,
-        }
+        };
+        reservation.reservation_root = reservation
+            .canonical_root()
+            .expect("canonical funding reservation root");
+        reservation
+    }
+
+    #[test]
+    fn reservation_root_binds_all_immutable_funding_fields() {
+        let reservation = reservation();
+        let root = reservation.reservation_root;
+
+        let mut changed = reservation.clone();
+        changed.source_asset_root[0] ^= 1;
+        assert_ne!(changed.canonical_root(), Some(root));
+        assert!(changed.validate_reserved().is_err());
+
+        let mut changed = reservation.clone();
+        changed.account_sequence += 1;
+        assert_ne!(changed.canonical_root(), Some(root));
+        assert!(changed.validate_reserved().is_err());
+
+        let mut changed = reservation;
+        changed.funding_shard += 1;
+        assert_ne!(changed.canonical_root(), Some(root));
+        assert!(changed.validate_reserved().is_err());
     }
 
     #[test]
