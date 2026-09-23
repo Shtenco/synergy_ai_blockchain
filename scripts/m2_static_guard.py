@@ -238,10 +238,13 @@ require(
     "established shared secret must remain bound to transport policy",
 )
 require(
-    "MAX_LEGACY_KEX_PUBLIC_KEY_BYTES: usize = 4096" in network
-    and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network
-    and "legacy KEX public key exceeds protocol maximum" in network,
-    "legacy KEX/classical secret DoS bounds missing",
+    "pub enum ClassicalKexScheme" in network
+    and "X25519_PUBLIC_KEY_BYTES: usize = 32" in network
+    and "SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33" in network
+    and "classical KEX public key length mismatch" in network
+    and "PQ-only transport forbids classical KEX material" in network
+    and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network,
+    "explicit classical KEX registry or exact transport bounds missing",
 )
 
 require(
@@ -295,6 +298,19 @@ require(
     and "authorization expiry exceeds policy horizon" in pq
     and "max_authorization_future_seconds" in tx,
     "authorization lifetime horizon policy missing",
+)
+
+require(
+    "authorization evidence order is noncanonical" in pq
+    and "append_policy_suite" in pq
+    and "scheme.protocol_code()" in pq,
+    "ordered authorization algorithm suite binding missing",
+)
+
+require(
+    "MAX_TX_CALLDATA_BYTES: usize = 1_048_576" in tx
+    and "context.max_calldata_bytes > MAX_TX_CALLDATA_BYTES" in tx,
+    "transaction protocol calldata ceiling missing",
 )
 
 print("M2 static guard: PASS")
