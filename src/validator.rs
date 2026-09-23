@@ -53,11 +53,14 @@ impl ValidatorIdentity {
         hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
 
         hasher.update([AuthScheme::MlDsa87.protocol_code()]);
-        hasher.update((self.ml_dsa87_public_key.len() as u64).to_be_bytes());
+        let ml_dsa_len = u64::try_from(self.ml_dsa87_public_key.len()).ok()?;
+        hasher.update(ml_dsa_len.to_be_bytes());
         hasher.update(&self.ml_dsa87_public_key);
 
         hasher.update([AuthScheme::SlhDsaShake256s.protocol_code()]);
-        hasher.update((self.slh_dsa_shake256s_public_key.len() as u64).to_be_bytes());
+        let slh_dsa_len =
+            u64::try_from(self.slh_dsa_shake256s_public_key.len()).ok()?;
+        hasher.update(slh_dsa_len.to_be_bytes());
         hasher.update(&self.slh_dsa_shake256s_public_key);
 
         Some(hasher.finalize().into())
