@@ -55,6 +55,9 @@ impl LegacyIdentityBinding {
         if self.synergy_account_id == [0u8; 32] {
             return Err(MigrationError::EmptySynergyAccount);
         }
+        if self.synergy_account_id != self.pq_identity_commitment {
+            return Err(MigrationError::InvalidPqAuthorization);
+        }
         if self.expires_at == 0 {
             return Err(MigrationError::Expired);
         }
@@ -233,7 +236,7 @@ mod tests {
                 source_chain: LegacyChain::Ethereum,
                 legacy_identifier: vec![0x11; 20],
                 pq_identity_commitment,
-                synergy_account_id: [0x33; 32],
+                synergy_account_id: pq_identity_commitment,
                 nonce: 17,
                 expires_at: 2_000,
             },
@@ -359,10 +362,10 @@ mod tests {
 
         let mut changed = binding.clone();
         changed.synergy_account_id[0] ^= 1;
-        assert_ne!(base, changed.payload_commitment().expect("changed account"));
+        assert!(changed.payload_commitment().is_none());
 
         let mut changed = binding;
         changed.pq_identity_commitment[0] ^= 1;
-        assert_ne!(base, changed.payload_commitment().expect("changed PQ identity"));
+        assert!(changed.payload_commitment().is_none());
     }
 }
