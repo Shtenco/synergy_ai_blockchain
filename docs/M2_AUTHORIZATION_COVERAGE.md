@@ -89,3 +89,5 @@ has its own canonical commitment.
 
 This prevents a valid signed Autopilot call from being replayed through a second execution lease
 or from bypassing the one-time execution-lock layer.
+
+| `AutopilotLeaseTerminal` | settle/cancel a one-time Autopilot execution lease | `Max` | stable owner account + registered current owner keyset | chain, epoch, nonce, expiry, exact lease root, successful realized execution receipt or cancellation reason |
