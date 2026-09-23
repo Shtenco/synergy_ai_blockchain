@@ -210,7 +210,11 @@ pub fn verify_validator_vote_and_consume<V: ContextSignatureVerifier>(
         return false;
     }
     let envelope = vote.envelope();
-    replay.consume_verified(&vote.authorization, &envelope)
+    replay.consume_verified_for_subject(
+        &vote.authorization,
+        &envelope,
+        identity.validator_id,
+    )
 }
 
 #[cfg(test)]
