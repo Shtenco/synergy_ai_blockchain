@@ -138,7 +138,7 @@ impl PqEvmTransaction {
         if self.authorization_epoch != context.expected_authorization_epoch {
             return Err(TxError::AuthorizationEpochMismatch);
         }
-        if self.authorization_expires_at == 0 || context.now > self.authorization_expires_at {
+        if self.authorization_expires_at == 0 || context.now >= self.authorization_expires_at {
             return Err(TxError::AuthorizationExpired);
         }
         if self.authorization.policy != context.required_policy {
@@ -238,7 +238,7 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
-                    now: 1_000,
+                    now: 999,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -253,7 +253,7 @@ mod tests {
                     expected_chain_id: 1,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
-                    now: 1_000,
+                    now: 999,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -268,7 +268,7 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 8,
                     expected_authorization_epoch: 12,
-                    now: 1_000,
+                    now: 999,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -292,7 +292,7 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 13,
-                    now: 1_000,
+                    now: 999,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -307,7 +307,7 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
-                    now: 1_001,
+                    now: 1_000,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -331,7 +331,7 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
-                    now: 1_000,
+                    now: 999,
                     required_policy: AuthPolicy::Max,
                     max_calldata_bytes: 1024,
                 },
