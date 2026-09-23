@@ -21,6 +21,7 @@ domain currently present in `AuthorizationDomain`.
 | `SettlementBatch` | authorize execution-lane settlement batch | `PqOnly` | expected lane authority keyset commitment | chain, epoch, nonce, expiry, lane ID, sequence, accounting/availability/finality commitments |
 | `StorageProof` | storage provider proof receipt | `PqOnly` | expected provider ID + expected provider keyset commitment | chain, storage epoch, nonce, expiry, object/challenge/proof/served-byte commitment |
 | `CognitiveEvidence` | CognitiveNode AI/symbolic evidence | `PqOnly` | node manifest PQ identity equals authorization keyset commitment | chain, epoch, nonce, expiry, request/node/model/input/output/proof/price/policy bindings |
+| `KvReplicaReceipt` | distributed KV-cache replica evidence | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, receipt validity, canonical lease root, KV root, stored bytes, replica authorization |
 
 ## Keyset identity primitive
 
