@@ -1362,4 +1362,22 @@ require(
     "Autopilot public execution path must require canonical one-time lease before nonce consumption",
 )
 
+
+require(
+    "enum TransportDirection" in network
+    and "InitiatorToResponder => 1" in network
+    and "ResponderToInitiator => 2" in network
+    and "info.push(direction.protocol_code())" in network
+    and "pub fn derive_directional_transport_session_keys" in network
+    and "pub struct TransportSessionKeys" in network,
+    "transport KDF must derive independent directional traffic keys",
+)
+
+require(
+    "derive_directional_transport_session_keys" in lib_v2
+    and "derive_transport_session_key," not in lib_v2
+    and "TransportSessionKeys" in lib_v2,
+    "public crate surface must expose direction-separated transport keys only",
+)
+
 print("M2 static guard: PASS")
