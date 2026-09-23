@@ -1473,9 +1473,16 @@ require(
     "error CallFailed" not in smart_account_sol
     and "returns (bool success, bytes memory result)" in smart_account_sol
     and "nonce = current + 1;" in smart_account_sol
-    and "(success, result) = target.call" in smart_account_sol
+    and "function _boundedCall(" in smart_account_sol
+    and "_boundedCall(target, value, callData, callGasLimit)" in smart_account_sol
+    and "MAX_TX_CALLDATA_BYTES = 1_048_576" in smart_account_sol
+    and "MAX_RETURN_DATA_BYTES = 4_096" in smart_account_sol
+    and "POST_CALL_GAS_RESERVE = 250_000" in smart_account_sol
+    and "bytes memory callData = data;" in smart_account_sol
+    and "gasleft() <= requiredGas" in smart_account_sol
+    and "bytes32 callHash = keccak256(data);" in smart_account_sol
     and "keccak256(result)" in smart_account_sol,
-    "PQSmartAccount must consume authorization nonce even when downstream execution fails",
+    "PQSmartAccount must consume nonce only after bounded execution resources are secured",
 )
 
 require(
@@ -1752,6 +1759,16 @@ require(
     and '"SYNERGY/PQ-SMART-ACCOUNT-CALL/V1"' in smart_account_sol
     and "function authorizationEnvelopeMessage(" in smart_account_sol,
     "PQSmartAccount must use the common PQ-AUTH outer envelope with a domain-separated call payload",
+)
+
+
+require(
+    "callGasLimit" in smart_account_sol
+    and "callPayloadCommitment(target, value, data, callGasLimit)" in smart_account_sol
+    and "fullReturnDataSize := returndatasize()" in smart_account_sol
+    and "if gt(copySize, maxReturnData)" in smart_account_sol
+    and "returndatacopy(resultData, 0, copySize)" in smart_account_sol,
+    "signed EVM call gas and bounded returndata copying must remain enforced",
 )
 
 print("M2 static guard: PASS")
