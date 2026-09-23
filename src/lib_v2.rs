@@ -7,6 +7,7 @@ pub mod cognitive_market;
 pub mod cognitive_registry;
 pub mod consensus;
 pub mod inference;
+pub mod governance;
 pub mod kv_cache;
 pub mod migration;
 pub mod model_shard;
@@ -48,6 +49,10 @@ pub use inference::{
     verify_inference_receipt, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
+};
+pub use governance::{
+    verify_governance_action, GovernanceAction, GovernanceAuthorization,
+    GovernanceValidationContext,
 };
 pub use kv_cache::{KvCacheLease, KvReplicaReceipt};
 pub use migration::{LegacyChain, LegacyIdentityBinding};
