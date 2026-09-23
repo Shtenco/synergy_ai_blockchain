@@ -355,4 +355,42 @@ require(
     "hardened executable CI gates missing",
 )
 
+
+require(
+    "#![forbid(unsafe_code)]" in (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8"),
+    "crate must continue to forbid unsafe code",
+)
+
+require(
+    "#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct PqSigningKeyHandle" not in pq
+    and "#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]\npub struct MlKemSecretHandle" not in pq_ref
+    and "struct InternalCapabilityId([u8; 32]);" in pq_ref
+    and "impl Drop for InternalCapabilityId" in pq_ref,
+    "capability handles or internal IDs regressed to clonable/non-zeroizing form",
+)
+
+require(
+    "ML-KEM-1024 public key must not be all-zero" in network
+    and "classical KEX public key must not be all-zero" in network
+    and "secp256k1 KEX public key must use compressed encoding" in network,
+    "transport advertised-key structural prefilter missing",
+)
+
+require(
+    "m2-cargo-metadata-core.json" in workflow
+    and "m2-cargo-metadata-reference-pq.json" in workflow
+    and "m2-spdx-core.json" in workflow
+    and "m2-spdx-reference-pq.json" in workflow
+    and "--features reference-pq > m2-cargo-metadata-reference-pq.json" in workflow,
+    "core/reference-pq resolved evidence must remain separated",
+)
+
+require(
+    "unexpected features enabled for" in lock_policy
+    and '("ml-kem", "0.3.2"): {"getrandom", "zeroize"}' in lock_policy
+    and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"}' in lock_policy
+    and '("slh-dsa", "0.1.0"): {"alloc", "default"}' in lock_policy,
+    "critical crypto feature allowlist missing",
+)
+
 print("M2 static guard: PASS")
