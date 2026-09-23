@@ -399,4 +399,14 @@ require(
     "authorization byte budget must equal the exact MAX-policy suite size",
 )
 
+
+require(
+    "pub rekey_policy: RekeyPolicy" in network
+    and "self.rekey_policy.validate()?" in network
+    and "hasher.update(self.rekey_policy.max_messages.to_be_bytes())" in network
+    and "hasher.update(self.rekey_policy.max_seconds.to_be_bytes())" in network
+    and "pub fn should_rekey(&self, messages_since_rekey: u64, seconds_since_rekey: u64)" in network,
+    "transport transcript must bind and enforce rekey policy",
+)
+
 print("M2 static guard: PASS")
