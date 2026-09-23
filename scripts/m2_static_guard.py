@@ -1592,4 +1592,13 @@ require(
     "storage provider bids must remain bounded by archive lifetime",
 )
 
+
+require(
+    "total reward exceeds policy maximum" in cognitive_market
+    and ".min(policy.max_reward)" not in cognitive_market
+    and "checked_sub(corr)" in cognitive_market
+    and "saturating_sub(corr)" not in cognitive_market,
+    "cognitive reward accounting must reject over-cap or invalid normalized arithmetic without clipping",
+)
+
 print("M2 static guard: PASS")
