@@ -1325,10 +1325,11 @@ mod tests {
             AuthorizationDomain::Transaction,
             AuthPolicy::PqOnly,
         );
-        let actual_hex: String = context
+        let actual_hex = context
             .iter()
             .map(|byte| format!("{byte:02x}"))
-            .collect();
+            .collect::<Vec<_>>()
+            .join("");
         let expected_hex =
             include_str!("../tests/fixtures/evm_fips_context_v1.hex").trim();
 
