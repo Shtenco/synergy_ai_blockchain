@@ -233,6 +233,7 @@ pub struct InferenceReceiptValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_worker_id: [u8; 32],
+    pub expected_worker_keyset_commitment: [u8; 32],
     pub now: u64,
     pub max_future_seconds: u64,
 }
@@ -245,6 +246,8 @@ pub fn verify_inference_receipt<V: ContextSignatureVerifier>(
 ) -> bool {
     if authorized.authorization.policy != AuthPolicy::PqOnly
         || authorized.receipt.worker_id != validation.expected_worker_id
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_worker_keyset_commitment)
         || authorized.receipt.validate_against(assignment).is_err()
     {
         return false;
@@ -455,6 +458,10 @@ mod tests {
             expected_epoch: 7,
             expected_nonce: 8,
             expected_worker_id: assignment.worker_id,
+            expected_worker_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("worker keyset commitment"),
             now: 1_000,
             max_future_seconds: 200,
         };
@@ -473,6 +480,62 @@ mod tests {
             &assignment,
             &authorized,
             &replay,
+        ));
+    }
+
+    #[test]
+    fn inference_receipt_rejects_unregistered_worker_keyset() {
+        let assignment = stage(0);
+        let receipt = InferenceStageReceipt {
+            job_id: assignment.job_id,
+            stage_index: assignment.stage_index,
+            worker_id: assignment.worker_id,
+            model_shard_commitment: assignment.model_shard_commitment,
+            input_commitment: assignment.input_commitment,
+            output_commitment: [50; 32],
+            execution_trace_commitment: [51; 32],
+            worker_signature_commitment: [52; 32],
+            compute_units: 10,
+            bytes_read: 100,
+            bytes_written: 20,
+            elapsed_micros: 1,
+        };
+        let authorized = InferenceReceiptAuthorization {
+            chain_id: [0x71; 32],
+            epoch: 7,
+            nonce: 8,
+            expires_at: 1_100,
+            receipt,
+            authorization: pq_only_authorization(),
+        };
+        let envelope = authorized.envelope().expect("receipt envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("receipt context"),
+        };
+        let mut validation = InferenceReceiptValidationContext {
+            expected_chain_id: [0x71; 32],
+            expected_epoch: 7,
+            expected_nonce: 8,
+            expected_worker_id: assignment.worker_id,
+            expected_worker_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("worker keyset commitment"),
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+        validation.expected_worker_keyset_commitment[0] ^= 1;
+
+        assert!(!verify_inference_receipt(
+            &verifier,
+            &assignment,
+            &authorized,
+            &validation,
         ));
     }
 
