@@ -30,6 +30,8 @@ service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
 autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
 payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
 payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
+storage = (ROOT / "src/storage.rs").read_text(encoding="utf-8")
+cognitive = (ROOT / "src/cognitive.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -786,6 +788,31 @@ require(
     and "reservation.validate_against_intent(intent, now)?" in payment_funding
     and "self.validate_against(reservation)" in payment_funding,
     "funding consumption must recheck canonical payment intent and expiry",
+)
+
+
+require(
+    "AuthorizationDomain::StorageProof" in storage
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in storage
+    and "expected_provider_keyset_commitment" in storage
+    and "expected_provider_id" in storage
+    and "authorization_commitment" in storage,
+    "storage proofs must remain PQ-authorized by registered provider keysets",
+)
+
+require(
+    "AuthorizationDomain::CognitiveEvidence" in cognitive
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in cognitive
+    and "node.pq_identity_commitment" in cognitive
+    and "authorized.authorization.keyset_commitment()" in cognitive
+    and "authorization_commitment" in cognitive,
+    "CognitiveNode evidence must remain PQ-authorized by registered node identity",
+)
+
+require(
+    "Self::StorageProof => 13" in pq
+    and "Self::CognitiveEvidence => 14" in pq,
+    "storage/cognitive authorization domain codes missing or changed",
 )
 
 print("M2 static guard: PASS")
