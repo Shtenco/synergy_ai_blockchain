@@ -51,12 +51,16 @@ def main() -> int:
                 f"fixture SHA-256 mismatch: {path}: expected {expected_sha256}, got {actual_sha256}"
             )
 
-    expected_paths = {
+    expected_vector_paths = {
         "tests/vectors/ml-kem-1024-acvp-subset.json",
         "tests/vectors/ml-dsa-87-acvp-subset.json",
         "tests/vectors/slh-dsa-shake-256s-acvp-subset.json",
         "tests/vectors/ml-kem-1024-wycheproof-negative-subset.json",
     }
+    expected_auxiliary_paths = {
+        "tests/fixtures/evm_fips_context_v1.hex",
+    }
+    expected_paths = expected_vector_paths | expected_auxiliary_paths
     if seen != expected_paths:
         raise SystemExit(
             f"fixture manifest coverage mismatch: expected {sorted(expected_paths)}, got {sorted(seen)}"
@@ -68,10 +72,22 @@ def main() -> int:
         for path in vectors_dir.glob("*.json")
         if path.name != MANIFEST.name
     }
-    if actual_json_paths != expected_paths:
+    if actual_json_paths != expected_vector_paths:
         raise SystemExit(
             "unexpected/unmanifested JSON fixture inventory: "
-            f"expected {sorted(expected_paths)}, got {sorted(actual_json_paths)}"
+            f"expected {sorted(expected_vector_paths)}, got {sorted(actual_json_paths)}"
+        )
+
+    fixtures_dir = ROOT / "tests/fixtures"
+    actual_auxiliary_paths = {
+        str(path.relative_to(ROOT)).replace("\\", "/")
+        for path in fixtures_dir.glob("*")
+        if path.is_file()
+    }
+    if actual_auxiliary_paths != expected_auxiliary_paths:
+        raise SystemExit(
+            "unexpected/unmanifested auxiliary fixture inventory: "
+            f"expected {sorted(expected_auxiliary_paths)}, got {sorted(actual_auxiliary_paths)}"
         )
 
     print(f"M2 fixture manifest: PASS ({len(fixtures)} fixtures, SHA-1+SHA-256)")
