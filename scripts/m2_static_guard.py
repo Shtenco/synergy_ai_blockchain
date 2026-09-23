@@ -919,4 +919,15 @@ require(
     "Autopilot budget reservation ownership must remain keyset-bound",
 )
 
+
+require(
+    "pub struct AuthorizationReplayState" in pq
+    and "pub fn verify_and_consume" in pq
+    and "self.next_nonce.checked_add(1)" in pq
+    and "self.next_nonce = advanced_nonce" in pq
+    and "pub fn rotate_epoch" in pq
+    and "if new_epoch <= self.epoch" in pq,
+    "authorization replay state must consume nonce exactly once and rotate epoch forward only",
+)
+
 print("M2 static guard: PASS")
