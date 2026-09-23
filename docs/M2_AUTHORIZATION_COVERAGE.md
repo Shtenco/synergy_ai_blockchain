@@ -91,3 +91,21 @@ This prevents a valid signed Autopilot call from being replayed through a second
 or from bypassing the one-time execution-lock layer.
 
 | `AutopilotLeaseTerminal` | settle/cancel a one-time Autopilot execution lease | `Max` | stable owner account + registered current owner keyset | chain, epoch, nonce, expiry, exact lease root, successful realized execution receipt or cancellation reason |
+
+
+## Canonical service finality
+
+`ServicePlaneCheckpoint` no longer accepts an opaque finality hash through the public verifier path.
+The public API requires a bounded `ServiceFinalityBatch`.
+
+Each finality item is created through a typed constructor from an authorization wrapper for a
+payment settlement, Autopilot terminal receipt, storage proof, CognitiveNode evidence or KV replica
+receipt. Raw `kind/root` construction is not part of the public API.
+
+Every item binds its source chain and source epoch; the batch requires every item to match the
+batch chain/epoch, canonicalizes ordering, rejects duplicates and hashes the chain/epoch into the
+finality commitment. The checkpoint verifier additionally requires the batch chain to equal the
+checkpoint chain before consuming the service-authority nonce.
+
+The raw consuming checkpoint verifier remains crate-internal. The public path is
+`verify_service_plane_checkpoint_with_finality_and_consume`.
