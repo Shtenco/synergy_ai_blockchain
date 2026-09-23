@@ -73,6 +73,7 @@ pub enum NexusError {
     InvalidShape,
     UnsupportedMode,
     GasOverflow,
+    OutOfGas,
 }
 
 fn i128_to_i64_saturating(value: i128) -> i64 {
@@ -143,10 +144,11 @@ fn residual_mix(x: &[i64]) -> Vec<i64> {
 /// for NEXUS-in-EVM, not a claim that the full PyTorch V18 checkpoint has already
 /// been losslessly quantized. Production activation requires a separately frozen
 /// quantized weight artifact whose root equals `manifest.model_root`.
-pub fn infer_reference(
+pub fn infer_reference_metered(
     manifest: &NexusManifest,
     gas: &PrecompileGasSchedule,
     request: &NexusRequest,
+    gas_budget: u64,
 ) -> Result<NexusResponse, NexusError> {
     manifest.validate()?;
     if request.mode != NexusMode::Score {
@@ -180,6 +182,9 @@ pub fn infer_reference(
             usize::from(manifest.layers),
         )
         .ok_or(NexusError::GasOverflow)?;
+    if gas_used > gas_budget {
+        return Err(NexusError::OutOfGas);
+    }
 
     // Gas/shape feasibility is established before allocation and graph execution.
     let mut state = vec![0i64; nodes];
@@ -193,6 +198,15 @@ pub fn infer_reference(
 
     let output = state[..output_len].to_vec();
     Ok(NexusResponse { output_q16: output, gas_used })
+}
+
+
+pub(crate) fn infer_reference(
+    manifest: &NexusManifest,
+    gas: &PrecompileGasSchedule,
+    request: &NexusRequest,
+) -> Result<NexusResponse, NexusError> {
+    infer_reference_metered(manifest, gas, request, u64::MAX)
 }
 
 #[cfg(test)]
@@ -256,6 +270,36 @@ mod tests {
         assert_eq!(qadd_saturating(i64::MAX, 1), i64::MAX);
         assert_eq!(qadd_saturating(i64::MIN, -1), i64::MIN);
         assert_eq!(qmul(i64::MAX, i64::MAX), i64::MAX);
+    }
+
+    #[test]
+    fn metered_entrypoint_rejects_out_of_gas_before_execution() {
+        let m = NexusManifest::v18_consensus_profile([7u8; 32]);
+        let r = NexusRequest {
+            mode: NexusMode::Score,
+            input_q16: vec![Q, 2 * Q, -Q],
+            max_output_values: 8,
+        };
+        let required = infer_reference(&m, &PrecompileGasSchedule::default(), &r)
+            .expect("reference execution")
+            .gas_used;
+        assert!(required > 0);
+        assert_eq!(
+            infer_reference_metered(
+                &m,
+                &PrecompileGasSchedule::default(),
+                &r,
+                required - 1,
+            ),
+            Err(NexusError::OutOfGas)
+        );
+        assert!(infer_reference_metered(
+            &m,
+            &PrecompileGasSchedule::default(),
+            &r,
+            required,
+        )
+        .is_ok());
     }
 
     #[test]
