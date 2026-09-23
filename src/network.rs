@@ -55,7 +55,7 @@ pub const MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536;
 pub struct InMemoryTransportReplayGuard {
     network_id: [u8; 32],
     epoch: u64,
-    consumed: BTreeSet<([u8; 32], [u8; 32])>,
+    consumed: BTreeSet<[u8; 32]>,
 }
 
 impl InMemoryTransportReplayGuard {
@@ -105,7 +105,7 @@ impl TransportReplayGuard for InMemoryTransportReplayGuard {
             return false;
         }
 
-        self.consumed.insert((*session_id, *transcript_hash))
+        self.consumed.insert(*session_id)
     }
 }
 
@@ -755,6 +755,12 @@ mod tests {
 
         assert!(guard.consume_session(&network_id, 7, &session, &transcript));
         assert!(!guard.consume_session(&network_id, 7, &session, &transcript));
+        assert!(!guard.consume_session(
+            &network_id,
+            7,
+            &session,
+            &[0xC6; 32],
+        ));
         assert!(!guard.consume_session(&[0xC4; 32], 7, &[0xC5; 32], &transcript));
         assert!(!guard.consume_session(&network_id, 8, &[0xC5; 32], &transcript));
 
