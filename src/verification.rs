@@ -1,5 +1,10 @@
 use sha2::{Digest, Sha256};
 
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+};
+
 //! Replication-first proof-of-inference primitives.
 //!
 //! V1 deliberately does not pretend that a hash is a proof of correct inference.
@@ -96,6 +101,107 @@ impl VerifierReceipt {
         }
         Ok(())
     }
+}
+
+
+impl VerifierReceipt {
+    pub fn authorization_commitment(
+        &self,
+        challenge: &VerificationChallenge,
+    ) -> Option<[u8; 32]> {
+        self.validate_against(challenge).ok()?;
+
+        const DOMAIN: &[u8] = b"SYNERGY/VERIFIER-RECEIPT/V1\0";
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(self.challenge_id);
+        hasher.update(self.verifier_id);
+        hasher.update(self.recomputed_output_commitment);
+        hasher.update(self.trace_commitment);
+        hasher.update(self.signature_commitment);
+        hasher.update([match self.verdict {
+            VerificationVerdict::Match => 1,
+            VerificationVerdict::Mismatch => 2,
+            VerificationVerdict::Inconclusive => 3,
+        }]);
+        hasher.update(self.completed_at.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifierReceiptAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub receipt: VerifierReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl VerifierReceiptAuthorization {
+    pub fn envelope(
+        &self,
+        challenge: &VerificationChallenge,
+    ) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::VerificationReceipt,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.receipt.authorization_commitment(challenge)?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerifierReceiptValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_verifier_id: [u8; 32],
+    pub expected_verifier_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_verifier_receipt<V: ContextSignatureVerifier>(
+    verifier: &V,
+    challenge: &VerificationChallenge,
+    authorized: &VerifierReceiptAuthorization,
+    validation: &VerifierReceiptValidationContext,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.verifier_id != validation.expected_verifier_id
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_verifier_keyset_commitment)
+        || authorized.receipt.validate_against(challenge).is_err()
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope(challenge) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::VerificationReceipt,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,6 +327,48 @@ impl VerificationAggregate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{
+        AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn pq_only_authorization() -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x71; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x72; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x73; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x74; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
 
     fn challenge() -> VerificationChallenge {
         VerificationChallenge {
@@ -293,6 +441,63 @@ mod tests {
             completed_at: 15,
         };
         assert_eq!(r.validate_against(&c), Ok(()));
+    }
+
+    #[test]
+    fn verifier_receipt_requires_registered_pq_keyset_and_state_context() {
+        let challenge = challenge();
+        let receipt = receipt(
+            5,
+            VerificationVerdict::Match,
+            challenge.challenged_output_commitment,
+        );
+        let authorized = VerifierReceiptAuthorization {
+            chain_id: [0x91; 32],
+            epoch: 4,
+            nonce: 5,
+            expires_at: 100,
+            receipt,
+            authorization: pq_only_authorization(),
+        };
+        let envelope = authorized
+            .envelope(&challenge)
+            .expect("verifier receipt envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("verifier receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("verifier receipt context"),
+        };
+        let validation = VerifierReceiptValidationContext {
+            expected_chain_id: [0x91; 32],
+            expected_epoch: 4,
+            expected_nonce: 5,
+            expected_verifier_id: [5; 32],
+            expected_verifier_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("verifier keyset"),
+            now: 50,
+            max_future_seconds: 60,
+        };
+
+        assert!(verify_verifier_receipt(
+            &verifier,
+            &challenge,
+            &authorized,
+            &validation,
+        ));
+
+        let mut wrong = validation;
+        wrong.expected_verifier_keyset_commitment[0] ^= 1;
+        assert!(!verify_verifier_receipt(
+            &verifier,
+            &challenge,
+            &authorized,
+            &wrong,
+        ));
     }
 
     #[test]
