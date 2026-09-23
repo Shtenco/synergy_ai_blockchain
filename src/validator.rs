@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthScheme, AuthorizationDomain,
-    AuthorizationEnvelope, AuthorizationValidationContext, ContextSignatureVerifier,
+    AuthorizationEnvelope, AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
     HybridAuthorization, CRYPTO_PROFILE_VERSION, ML_DSA_87_PUBLIC_KEY_BYTES,
     SECP256K1_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
 };
