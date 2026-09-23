@@ -805,6 +805,26 @@ pub fn verify_envelope_authorization<V: ContextSignatureVerifier>(
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
+    struct ReplayVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ReplayVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+
     fn evidence(scheme: AuthScheme) -> SignatureEvidence {
         let mut public_key = vec![1; scheme.expected_public_key_bytes().unwrap_or(1)];
         let mut signature = vec![2; scheme.expected_signature_bytes().unwrap_or(1)];
@@ -1491,7 +1511,7 @@ mod tests {
         let context = envelope
             .fips_signature_context(AuthPolicy::PqOnly)
             .expect("context");
-        let verifier = ExpectedContextVerifier { message, context };
+        let verifier = ReplayVerifier { message, context };
 
         let mut replay = AuthorizationReplayState::new(
             envelope.chain_id,
@@ -1543,7 +1563,7 @@ mod tests {
                 evidence(AuthScheme::SlhDsaShake256s),
             ],
         };
-        let verifier = ExpectedContextVerifier {
+        let verifier = ReplayVerifier {
             message: envelope.canonical_message(AuthPolicy::PqOnly).unwrap(),
             context: envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap(),
         };
