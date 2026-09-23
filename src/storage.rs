@@ -128,12 +128,14 @@ impl DedupReceipt {
 
     /// Incremental unique/archive ratio: 0 means all bytes reused, 10000 means
     /// no dedup saving for this object.
-    pub fn unique_to_logical_bps(&self) -> u64 {
-        if self.logical_archive_bytes == 0 {
-            return 0;
+    pub fn unique_to_logical_bps(&self) -> Option<u64> {
+        let logical = u128::from(self.logical_archive_bytes);
+        if logical == 0 {
+            return None;
         }
-        ((self.newly_stored_unique_bytes as u128) * 10_000u128
-            / (self.logical_archive_bytes as u128)) as u64
+        let numerator = u128::from(self.newly_stored_unique_bytes).checked_mul(10_000)?;
+        let ratio = numerator.checked_div(logical)?;
+        u64::try_from(ratio).ok()
     }
 }
 
@@ -460,7 +462,28 @@ mod tests {
             reused_bytes: 200_000,
         };
         assert_eq!(d.validate_against(&a), Ok(()));
-        assert_eq!(d.unique_to_logical_bps(), 2000);
+        assert_eq!(d.unique_to_logical_bps(), Some(2000));
+    }
+
+    #[test]
+    fn dedup_ratio_fails_closed_on_zero_or_unrepresentable_ratio() {
+        let a = archive();
+        let mut d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [9; 32],
+            logical_archive_bytes: 0,
+            newly_stored_unique_bytes: 1,
+            reused_bytes: 0,
+        };
+        assert_eq!(d.unique_to_logical_bps(), None);
+
+        d.logical_archive_bytes = 1;
+        d.newly_stored_unique_bytes = u64::MAX;
+        assert_eq!(d.unique_to_logical_bps(), None);
     }
 
     #[test]
