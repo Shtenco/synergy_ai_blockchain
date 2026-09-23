@@ -52,10 +52,11 @@ pub use kv_cache::{KvCacheLease, KvReplicaReceipt};
 pub use migration::{LegacyChain, LegacyIdentityBinding};
 pub use model_shard::{ModelLineageTransition, ModelManifestCommitment, ModelShardOutput};
 pub use network::{
-    establish_shared_secret, validate_shared_secret, ClassicalKexScheme, HybridSharedSecret,
-    MlKem1024Provider, MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerIdentity,
-    TransportPolicy, TransportReplayGuard, TransportRole, TransportTranscript,
-    TransportValidationContext, CLASSICAL_SHARED_SECRET_BYTES,
+    derive_transport_session_key, establish_shared_secret, validate_shared_secret,
+    ClassicalKexScheme, HybridSharedSecret, MlKem1024Provider, MlKemSharedSecret, RekeyPolicy,
+    SecretBytes, TransportPeerIdentity, TransportPolicy, TransportReplayGuard, TransportRole,
+    TransportSessionKey, TransportTranscript, TransportValidationContext,
+    CLASSICAL_SHARED_SECRET_BYTES,
     MAX_REKEY_MESSAGES,
     MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
     ML_KEM_1024_PUBLIC_KEY_BYTES, ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES,
