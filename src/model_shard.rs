@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const MODEL_UPGRADE_DOMAIN: &[u8] = b"SYNERGY/MODEL-UPGRADE/V1\0";
@@ -241,7 +241,7 @@ pub struct ModelUpgradeValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_model_upgrade<V: ContextSignatureVerifier>(
+pub(crate) fn verify_model_upgrade<V: ContextSignatureVerifier>(
     verifier: &V,
     upgrade: &ModelUpgradeAuthorization,
     validation: &ModelUpgradeValidationContext,
@@ -273,6 +273,23 @@ pub fn verify_model_upgrade<V: ContextSignatureVerifier>(
         &envelope,
         &auth_validation,
     )
+}
+
+
+pub fn verify_model_upgrade_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    upgrade: &ModelUpgradeAuthorization,
+    validation: &ModelUpgradeValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_model_upgrade(verifier, upgrade, validation) {
+        return false;
+    }
+    let envelope = match upgrade.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&upgrade.authorization, &envelope)
 }
 
 #[cfg(test)]
