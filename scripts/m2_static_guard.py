@@ -1233,4 +1233,14 @@ require(
     "Autopilot one-time execution lease must remain compiled and fail closed",
 )
 
+
+require(
+    "pub fn finalize_once(" in autopilot_execution_lease
+    and "execution lease already terminal" in autopilot_execution_lease
+    and "terminal receipt lease mismatch" in autopilot_execution_lease
+    and "AUTOPILOT_LEASE_TERMINAL_DOMAIN" in autopilot_execution_lease
+    and "pub fn commitment(&self) -> Option<[u8; 32]>" in autopilot_execution_lease,
+    "Autopilot execution lease must remain one-shot with canonical terminal commitment",
+)
+
 print("M2 static guard: PASS")
