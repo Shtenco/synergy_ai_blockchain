@@ -105,7 +105,9 @@ pub fn reward_breakdown(
     }
 
     let base = receipt.paid_amount.min(policy.max_reward);
-    let positive_utility = receipt.realized_utility_micros.max(0) as u128;
+    let positive_utility =
+        u128::try_from(receipt.realized_utility_micros.max(0))
+            .map_err(|_| "positive utility conversion failed")?;
     let utility_factor = positive_utility.min(MICROS);
     let utility_rate = u128::from(policy.utility_bonus_bps);
     let utility_bonus = mul_div(
