@@ -138,6 +138,8 @@ pub struct ConsensusActivationValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_activation_block: u64,
+    pub current_block: u64,
+    pub min_activation_delay_blocks: u64,
     pub expected_authority_keyset_commitment: [u8; 32],
     pub now: u64,
     pub max_future_seconds: u64,
@@ -148,8 +150,18 @@ pub fn verify_consensus_activation<V: ContextSignatureVerifier>(
     authorized: &ConsensusActivationAuthorization,
     validation: &ConsensusActivationValidationContext,
 ) -> bool {
-    if authorized.authorization.policy != AuthPolicy::Max
+    let earliest_activation = match validation
+        .current_block
+        .checked_add(validation.min_activation_delay_blocks)
+    {
+        Some(block) => block,
+        None => return false,
+    };
+
+    if validation.min_activation_delay_blocks == 0
+        || authorized.authorization.policy != AuthPolicy::Max
         || authorized.activation.activation_block != validation.expected_activation_block
+        || authorized.activation.activation_block < earliest_activation
         || authorized.authorization.keyset_commitment()
             != Some(validation.expected_authority_keyset_commitment)
         || authorized.activation.validate().is_err()
@@ -265,6 +277,8 @@ mod tests {
             expected_epoch: 20,
             expected_nonce: 21,
             expected_activation_block: 50_000,
+            current_block: 49_000,
+            min_activation_delay_blocks: 100,
             expected_authority_keyset_commitment: authorized
                 .authorization
                 .keyset_commitment()
@@ -278,6 +292,35 @@ mod tests {
         let mut wrong = validation;
         wrong.expected_activation_block += 1;
         assert!(!verify_consensus_activation(&verifier, &authorized, &wrong));
+    }
+
+    #[test]
+    fn consensus_activation_rejects_retroactive_or_zero_delay_activation() {
+        let authorized = authorized_activation();
+        let envelope = authorized.envelope().expect("activation envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
+            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+        };
+        let mut validation = ConsensusActivationValidationContext {
+            expected_chain_id: [0x91; 32],
+            expected_epoch: 20,
+            expected_nonce: 21,
+            expected_activation_block: 50_000,
+            current_block: 50_000,
+            min_activation_delay_blocks: 1,
+            expected_authority_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("authority keyset"),
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+        assert!(!verify_consensus_activation(&verifier, &authorized, &validation));
+
+        validation.current_block = 49_000;
+        validation.min_activation_delay_blocks = 0;
+        assert!(!verify_consensus_activation(&verifier, &authorized, &validation));
     }
 
     #[test]
