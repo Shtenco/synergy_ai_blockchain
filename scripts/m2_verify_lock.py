@@ -12,6 +12,7 @@ EXPECTED_CRYPTO = {
     "zeroize": "1.8.1",
     "sha2": "0.10.9",
     "hkdf": "0.12.4",
+    "rand": "0.8.5",
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -122,7 +123,7 @@ def main() -> int:
     allowed_features = {
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
-        ("slh-dsa", "0.1.0"): {"alloc", "default"},
+        ("slh-dsa", "0.1.0"): {"alloc"},
         ("hkdf", "0.12.4"): set(),
         ("rand", "0.8.5"): {"getrandom"},
     }
