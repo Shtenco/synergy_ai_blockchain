@@ -26,6 +26,8 @@ library PQVerify {
         if (
             publicKey.length != ML_DSA_87_PUBLIC_KEY_BYTES
                 || signature.length != ML_DSA_87_SIGNATURE_BYTES
+                || message.length == 0
+                || context.length == 0
                 || context.length > MAX_FIPS_CONTEXT_BYTES
         ) {
             return false;
@@ -42,6 +44,8 @@ library PQVerify {
         if (
             publicKey.length != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
                 || signature.length != SLH_DSA_SHAKE_256S_SIGNATURE_BYTES
+                || message.length == 0
+                || context.length == 0
                 || context.length > MAX_FIPS_CONTEXT_BYTES
         ) {
             return false;
