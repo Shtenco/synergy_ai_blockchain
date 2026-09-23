@@ -163,7 +163,7 @@ pub struct ValidatorVoteValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_validator_vote<V: ContextSignatureVerifier>(
+pub(crate) fn verify_validator_vote<V: ContextSignatureVerifier>(
     verifier: &V,
     policy: ValidatorPolicy,
     identity: &ValidatorIdentity,
@@ -195,6 +195,25 @@ pub fn verify_validator_vote<V: ContextSignatureVerifier>(
         &envelope,
         &auth_validation,
     )
+}
+
+
+pub fn verify_validator_vote_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    policy: ValidatorPolicy,
+    identity: &ValidatorIdentity,
+    vote: &ValidatorVoteAuthorization,
+    validation: &ValidatorVoteValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_validator_vote(verifier, policy, identity, vote, validation) {
+        return false;
+    }
+    let envelope = match Some(vote.envelope()) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&vote.authorization, &envelope)
 }
 
 #[cfg(test)]
