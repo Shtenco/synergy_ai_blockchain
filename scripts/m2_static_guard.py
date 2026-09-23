@@ -612,4 +612,12 @@ require(
     "validator ID must remain stable PQ-key identity commitment",
 )
 
+
+require(
+    "pub fn authorization_keyset_commitment<'a, I>" in pq
+    and "IntoIterator<Item = (AuthScheme, &'a [u8])>" in pq
+    and "authorization_keyset_commitment(" in pq,
+    "signature-independent allocation-free keyset registration primitive missing",
+)
+
 print("M2 static guard: PASS")
