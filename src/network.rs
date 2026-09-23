@@ -388,7 +388,16 @@ pub fn establish_shared_secret<G: TransportReplayGuard>(
     transcript: &TransportTranscript,
     validation: &TransportValidationContext,
 ) -> Option<HybridSharedSecret> {
-    let transcript_hash = transcript.commitment_in_context(validation)?;
+    // Validate transcript and secret material before consuming replay state.
+    // Otherwise malformed local input could burn an otherwise valid session ID.
+    let secret = HybridSharedSecret::from_transcript(
+        pq_shared,
+        classical_shared,
+        transcript,
+        validation,
+    )?;
+    let transcript_hash = *secret.transcript_hash();
+
     if !replay_guard.consume_session(
         &transcript.network_id,
         transcript.epoch,
@@ -398,12 +407,7 @@ pub fn establish_shared_secret<G: TransportReplayGuard>(
         return None;
     }
 
-    HybridSharedSecret::from_transcript(
-        pq_shared,
-        classical_shared,
-        transcript,
-        validation,
-    )
+    Some(secret)
 }
 
 impl fmt::Debug for HybridSharedSecret {
@@ -729,6 +733,33 @@ mod tests {
             &validation,
         );
         assert!(secret.is_none());
+    }
+
+    #[test]
+    fn invalid_secret_material_does_not_burn_session_id() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let validation = validation_for(&transcript);
+        let mut replay_guard = OneShotReplayGuard::default();
+
+        let invalid = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("invalid-attempt ML-KEM shared secret"),
+            None,
+            &transcript,
+            &validation,
+        );
+        assert!(invalid.is_none());
+
+        let valid = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[2u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("valid-attempt ML-KEM shared secret"),
+            SecretBytes::new(vec![3u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &transcript,
+            &validation,
+        );
+        assert!(valid.is_some());
     }
 
     #[test]
