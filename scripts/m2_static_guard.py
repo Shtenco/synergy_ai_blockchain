@@ -1296,7 +1296,7 @@ require(
     and "mlDsaSignature.length != 4627" in smart_account_sol
     and "slhDsaSignature.length != 29792" in smart_account_sol
     and "block.timestamp >= validUntil" in smart_account_sol
-    and "validUntil - block.timestamp > MAX_AUTHORIZATION_LIFETIME_SECONDS" in smart_account_sol
+    and "uint256(validUntil) - block.timestamp > MAX_AUTHORIZATION_LIFETIME_SECONDS" in smart_account_sol
     and "PQVerify.mlDsa87" in smart_account_sol
     and "PQVerify.slhDsa256s" in smart_account_sol,
     "PQSmartAccount must remain strict dual-PQ, size-bound and expiry-bound",
@@ -1742,6 +1742,16 @@ require(
     and '"tests/fixtures/evm_authorization_envelope_v1.hex"' in fixture_manifest
     and "tests/fixtures/evm_authorization_envelope_v1.hex" in workflow,
     "Rust/Solidity canonical authorization envelope must remain byte-for-byte profile-v1 compatible",
+)
+
+
+require(
+    '"SYNERGY/PQ-SMART-ACCOUNT/V2"' not in smart_account_sol
+    and '"SYNERGY/PQ-AUTH"' in smart_account_sol
+    and "function callPayloadCommitment(" in smart_account_sol
+    and '"SYNERGY/PQ-SMART-ACCOUNT-CALL/V1"' in smart_account_sol
+    and "function authorizationEnvelopeMessage(" in smart_account_sol,
+    "PQSmartAccount must use the common PQ-AUTH outer envelope with a domain-separated call payload",
 )
 
 print("M2 static guard: PASS")
