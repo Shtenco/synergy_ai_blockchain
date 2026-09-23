@@ -115,7 +115,7 @@ def main() -> int:
     required_features = {
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
-        ("slh-dsa", "0.1.0"): {"alloc", "default"},
+        ("slh-dsa", "0.1.0"): {"alloc"},
         ("hkdf", "0.12.4"): set(),
     }
     allowed_features = {
