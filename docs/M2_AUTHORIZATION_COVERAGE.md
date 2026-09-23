@@ -7,7 +7,7 @@ domain currently present in `AuthorizationDomain`.
 
 | Domain | State transition | Required policy | Identity binding | Replay / state binding |
 |---|---|---|---|---|
-| `Transaction` | EVM transaction authorization | caller-required `Online`, `Max` or `PqOnly` | `sender_account == authorization.keyset_commitment()` | chain, nonce, authorization epoch, exclusive expiry, max future horizon |
+| `Transaction` | EVM transaction authorization | caller-required `Online`, `Max` or `PqOnly` | stable `sender_account == primary_account_identity_commitment(ML-DSA)` plus exact expected current authorization keyset commitment | chain, nonce, authorization epoch, exclusive expiry, protocol lifetime ceiling, subject-bound nonce consumption |
 | `ValidatorVote` | consensus vote | `Max` in hybrid transition, `PqOnly` in native PQ mode | `validator_id` is stable commitment to ML-DSA + SLH-DSA public keys; evidence keys must match registered identity | chain, epoch, nonce, expiry, expected validator ID |
 | `BridgeMigration` | legacy identity -> native PQ account | `PqOnly` plus independent legacy ownership proof | `pq_identity_commitment == authorization.keyset_commitment()`; `synergy_account_id == pq_identity_commitment` | chain, epoch, nonce, expiry, legacy proof |
 | `ModelUpgrade` | model lineage/state upgrade | `Max` | expected authority keyset commitment | chain, epoch, nonce, expiry, activation epoch, lineage parent/index closure |
@@ -74,6 +74,18 @@ M2 must remain YELLOW until real runner logs exist and the exact generated
 
 All privileged authorization verifiers in the public crate surface now use a consuming API. The stateless cryptographic/domain checks remain `pub(crate)` implementation primitives, while public entrypoints are `verify_*_and_consume` wrappers that call `AuthorizationReplayState::consume_verified` only after the full domain-specific verification succeeds.
 
-Covered paths: governance, consensus activation, service-plane checkpoints, Autopilot execution, payment intents, settlement batches, storage proofs, CognitiveNode evidence, inference receipts, verifier receipts, model upgrades, bridge migration and validator votes.
+Covered paths: transactions, governance, consensus activation, service-plane checkpoints, lease-enforced Autopilot execution, payment intents, settlement batches, storage proofs, CognitiveNode evidence, inference receipts, verifier receipts, model upgrades, bridge migration, validator votes, KV replica receipts and authenticated transport handshakes.
 
 This prevents integrations from accidentally treating a matching signed nonce as replay protection without actually advancing replay state.
+
+
+## Autopilot execution lease
+
+The public value-bearing Autopilot execution path is now `authorize_and_lock_autopilot_execution`.
+The raw consuming authorization verifier is crate-internal. A new execution requires a canonical
+`ExecutionLocked` lease whose root binds the exact budget reservation, signed call commitment and
+proposal root. The lease is terminal exactly once (`Settled` or `Cancelled`) and terminal state
+has its own canonical commitment.
+
+This prevents a valid signed Autopilot call from being replayed through a second execution lease
+or from bypassing the one-time execution-lock layer.
