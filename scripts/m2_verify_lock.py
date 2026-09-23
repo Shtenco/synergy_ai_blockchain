@@ -11,6 +11,7 @@ EXPECTED_CRYPTO = {
     "slh-dsa": "0.1.0",
     "zeroize": "1.8.1",
     "sha2": "0.10.9",
+    "hkdf": "0.12.4",
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -99,11 +100,13 @@ def main() -> int:
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
         ("slh-dsa", "0.1.0"): {"alloc", "default"},
+        ("hkdf", "0.12.4"): set(),
     }
     allowed_features = {
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
         ("slh-dsa", "0.1.0"): {"alloc", "default"},
+        ("hkdf", "0.12.4"): set(),
     }
     package_by_id = {pkg.get("id"): pkg for pkg in meta_packages}
     observed_feature_targets = set()
