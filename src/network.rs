@@ -831,6 +831,57 @@ impl fmt::Debug for TransportSessionKeys {
     }
 }
 
+
+pub const TRANSPORT_RECORD_NONCE_BYTES: usize = 12;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransportRecordSequence {
+    direction: TransportDirection,
+    next_sequence: u64,
+    max_messages: u64,
+}
+
+impl TransportRecordSequence {
+    pub fn new_initiator_to_responder(rekey_policy: RekeyPolicy) -> Option<Self> {
+        Self::new(TransportDirection::InitiatorToResponder, rekey_policy)
+    }
+
+    pub fn new_responder_to_initiator(rekey_policy: RekeyPolicy) -> Option<Self> {
+        Self::new(TransportDirection::ResponderToInitiator, rekey_policy)
+    }
+
+    fn new(direction: TransportDirection, rekey_policy: RekeyPolicy) -> Option<Self> {
+        rekey_policy.validate().ok()?;
+        Some(Self {
+            direction,
+            next_sequence: 0,
+            max_messages: rekey_policy.max_messages,
+        })
+    }
+
+    pub const fn next_sequence(&self) -> u64 {
+        self.next_sequence
+    }
+
+    pub fn next_nonce(&mut self) -> Option<[u8; TRANSPORT_RECORD_NONCE_BYTES]> {
+        if self.next_sequence >= self.max_messages {
+            return None;
+        }
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.checked_add(1)?;
+
+        let mut nonce = [0u8; TRANSPORT_RECORD_NONCE_BYTES];
+        nonce[0] = 1; // nonce-format version
+        nonce[1] = self.direction.protocol_code();
+        nonce[4..].copy_from_slice(&sequence.to_be_bytes());
+        Some(nonce)
+    }
+
+    pub fn exhausted(&self) -> bool {
+        self.next_sequence >= self.max_messages
+    }
+}
+
 pub fn derive_directional_transport_session_keys(
     secret: &HybridSharedSecret,
 ) -> Option<TransportSessionKeys> {
@@ -1740,6 +1791,28 @@ mod tests {
         let changed_prefix: [u8; 32] = hasher.finalize().into();
 
         assert_ne!(commitment, changed_prefix);
+    }
+
+    #[test]
+    fn transport_record_nonce_sequence_is_directional_unique_and_rekey_bounded() {
+        let policy = RekeyPolicy {
+            max_messages: 2,
+            max_seconds: 10,
+        };
+        let mut outbound =
+            TransportRecordSequence::new_initiator_to_responder(policy).expect("sequence");
+        let mut inbound =
+            TransportRecordSequence::new_responder_to_initiator(policy).expect("sequence");
+
+        let out0 = outbound.next_nonce().expect("outbound nonce 0");
+        let out1 = outbound.next_nonce().expect("outbound nonce 1");
+        let in0 = inbound.next_nonce().expect("inbound nonce 0");
+
+        assert_ne!(out0, out1);
+        assert_ne!(out0, in0);
+        assert!(outbound.exhausted());
+        assert!(outbound.next_nonce().is_none());
+        assert_eq!(outbound.next_sequence(), 2);
     }
 
     #[test]
