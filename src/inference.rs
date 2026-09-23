@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 pub const MAX_INFERENCE_STAGES: usize = 65_536;
@@ -245,7 +245,7 @@ pub struct InferenceReceiptValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_inference_receipt<V: ContextSignatureVerifier>(
+pub(crate) fn verify_inference_receipt<V: ContextSignatureVerifier>(
     verifier: &V,
     assignment: &InferenceStageAssignment,
     authorized: &InferenceReceiptAuthorization,
@@ -311,6 +311,24 @@ impl InferenceOutcome {
         }
         Ok(())
     }
+}
+
+
+pub fn verify_inference_receipt_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    assignment: &InferenceStageAssignment,
+    authorized: &InferenceReceiptAuthorization,
+    validation: &InferenceReceiptValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_inference_receipt(verifier, assignment, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
