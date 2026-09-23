@@ -93,6 +93,11 @@ pub fn reward_breakdown(
 ) -> Result<CognitiveRewardBreakdown, &'static str> {
     policy.validate()?;
     contribution.validate()?;
+    receipt.validate()?;
+
+    if receipt.paid_amount > policy.max_reward {
+        return Err("base reward exceeds policy maximum");
+    }
 
     if receipt.verdict != WorkVerdict::Accepted {
         return Ok(CognitiveRewardBreakdown {
@@ -104,7 +109,7 @@ pub fn reward_breakdown(
         });
     }
 
-    let base = receipt.paid_amount.min(policy.max_reward);
+    let base = receipt.paid_amount;
     let positive_utility =
         u128::try_from(receipt.realized_utility_micros.max(0))
             .map_err(|_| "positive utility conversion failed")?;
@@ -173,6 +178,27 @@ mod tests {
             diversity_bonus_bps: 5_000,
             max_positive_error_corr_micros: 600_000,
         }
+    }
+
+    #[test]
+    fn reward_engine_rejects_invalid_or_overcap_base_receipt() {
+        let contribution = VerifiedMarginalContribution {
+            newly_solved_cases: 1,
+            residual_cases_before: 10,
+            mean_positive_error_corr_micros: 100_000,
+            contribution_evidence_root: [7; 32],
+        };
+
+        let mut overcap = receipt(100_000);
+        overcap.paid_amount = policy().max_reward + 1;
+        assert_eq!(
+            reward_breakdown(&overcap, &contribution, &policy()),
+            Err("base reward exceeds policy maximum")
+        );
+
+        let mut inconsistent = receipt(100_000);
+        inconsistent.slash_amount = 1;
+        assert!(reward_breakdown(&inconsistent, &contribution, &policy()).is_err());
     }
 
     #[test]
