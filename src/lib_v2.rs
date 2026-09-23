@@ -104,7 +104,6 @@ pub use payments::{
 };
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
-    verify_envelope_authorization,
     AuthPolicy, AuthScheme,
     AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState,
     AuthorizationValidationContext, ContextSignatureSigner, ContextSignatureVerifier,
