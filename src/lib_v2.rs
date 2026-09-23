@@ -45,7 +45,8 @@ pub use cognitive_registry::{
 };
 pub use consensus::{PrecompileAddress, PrecompileGasSchedule};
 pub use inference::{
-    InferenceExecutionPlan, InferenceJob, InferenceJobState, InferenceOutcome,
+    verify_inference_receipt, InferenceExecutionPlan, InferenceJob, InferenceJobState,
+    InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
 };
 pub use kv_cache::{KvCacheLease, KvReplicaReceipt};
