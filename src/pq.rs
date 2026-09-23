@@ -152,6 +152,7 @@ pub enum AuthorizationDomain {
     StorageProof,
     CognitiveEvidence,
     KvReplicaReceipt,
+    TransportHandshake,
 }
 
 impl AuthorizationDomain {
@@ -177,6 +178,7 @@ impl AuthorizationDomain {
             Self::StorageProof => 13,
             Self::CognitiveEvidence => 14,
             Self::KvReplicaReceipt => 15,
+            Self::TransportHandshake => 16,
         }
     }
 }
@@ -1354,6 +1356,7 @@ mod tests {
             AuthorizationDomain::StorageProof.protocol_code(),
             AuthorizationDomain::CognitiveEvidence.protocol_code(),
             AuthorizationDomain::KvReplicaReceipt.protocol_code(),
+            AuthorizationDomain::TransportHandshake.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
