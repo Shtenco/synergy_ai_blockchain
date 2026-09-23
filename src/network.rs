@@ -280,6 +280,11 @@ impl HybridSharedSecret {
         self.rekey_policy
     }
 
+    pub fn should_rekey(&self, messages_since_rekey: u64, seconds_since_rekey: u64) -> bool {
+        self.rekey_policy
+            .should_rekey(messages_since_rekey, seconds_since_rekey)
+    }
+
     pub fn pq_shared(&self) -> &MlKemSharedSecret {
         &self.pq_shared
     }
@@ -320,7 +325,10 @@ pub trait MlKem1024Provider {
 /// Consensus code does not implement a transport cipher here. The networking
 /// stack feeds the resulting hybrid secret into its reviewed transcript-bound KDF.
 pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecret) -> bool {
-    if secret.policy() != policy || secret.transcript_hash() == &[0u8; 32] {
+    if secret.policy() != policy
+        || secret.transcript_hash() == &[0u8; 32]
+        || secret.rekey_policy().validate().is_err()
+    {
         return false;
     }
     match policy {
@@ -520,6 +528,15 @@ mod tests {
         };
         assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
         assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
+    }
+
+    #[test]
+    fn established_secret_uses_transcript_bound_rekey_policy() {
+        let secret = valid_secret();
+        let policy = secret.rekey_policy();
+        assert!(!secret.should_rekey(policy.max_messages - 1, policy.max_seconds - 1));
+        assert!(secret.should_rekey(policy.max_messages, 0));
+        assert!(secret.should_rekey(0, policy.max_seconds));
     }
 
     #[test]
