@@ -96,6 +96,16 @@ def main() -> int:
     if not root_pkg or root_pkg.get("name") != "synergy-pq-evm-core":
         fail("locked metadata root is not synergy-pq-evm-core")
 
+    declared_features = root_pkg.get("features") or {}
+    allowed_root_features = {"default", "reference-pq"}
+    unexpected_root_features = sorted(set(declared_features) - allowed_root_features)
+    if unexpected_root_features:
+        fail(f"unexpected crate features are not covered by M2 CI: {unexpected_root_features}")
+    if declared_features.get("default") not in ([], None):
+        fail("default feature set must remain empty for consensus core")
+    if "reference-pq" not in declared_features:
+        fail("reference-pq feature declaration missing")
+
     nodes = resolve.get("nodes", [])
     node_by_id = {node.get("id"): node for node in nodes}
     root_node = node_by_id.get(root)
