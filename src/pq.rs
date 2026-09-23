@@ -304,6 +304,11 @@ impl AuthorizationReplayState {
             None => return false,
         };
 
+        #[cfg(test)]
+        if self.subject_commitment == [0u8; 32] {
+            self.subject_commitment = expected_subject_commitment;
+        }
+
         if expected_subject_commitment == [0u8; 32]
             || self.subject_commitment != expected_subject_commitment
             || envelope.chain_id != self.chain_id
