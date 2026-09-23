@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 
@@ -167,7 +167,7 @@ pub struct VerifierReceiptValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_verifier_receipt<V: ContextSignatureVerifier>(
+pub(crate) fn verify_verifier_receipt<V: ContextSignatureVerifier>(
     verifier: &V,
     challenge: &VerificationChallenge,
     authorized: &VerifierReceiptAuthorization,
@@ -327,6 +327,24 @@ impl VerificationAggregate {
             VerificationVerdict::Inconclusive
         }
     }
+}
+
+
+pub fn verify_verifier_receipt_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    challenge: &VerificationChallenge,
+    authorized: &VerifierReceiptAuthorization,
+    validation: &VerifierReceiptValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_verifier_receipt(verifier, challenge, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope(challenge) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
