@@ -63,6 +63,13 @@ pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =
     + SLH_DSA_SHAKE_256S_SIGNATURE_BYTES;
 
 impl AuthScheme {
+    pub const fn active_in_crypto_profile_v1(self) -> bool {
+        matches!(
+            self,
+            Self::Secp256k1 | Self::MlDsa87 | Self::SlhDsaShake256s
+        )
+    }
+
     pub const fn protocol_code(self) -> u8 {
         match self {
             Self::Secp256k1 => 1,
@@ -1125,6 +1132,20 @@ mod tests {
             evidence: vec![bad, evidence(AuthScheme::SlhDsaShake256s)],
         };
         assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn crypto_profile_v1_keeps_ed25519_reserved_but_inactive() {
+        assert!(!AuthScheme::Ed25519.active_in_crypto_profile_v1());
+        assert_eq!(AuthScheme::Ed25519.protocol_code(), 2);
+
+        for policy in [AuthPolicy::Online, AuthPolicy::Max, AuthPolicy::PqOnly] {
+            assert!(!policy.required_schemes().contains(&AuthScheme::Ed25519));
+            assert!(policy
+                .required_schemes()
+                .iter()
+                .all(|scheme| scheme.active_in_crypto_profile_v1()));
+        }
     }
 
     #[test]
