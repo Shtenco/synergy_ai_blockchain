@@ -33,6 +33,7 @@ payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
 payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
 storage = (ROOT / "src/storage.rs").read_text(encoding="utf-8")
 cognitive = (ROOT / "src/cognitive.rs").read_text(encoding="utf-8")
+nexus = (ROOT / "src/nexus.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -979,5 +980,37 @@ for name, source, stateless, consuming in (
         and "replay.consume_verified" in source,
         f"{name} privileged API must expose replay-consuming verification only",
     )
+
+
+require(
+    "Committed Cargo.lock gate" in workflow
+    and "git ls-files --error-unmatch Cargo.lock" in workflow
+    and "git diff --exit-code -- Cargo.lock" in workflow,
+    "CI must fail closed when Cargo.lock is generated but not committed",
+)
+
+require(
+    "rustup=$(rustup --version" in workflow
+    and "m2-build-environment.txt" in workflow,
+    "reproducibility evidence must record rustup bootstrap version",
+)
+
+require(
+    "pub fn validate(&self) -> Result<(), NexusError>" in nexus
+    and "self.nodes == 0" in nexus
+    and "request.mode != NexusMode::Score" in nexus
+    and "NexusError::UnsupportedMode" in nexus
+    and "fn qadd_saturating" in nexus
+    and ".expect(" not in nexus.split("\n#[cfg(test)]\nmod tests", 1)[0],
+    "NEXUS v1 must reject invalid manifests/modes and keep production arithmetic panic-free",
+)
+
+require(
+    "u64::try_from(self.legacy_identifier.len()).ok()?" in migration
+    and "u64::try_from(self.ml_dsa87_public_key.len()).ok()?" in validator
+    and "u64::try_from(self.slh_dsa_shake256s_public_key.len()).ok()?" in validator
+    and "u64::try_from(receipts.len())" in verification,
+    "canonical privileged serialization must remain architecture-safe",
+)
 
 print("M2 static guard: PASS")
