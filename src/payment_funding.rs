@@ -1,3 +1,5 @@
+use crate::payments::PaymentIntent;
+
 //! Canonical funding commitments for horizontally sharded Meta Pay.
 //!
 //! Settlement lanes are partitioned by corridor, but spend authority is not.
@@ -23,6 +25,28 @@ pub struct PaymentFundingReservation {
     pub funding_shard: u32,
     pub epoch: u64,
     pub status: FundingStatus,
+}
+
+impl PaymentFundingReservation {
+    pub fn validate_against_intent(
+        &self,
+        intent: &PaymentIntent,
+        now: u64,
+    ) -> Result<(), &'static str> {
+        self.validate_reserved()?;
+        intent.validate(now)?;
+
+        let intent_root = intent
+            .authorization_commitment()
+            .ok_or("payment intent commitment required")?;
+        if self.payment_intent_root != intent_root {
+            return Err("funding reservation payment intent root mismatch");
+        }
+        if self.amount != intent.amount {
+            return Err("funding reservation amount/intention mismatch");
+        }
+        Ok(())
+    }
 }
 
 impl PaymentFundingReservation {
@@ -105,12 +129,32 @@ impl FundedSettlementCommitment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::payments::{PaymentIntent, PaymentRail};
+
+    fn intent() -> PaymentIntent {
+        PaymentIntent {
+            intent_id: [10; 32],
+            payer: [11; 32],
+            payee: [12; 32],
+            asset_id: [13; 32],
+            amount: 700,
+            max_fee: 5,
+            source_rail: PaymentRail::SynergyNative,
+            destination_rail: PaymentRail::Bank,
+            corridor_id: [14; 16],
+            compliance_commitment: [15; 32],
+            expires_at: 1_000,
+        }
+    }
 
     fn reservation() -> PaymentFundingReservation {
+        let payment_intent_root = intent()
+            .authorization_commitment()
+            .expect("intent commitment");
         PaymentFundingReservation {
             reservation_id: [1; 32],
             reservation_root: [2; 32],
-            payment_intent_root: [3; 32],
+            payment_intent_root,
             payer_account_root: [4; 32],
             source_asset_root: [5; 32],
             amount: 700,
@@ -119,6 +163,17 @@ mod tests {
             epoch: 7,
             status: FundingStatus::Reserved,
         }
+    }
+
+    #[test]
+    fn reservation_is_bound_to_exact_payment_intent() {
+        let reservation = reservation();
+        let intent = intent();
+        assert_eq!(reservation.validate_against_intent(&intent, 100), Ok(()));
+
+        let mut changed = intent.clone();
+        changed.amount += 1;
+        assert!(reservation.validate_against_intent(&changed, 100).is_err());
     }
 
     #[test]
