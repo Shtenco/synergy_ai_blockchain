@@ -16,6 +16,9 @@ tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
 workflow = (ROOT / ".github/workflows/pq-evm-ci.yml").read_text(encoding="utf-8")
 toolchain = (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")
 lock_policy = (ROOT / "scripts/m2_verify_lock.py").read_text(encoding="utf-8")
+validator = (ROOT / "src/validator.rs").read_text(encoding="utf-8")
+migration = (ROOT / "src/migration.rs").read_text(encoding="utf-8")
+model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -512,6 +515,32 @@ require(
     "let expand_result = hkdf.expand(&info, &mut output);" in network
     and "drop(hkdf);" in network,
     "HKDF state lifetime must remain one-shot and explicitly minimized",
+)
+
+
+require(
+    "verify_envelope_authorization" in validator
+    and "AuthorizationDomain::ValidatorVote" in validator
+    and "expected_policy: policy.authorization_policy()" in validator
+    and "PQ-only validator forbids legacy public key material" in validator,
+    "validator votes must remain state-aware PQ-authorized and PQ-only identities classical-free",
+)
+
+require(
+    "verify_envelope_authorization" in migration
+    and "AuthorizationDomain::BridgeMigration" in migration
+    and "binding.authorization.policy != AuthPolicy::PqOnly" in migration
+    and "legacy.verify_legacy_ownership" in migration,
+    "bridge migration must require legacy ownership plus state-aware dual-PQ authorization",
+)
+
+require(
+    "verify_envelope_authorization" in model_shard
+    and "AuthorizationDomain::ModelUpgrade" in model_shard
+    and "upgrade.authorization.policy != AuthPolicy::Max" in model_shard
+    and "duplicate created shard index" in model_shard
+    and "created shard parent was not consumed by transition" in model_shard,
+    "model lineage upgrades must remain MAX-authorized and lineage-closed",
 )
 
 print("M2 static guard: PASS")
