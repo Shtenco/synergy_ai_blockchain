@@ -1,3 +1,5 @@
+use sha2::{Digest, Sha256};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AuthScheme {
     Secp256k1,
@@ -331,6 +333,25 @@ impl HybridAuthorization {
         Ok(())
     }
 
+    pub fn keyset_commitment(&self) -> Option<[u8; 32]> {
+        self.validate_structure().ok()?;
+
+        const DOMAIN: &[u8] = b"SYNERGY/PQ-AUTH-KEYSET/V1\0";
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update([self.policy.protocol_code()]);
+        hasher.update([self.evidence.len() as u8]);
+
+        for evidence in &self.evidence {
+            hasher.update([evidence.scheme.protocol_code()]);
+            hasher.update((evidence.public_key.len() as u64).to_be_bytes());
+            hasher.update(&evidence.public_key);
+        }
+
+        Some(hasher.finalize().into())
+    }
+
     pub fn structurally_complete(&self) -> bool {
         self.validate_structure().is_ok()
     }
@@ -654,6 +675,29 @@ mod tests {
             ],
         };
         assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn authorization_keyset_commitment_is_canonical_and_key_bound() {
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let base = auth.keyset_commitment().expect("keyset commitment");
+
+        let mut changed = auth.clone();
+        changed.evidence[0].public_key[0] ^= 1;
+        assert_ne!(
+            base,
+            changed.keyset_commitment().expect("changed keyset commitment")
+        );
+
+        let mut reordered = auth;
+        reordered.evidence.swap(0, 1);
+        assert!(reordered.keyset_commitment().is_none());
     }
 
     #[test]
