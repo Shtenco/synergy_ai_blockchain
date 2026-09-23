@@ -1022,4 +1022,19 @@ require(
     "SPDX generation must be path-independent and resolved-graph-only",
 )
 
+
+require(
+    '"sha256"' in fixture_manifest
+    and "hashlib.sha256(data).hexdigest()" in fixture_verifier
+    and "unexpected/unmanifested JSON fixture inventory" in fixture_verifier,
+    "PQ fixture manifest must verify SHA-256 and complete JSON inventory",
+)
+
+require(
+    "ml_kem_rejects_correct_length_noncanonical_public_key" in pq_ref
+    and "public_key[0] = 0xff" in pq_ref
+    and "public_key[1] = (public_key[1] & 0xf0) | 0x0f" in pq_ref,
+    "ML-KEM regression must reject correct-length noncanonical modulus encoding",
+)
+
 print("M2 static guard: PASS")
