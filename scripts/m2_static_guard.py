@@ -1165,4 +1165,32 @@ for name, source in (
         f"{name} replay type import missing",
     )
 
+
+require(
+    "pub fn infer_reference_metered(" in nexus
+    and "pub(crate) fn infer_reference(" in nexus
+    and "NexusError::OutOfGas" in nexus
+    and "if gas_used > gas_budget" in nexus
+    and "self.nodes != 16" in nexus
+    and "self.layers != 3" in nexus
+    and "self.max_input_values != 512" in nexus
+    and "self.max_output_values != 64" in nexus
+    and "self.source_checkpoint_sha256_hex != Self::V18_SOURCE_CHECKPOINT" in nexus,
+    "NEXUS v1 must remain exact-profile and gas-metered before execution",
+)
+
+require(
+    "infer_reference_metered" in lib_v2
+    and "NexusError" in lib_v2,
+    "public crate surface must expose the metered NEXUS API",
+)
+
+require(
+    "provenance implementation root mismatch" in cognitive_registry
+    and "provenance role commitment mismatch" in cognitive_registry
+    and "canonical_role_commitment" in cognitive_registry
+    and "self.implementation_root != node.software_commitment" in cognitive_registry,
+    "cognitive provenance must remain bound to operational role and implementation",
+)
+
 print("M2 static guard: PASS")
