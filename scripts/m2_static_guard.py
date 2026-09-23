@@ -30,6 +30,7 @@ consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
 service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
 autopilot = (ROOT / "src/autopilot.rs").read_text(encoding="utf-8")
 autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
+autopilot_execution_lease = (ROOT / "src/autopilot_execution_lease.rs").read_text(encoding="utf-8")
 payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
 payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
 storage = (ROOT / "src/storage.rs").read_text(encoding="utf-8")
@@ -1220,6 +1221,16 @@ require(
     "funding reservation payer account mismatch" in payment_funding
     and "self.payer_account_root != intent.payer" in payment_funding,
     "funding reservation must remain bound to the exact payer account",
+)
+
+
+require(
+    "pub mod autopilot_execution_lease;" in lib_v2
+    and "AutopilotExecutionLease" in lib_v2
+    and "AutopilotLeaseTerminalReceipt" in lib_v2
+    and "new execution lease must be locked" in autopilot_execution_lease
+    and "terminal receipt cannot remain execution-locked" in autopilot_execution_lease,
+    "Autopilot one-time execution lease must remain compiled and fail closed",
 )
 
 print("M2 static guard: PASS")
