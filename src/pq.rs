@@ -270,6 +270,11 @@ impl HybridAuthorization {
             if evidence.public_key.is_empty() || evidence.signature.is_empty() {
                 return Err("authorization evidence must contain key and signature bytes");
             }
+            if evidence.public_key.iter().all(|byte| *byte == 0)
+                || evidence.signature.iter().all(|byte| *byte == 0)
+            {
+                return Err("authorization evidence must not be all-zero");
+            }
 
             if let Some(expected) = evidence.scheme.expected_public_key_bytes() {
                 if evidence.public_key.len() != expected {
@@ -281,6 +286,16 @@ impl HybridAuthorization {
                     return Err("authorization signature length mismatch");
                 }
             }
+
+            if evidence.scheme == AuthScheme::Secp256k1 {
+                if !matches!(evidence.public_key.first(), Some(0x02 | 0x03)) {
+                    return Err("secp256k1 public key must use compressed encoding");
+                }
+                if !matches!(evidence.signature.last(), Some(0 | 1)) {
+                    return Err("secp256k1 signature recovery id must be canonical");
+                }
+            }
+
             if self.evidence[..index]
                 .iter()
                 .any(|prior| prior.scheme == evidence.scheme)
@@ -560,8 +575,13 @@ mod tests {
     use super::*;
 
     fn evidence(scheme: AuthScheme) -> SignatureEvidence {
-        let public_key = vec![1; scheme.expected_public_key_bytes().unwrap_or(1)];
-        let signature = vec![2; scheme.expected_signature_bytes().unwrap_or(1)];
+        let mut public_key = vec![1; scheme.expected_public_key_bytes().unwrap_or(1)];
+        let mut signature = vec![2; scheme.expected_signature_bytes().unwrap_or(1)];
+        if scheme == AuthScheme::Secp256k1 {
+            public_key[0] = 0x02;
+            let last = signature.len() - 1;
+            signature[last] = 0;
+        }
         SignatureEvidence {
             scheme,
             public_key,
@@ -637,8 +657,12 @@ mod tests {
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: vec![1; SECP256K1_PUBLIC_KEY_BYTES + 1],
-                    signature: vec![2; SECP256K1_SIGNATURE_BYTES],
+                    public_key: vec![0x02; SECP256K1_PUBLIC_KEY_BYTES + 1],
+                    signature: {
+                        let mut signature = vec![2; SECP256K1_SIGNATURE_BYTES];
+                        signature[SECP256K1_SIGNATURE_BYTES - 1] = 0;
+                        signature
+                    },
                 },
                 evidence(AuthScheme::MlDsa87),
             ],
@@ -650,7 +674,11 @@ mod tests {
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: vec![1; SECP256K1_PUBLIC_KEY_BYTES],
+                    public_key: {
+                        let mut key = vec![1; SECP256K1_PUBLIC_KEY_BYTES];
+                        key[0] = 0x02;
+                        key
+                    },
                     signature: vec![2; SECP256K1_SIGNATURE_BYTES - 1],
                 },
                 evidence(AuthScheme::MlDsa87),
@@ -671,6 +699,37 @@ mod tests {
                 },
                 evidence(AuthScheme::MlDsa87),
             ],
+        };
+        assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn secp256k1_encoding_prefix_and_recovery_id_are_canonical() {
+        let mut bad_key = evidence(AuthScheme::Secp256k1);
+        bad_key.public_key[0] = 0x04;
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![bad_key, evidence(AuthScheme::MlDsa87)],
+        };
+        assert!(auth.validate_structure().is_err());
+
+        let mut bad_recovery = evidence(AuthScheme::Secp256k1);
+        let last = bad_recovery.signature.len() - 1;
+        bad_recovery.signature[last] = 27;
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![bad_recovery, evidence(AuthScheme::MlDsa87)],
+        };
+        assert!(auth.validate_structure().is_err());
+    }
+
+    #[test]
+    fn all_zero_key_or_signature_material_is_rejected() {
+        let mut bad = evidence(AuthScheme::MlDsa87);
+        bad.public_key.fill(0);
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![bad, evidence(AuthScheme::SlhDsaShake256s)],
         };
         assert!(auth.validate_structure().is_err());
     }
