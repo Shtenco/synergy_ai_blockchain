@@ -2,6 +2,7 @@ use core::fmt;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
+pub const ML_KEM_1024_PROTOCOL_CODE: u8 = 1;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
@@ -179,6 +180,7 @@ impl TransportTranscript {
         let mut hasher = Sha256::new();
         hasher.update(TRANSPORT_TRANSCRIPT_DOMAIN);
         hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update([ML_KEM_1024_PROTOCOL_CODE]);
         hasher.update([match self.policy {
             TransportPolicy::Hybrid => 1,
             TransportPolicy::PqOnly => 2,
@@ -354,6 +356,17 @@ impl Default for RekeyPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_algorithm_registry_codes_are_nonzero_and_unique() {
+        assert_ne!(ML_KEM_1024_PROTOCOL_CODE, 0);
+        let kex = [
+            ClassicalKexScheme::X25519.protocol_code(),
+            ClassicalKexScheme::Secp256k1.protocol_code(),
+        ];
+        assert!(kex.iter().all(|code| *code != 0));
+        assert_ne!(kex[0], kex[1]);
+    }
 
     #[test]
     fn rekey_policy_is_bounded_and_fail_closed() {
