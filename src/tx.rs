@@ -115,13 +115,19 @@ impl PqEvmTransaction {
         }
         out.extend_from_slice(&self.value);
         put_len_prefixed(&mut out, &self.data);
-        // The policy is part of what is signed; an attacker cannot downgrade MAX
-        // to ONLINE without invalidating every signature.
-        out.push(match self.authorization.policy {
-            crate::pq::AuthPolicy::Online => 1,
-            crate::pq::AuthPolicy::Max => 2,
-            crate::pq::AuthPolicy::PqOnly => 3,
-        });
+
+        // Classical and PQ lanes must authenticate the same cryptographic
+        // semantics. Bind profile, authorization domain, policy and the ordered
+        // algorithm suite directly into the transaction preimage; PQ lanes bind
+        // the same values again through the FIPS context.
+        out.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        out.push(AuthorizationDomain::Transaction.protocol_code());
+        out.push(self.authorization.policy.protocol_code());
+        let schemes = self.authorization.policy.required_schemes();
+        out.push(schemes.len() as u8);
+        for scheme in schemes {
+            out.push(scheme.protocol_code());
+        }
         out
     }
 
@@ -411,6 +417,18 @@ mod tests {
             ),
             Err(TxError::PolicyMismatch)
         );
+    }
+
+    #[test]
+    fn transaction_preimage_binds_crypto_profile_and_algorithm_suite() {
+        let tx = test_tx();
+        let preimage = tx.signing_preimage();
+        let version = crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes();
+        assert!(preimage.windows(version.len()).any(|window| window == version));
+
+        let mut other_policy = tx.clone();
+        other_policy.authorization.policy = AuthPolicy::Max;
+        assert_ne!(preimage, other_policy.signing_preimage());
     }
 
     #[test]
