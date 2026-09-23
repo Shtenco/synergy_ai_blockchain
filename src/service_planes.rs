@@ -24,6 +24,7 @@ use crate::storage::{ArchiveReceipt, StorageProofAuthorization};
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
+const SERVICE_FINALITY_SUBJECT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-SUBJECT/V1\0";
 pub const MAX_SERVICE_FINALITY_ITEMS: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,18 +51,37 @@ impl ServiceFinalityKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceFinalityItem {
     kind: ServiceFinalityKind,
+    subject_id: [u8; 32],
     source_chain_id: [u8; 32],
     source_epoch: u64,
     root: [u8; 32],
 }
 
 impl ServiceFinalityItem {
+    fn subject_hash(kind: ServiceFinalityKind, parts: &[&[u8]]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(SERVICE_FINALITY_SUBJECT_DOMAIN);
+        hasher.update([kind.protocol_code()]);
+        for part in parts {
+            let len = u64::try_from(part.len()).unwrap_or(u64::MAX);
+            hasher.update(len.to_be_bytes());
+            hasher.update(part);
+        }
+        hasher.finalize().into()
+    }
+
     pub fn payment_settlement(
         authorized: &SettlementBatchAuthorization,
         funded: &FundedSettlementCommitment,
     ) -> Option<Self> {
+        let sequence = authorized.batch.sequence.to_be_bytes();
+        let subject_id = Self::subject_hash(
+            ServiceFinalityKind::PaymentSettlement,
+            &[&authorized.batch.lane_id, &sequence],
+        );
         Some(Self {
             kind: ServiceFinalityKind::PaymentSettlement,
+            subject_id,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: funded.canonical_root(authorized)?,
@@ -80,8 +100,13 @@ impl ServiceFinalityItem {
             return None;
         }
 
+        let subject_id = Self::subject_hash(
+            ServiceFinalityKind::AutopilotTerminal,
+            &[&lease.lease_root],
+        );
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
+            subject_id,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized.terminal.commitment()?,
@@ -100,8 +125,13 @@ impl ServiceFinalityItem {
             return None;
         }
 
+        let subject_id = Self::subject_hash(
+            ServiceFinalityKind::StorageReceipt,
+            &[&authorized.receipt.object_id, &authorized.receipt.provider_id],
+        );
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
+            subject_id,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.receipt.epoch,
             root: authorized.receipt.authorization_commitment()?,
@@ -113,8 +143,18 @@ impl ServiceFinalityItem {
         request: &CognitiveWorkRequest,
         node: &CognitiveNodeManifest,
     ) -> Option<Self> {
+        let evidence_kind = [authorized.evidence.evidence_kind.protocol_code()];
+        let subject_id = Self::subject_hash(
+            ServiceFinalityKind::CognitiveReceipt,
+            &[
+                &authorized.evidence.request_id,
+                &authorized.evidence.node_id,
+                &evidence_kind,
+            ],
+        );
         Some(Self {
             kind: ServiceFinalityKind::CognitiveReceipt,
+            subject_id,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized
@@ -127,8 +167,13 @@ impl ServiceFinalityItem {
         authorized: &KvReplicaReceiptAuthorization,
         lease: &KvCacheLease,
     ) -> Option<Self> {
+        let subject_id = Self::subject_hash(
+            ServiceFinalityKind::KvReplicaReceipt,
+            &[&authorized.receipt.lease_id, &authorized.receipt.worker_id],
+        );
         Some(Self {
             kind: ServiceFinalityKind::KvReplicaReceipt,
+            subject_id,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized.receipt.authorization_commitment(lease)?,
@@ -145,6 +190,10 @@ impl ServiceFinalityItem {
 
     pub const fn source_epoch(&self) -> u64 {
         self.source_epoch
+    }
+
+    pub const fn subject_id(&self) -> [u8; 32] {
+        self.subject_id
     }
 
     pub const fn root(&self) -> [u8; 32] {
@@ -170,8 +219,12 @@ impl ServiceFinalityBatch {
         if self.items.is_empty() || self.items.len() > MAX_SERVICE_FINALITY_ITEMS {
             return Err("service finality item count invalid");
         }
-        if self.items.iter().any(|item| item.root == [0u8; 32]) {
-            return Err("service finality item root required");
+        if self
+            .items
+            .iter()
+            .any(|item| item.root == [0u8; 32] || item.subject_id == [0u8; 32])
+        {
+            return Err("service finality item root/subject required");
         }
         if self
             .items
@@ -192,13 +245,17 @@ impl ServiceFinalityBatch {
         ordered.sort_by_key(|item| {
             (
                 item.kind.protocol_code(),
+                item.subject_id,
                 item.source_chain_id,
                 item.source_epoch,
                 item.root,
             )
         });
-        if ordered.windows(2).any(|pair| pair[0] == pair[1]) {
-            return Err("duplicate service finality item");
+        if ordered.windows(2).any(|pair| {
+            pair[0].kind == pair[1].kind
+                && pair[0].subject_id == pair[1].subject_id
+        }) {
+            return Err("conflicting service finality subject");
         }
         Ok(())
     }
@@ -209,6 +266,7 @@ impl ServiceFinalityBatch {
         ordered.sort_by_key(|item| {
             (
                 item.kind.protocol_code(),
+                item.subject_id,
                 item.source_chain_id,
                 item.source_epoch,
                 item.root,
@@ -223,6 +281,7 @@ impl ServiceFinalityBatch {
         hasher.update(count.to_be_bytes());
         for item in ordered {
             hasher.update([item.kind.protocol_code()]);
+            hasher.update(item.subject_id);
             hasher.update(item.source_chain_id);
             hasher.update(item.source_epoch.to_be_bytes());
             hasher.update(item.root);
@@ -516,12 +575,14 @@ mod tests {
             items: vec![
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::PaymentSettlement,
+                    subject_id: [0x31; 32],
                     source_chain_id: [0xA1; 32],
                     source_epoch: 7,
                     root: [0x71; 32],
                 },
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::AutopilotTerminal,
+                    subject_id: [0x32; 32],
                     source_chain_id: [0xA1; 32],
                     source_epoch: 7,
                     root: [0x72; 32],
@@ -644,6 +705,20 @@ mod tests {
 
         lease.status = AutopilotExecutionLeaseStatus::Cancelled;
         assert!(ServiceFinalityItem::autopilot_terminal(&lease, &terminal).is_none());
+    }
+
+    #[test]
+    fn service_finality_rejects_conflicting_roots_for_same_subject() {
+        let mut batch = finality();
+        let mut conflicting = batch.items[0];
+        conflicting.root[0] ^= 1;
+        batch.items.push(conflicting);
+
+        assert_eq!(
+            batch.validate(),
+            Err("conflicting service finality subject")
+        );
+        assert!(batch.commitment().is_none());
     }
 
     #[test]
