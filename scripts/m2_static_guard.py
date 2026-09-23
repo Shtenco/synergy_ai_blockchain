@@ -1013,4 +1013,13 @@ require(
     "canonical privileged serialization must remain architecture-safe",
 )
 
+
+require(
+    "graph_sha256 = hashlib.sha256(lock_bytes + b\"\\0\" + canonical_graph).hexdigest()" in spdx_generator
+    and "resolved_ids = {node.get(\"id\") for node in nodes if node.get(\"id\")}" in spdx_generator
+    and "unresolved/disabled package leaked into SBOM" in spdx_generator
+    and "https://crates.io/api/v1/crates/" in spdx_generator,
+    "SPDX generation must be path-independent and resolved-graph-only",
+)
+
 print("M2 static guard: PASS")
