@@ -981,12 +981,20 @@ for name, source, stateless, consuming in (
     ("migration", migration, "verify_binding", "verify_binding_and_consume"),
     ("validator", validator, "verify_validator_vote", "verify_validator_vote_and_consume"),
 ):
-    require(
-        f"pub(crate) fn {stateless}" in source
-        and f"pub fn {consuming}" in source
-        and "replay.consume_verified" in source,
-        f"{name} privileged API must expose replay-consuming verification only",
-    )
+    if name == "autopilot_budget":
+        require(
+            f"pub(crate) fn {stateless}" in source
+            and f"pub(crate) fn {consuming}" in source
+            and "replay.consume_verified" in source,
+            "Autopilot raw consuming verifier must remain crate-internal behind execution lease",
+        )
+    else:
+        require(
+            f"pub(crate) fn {stateless}" in source
+            and f"pub fn {consuming}" in source
+            and "replay.consume_verified" in source,
+            f"{name} privileged API must expose replay-consuming verification only",
+        )
 
 
 require(
@@ -1340,6 +1348,18 @@ require(
     and "for session_id in &self.consumed" in network
     and "network_id == [0u8; 32] || epoch == 0" in network,
     "transport replay state must remain persistently commit-able and reject zero epoch",
+)
+
+
+require(
+    "pub fn authorize_and_lock_autopilot_execution" in autopilot_execution_lease
+    and "pub fn canonical_root(" in autopilot_execution_lease
+    and "execution lease root mismatch" in autopilot_execution_lease
+    and "execution lease call root mismatch" in autopilot_execution_lease
+    and "verify_autopilot_execution_and_consume(" in autopilot_execution_lease
+    and "authorize_and_lock_autopilot_execution" in lib_v2
+    and "verify_autopilot_execution_and_consume" not in lib_v2,
+    "Autopilot public execution path must require canonical one-time lease before nonce consumption",
 )
 
 print("M2 static guard: PASS")
