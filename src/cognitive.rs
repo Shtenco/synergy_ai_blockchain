@@ -1,3 +1,9 @@
+//! Bonded cognitive-service node primitives for the SYNERGY economic network.
+//!
+//! A CognitiveNode is not a consensus validator by default. It performs useful
+//! AI/symbolic/retrieval/verifier work off-consensus and commits evidence/results
+//! that deterministic policy or proofs can verify before payment.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -7,11 +13,6 @@ use crate::pq::{
 
 const COGNITIVE_EVIDENCE_DOMAIN: &[u8] = b"SYNERGY/COGNITIVE-EVIDENCE/V1\0";
 
-//! Bonded cognitive-service node primitives for the SYNERGY economic network.
-//!
-//! A CognitiveNode is not a consensus validator by default. It performs useful
-//! AI/symbolic/retrieval/verifier work off-consensus and commits evidence/results
-//! that deterministic policy or proofs can verify before payment.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CognitiveRole {
