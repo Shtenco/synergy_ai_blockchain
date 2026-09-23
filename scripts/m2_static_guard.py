@@ -475,4 +475,43 @@ require(
     "bounded monotonic reference replay guard missing",
 )
 
+
+require(
+    "ALLOWED_REGISTRIES" in lock_policy
+    and "non-crates.io registry forbidden in M2 graph" in lock_policy
+    and "unexpected local/path package in locked graph" in lock_policy,
+    "locked dependency source allowlist missing",
+)
+
+require(
+    "cargo fetch --locked" in workflow
+    and 'CARGO_NET_OFFLINE=true' in workflow
+    and "cargo check --frozen --all-targets" in workflow
+    and "cargo test --frozen --all-targets --features reference-pq" in workflow
+    and "cargo test --frozen --release --lib --features reference-pq" in workflow,
+    "post-fetch offline/frozen Cargo gates missing",
+)
+
+require(
+    "m2-build-environment.txt" in workflow
+    and "m2-evidence-sha256.txt" in workflow
+    and "sha256sum" in workflow
+    and "git_commit=$(git rev-parse HEAD)" in workflow,
+    "tamper-evident M2 evidence manifest missing",
+)
+
+require(
+    "7cedd002de19f032b45bdde3d99eef89eb9b12b30bbfbcf9e66740c060b297e8" in network
+    and "c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890" in network
+    and "f1a8e0660f99db442f1e56becc05a1ae6e4dd18d14ede6233eefce9e5009ba16" in pq
+    and "fb28450c0d70acfa64a0c5c04e963eb6bcf20661105431f6d244691162c0f8d5" in pq,
+    "independent authorization/transport known-answer vectors missing",
+)
+
+require(
+    "let expand_result = hkdf.expand(&info, &mut output);" in network
+    and "drop(hkdf);" in network,
+    "HKDF state lifetime must remain one-shot and explicitly minimized",
+)
+
 print("M2 static guard: PASS")
