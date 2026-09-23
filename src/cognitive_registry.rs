@@ -76,7 +76,7 @@ pub fn structural_independence(
 /// Count only structurally independent provenance entries toward an economic
 /// diversity quorum. Ordering is canonicalized internally by node_id so callers
 /// cannot change quorum membership by permuting otherwise identical evidence.
-pub fn independent_prefix_count(entries: &[CognitiveNodeProvenance]) -> usize {
+pub(crate) fn independent_prefix_count(entries: &[CognitiveNodeProvenance]) -> usize {
     let mut ordered: Vec<&CognitiveNodeProvenance> = entries.iter().collect();
     ordered.sort_by_key(|entry| entry.node_id);
 
@@ -90,6 +90,31 @@ pub fn independent_prefix_count(entries: &[CognitiveNodeProvenance]) -> usize {
         accepted.push(candidate);
     }
     accepted.len()
+}
+
+pub fn independent_registered_count(
+    entries: &[(&CognitiveNodeManifest, &CognitiveNodeProvenance)],
+    epoch: u64,
+) -> Result<usize, &'static str> {
+    let mut ordered: Vec<(&CognitiveNodeManifest, &CognitiveNodeProvenance)> =
+        entries.iter().copied().collect();
+    ordered.sort_by_key(|(node, _)| node.node_id);
+
+    let mut provenances = Vec::with_capacity(ordered.len());
+    let mut previous_node_id: Option<[u8; 32]> = None;
+
+    for (node, provenance) in ordered {
+        node.validate(epoch)?;
+        provenance.validate_against(node)?;
+
+        if previous_node_id == Some(node.node_id) {
+            return Err("duplicate cognitive node id");
+        }
+        previous_node_id = Some(node.node_id);
+        provenances.push(provenance.clone());
+    }
+
+    Ok(independent_prefix_count(&provenances))
 }
 
 #[cfg(test)]
@@ -132,6 +157,34 @@ mod tests {
         let node = manifest(1, 5);
         let p = provenance(1, 5, 7, 8);
         assert_eq!(p.validate_against(&node), Ok(()));
+    }
+
+    #[test]
+    fn registered_quorum_rejects_inactive_or_duplicate_nodes() {
+        let node_a = manifest(1, 5);
+        let mut node_b = manifest(2, 6);
+        let prov_a = provenance(1, 5, 7, 8);
+        let prov_b = provenance(2, 6, 9, 10);
+
+        assert_eq!(
+            independent_registered_count(&[(&node_a, &prov_a), (&node_b, &prov_b)], 10),
+            Ok(2)
+        );
+
+        node_b.valid_until_epoch = 5;
+        assert!(independent_registered_count(
+            &[(&node_a, &prov_a), (&node_b, &prov_b)],
+            10
+        )
+        .is_err());
+
+        let duplicate = manifest(1, 6);
+        let duplicate_prov = provenance(1, 6, 9, 10);
+        assert!(independent_registered_count(
+            &[(&node_a, &prov_a), (&duplicate, &duplicate_prov)],
+            10
+        )
+        .is_err());
     }
 
     #[test]
