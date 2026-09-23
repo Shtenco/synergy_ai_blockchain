@@ -527,3 +527,32 @@ logs_url = null
 ```
 
 Therefore even an explicit job rerun fails before runner provisioning. This further supports classifying M2.11 as an external GitHub Actions execution blocker rather than a repository test failure.
+
+
+## M2 transport-cryptography hardening continuation
+
+The M2 transport boundary now additionally includes:
+
+- explicit `CRYPTO_PROFILE_VERSION` binding across authorization, FIPS context, transactions and transport transcripts;
+- canonical ordered signature-suite binding;
+- exact Secp256k1/Ed25519/PQ evidence encodings and structural prefilters;
+- exact MAX-policy authorization byte budget (`37,173` bytes);
+- explicit classical KEX registry (X25519 / compressed Secp256k1) and algorithm identifiers;
+- explicit ML-KEM and HKDF algorithm codes;
+- transcript-bound rekey policy;
+- transcript-bound ML-KEM recipient role;
+- network-id / epoch / fresh session-id transcript anti-replay context;
+- one-shot `TransportReplayGuard` session consumption;
+- validation-before-replay-consumption ordering, preventing malformed local input from burning a session ID;
+- exact 32-byte classical shared-secret boundary;
+- canonical HKDF-SHA256 transport session-key derivation;
+- opaque zeroizing `TransportSessionKey`;
+- independent transcript/HKDF known-answer vectors.
+
+The external capability handles for ML-KEM and ML-DSA are now non-Copy **and non-Clone**.
+Providers store separate internal capability identifiers which also zeroize on drop.
+
+The HKDF implementation has one explicit residual memory-hardening limitation:
+upstream RustCrypto HKDF/HMAC internal PRK state does not provide zeroize-on-drop.
+SYNERGY minimizes its lifetime and never stores it persistently, but M2 must not claim that
+library-internal PRK memory is guaranteed to be wiped.
