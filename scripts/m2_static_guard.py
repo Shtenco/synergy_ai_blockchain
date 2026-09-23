@@ -930,4 +930,14 @@ require(
     "authorization replay state must consume nonce exactly once and rotate epoch forward only",
 )
 
+
+reference_prod = pq_ref.split("\n#[cfg(test)]\nmod tests", 1)[0]
+require(
+    "SigningKey::<MlDsa87>::try_generate().ok()?" in reference_prod
+    and "if scheme != AuthScheme::MlDsa87" in reference_prod
+    and "SigningKey<Shake256s>" not in reference_prod
+    and "SigningKey::<Shake256s>" not in reference_prod,
+    "reference signer must remain ML-DSA-only; stable SLH signing is external-provider-only",
+)
+
 print("M2 static guard: PASS")
