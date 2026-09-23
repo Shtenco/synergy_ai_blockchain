@@ -14,8 +14,8 @@ domain currently present in `AuthorizationDomain`.
 | `InferenceReceipt` | off-consensus AI worker receipt accepted by protocol | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, expiry, assignment/worker/shard/input binding |
 | `Governance` | privileged governance action | `Max` | expected governance authority keyset commitment | chain, epoch, nonce, expiry, proposal ID, governance state root, activation epoch |
 | `VerificationReceipt` | independent AI verifier receipt | `PqOnly` | expected verifier ID + expected verifier keyset commitment | challenge ID, chain, epoch, nonce, expiry, verifier receipt payload |
-| `ConsensusActivation` | activate consensus implementation/model/gas schedule | `Max` | expected consensus authority keyset commitment | chain, epoch, nonce, expiry, expected activation block, full activation commitment |
-| `ServicePlaneCheckpoint` | commit canonical payment/storage/cognitive/autopilot/finality roots | `Max` | expected service-plane authority keyset commitment | chain, authorization epoch, nonce, expiry, expected service-plane epoch, all canonical roots |
+| `ConsensusActivation` | activate consensus implementation/model/gas schedule | `Max` | expected consensus authority keyset commitment | chain, epoch, nonce, expiry, expected activation block, mandatory future activation delay, full activation commitment |
+| `ServicePlaneCheckpoint` | commit canonical payment/storage/cognitive/autopilot/finality roots | `Max` | expected service-plane authority keyset commitment | chain, authorization epoch, nonce, expiry, exact next service-plane epoch, all canonical roots |
 
 ## Keyset identity primitive
 
