@@ -1639,4 +1639,36 @@ require(
     "storage service finality must reject archive substitution and expired proofs",
 )
 
+
+require(
+    "FUNDING_RESERVATION_DOMAIN" in payment_funding
+    and "pub fn canonical_root(&self) -> Option<[u8; 32]>" in payment_funding
+    and "funding reservation root mismatch" in payment_funding,
+    "funding reservation root must remain canonical over immutable reservation identity",
+)
+
+require(
+    "SETTLEMENT_LANE_REPLAY_SUBJECT_DOMAIN" in payments
+    and "settlement_lane_replay_subject(validation.expected_lane_id)" in payments,
+    "settlement replay subject must remain stable lane identity, not rotating keyset",
+)
+
+require(
+    "validation.expected_provider_id" in storage
+    and "validation.expected_node_id" in cognitive
+    and "validation.expected_worker_id" in inference
+    and "validation.expected_verifier_id" in verification
+    and "validation.expected_worker_id" in kv_cache,
+    "provider/node/worker/verifier replay subjects must remain stable entity IDs",
+)
+
+require(
+    "validation.expected_provider_keyset_commitment" in storage
+    and "node.pq_identity_commitment" in cognitive
+    and "validation.expected_worker_keyset_commitment" in inference
+    and "validation.expected_verifier_keyset_commitment" in verification
+    and "validation.expected_worker_keyset_commitment" in kv_cache,
+    "stable replay IDs must remain separately bound to current registered keysets",
+)
+
 print("M2 static guard: PASS")
