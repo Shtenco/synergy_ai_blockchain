@@ -194,6 +194,7 @@ contract PQSmartAccount {
 
         uint64 current = nonce;
         if (current == type(uint64).max) revert Unauthorized();
+        bytes32 callHash = keccak256(data);
         bytes memory message =
             authorizationMessage(target, value, data, callGasLimit, current, validUntil);
         bytes memory context = fipsContext();
@@ -208,9 +209,9 @@ contract PQSmartAccount {
         // All potentially reverting authorization and local allocation work is
         // completed before nonce consumption. After this point the target receives
         // only a signed, bounded gas budget and returndata copying is capped.
+        bytes memory callData = data;
         uint256 requiredGas = uint256(callGasLimit) + POST_CALL_GAS_RESERVE;
         if (gasleft() <= requiredGas) revert InsufficientExecutionGas();
-        bytes memory callData = data;
 
         nonce = current + 1;
         executing = true;
@@ -223,7 +224,7 @@ contract PQSmartAccount {
             current,
             target,
             value,
-            keccak256(data),
+            callHash,
             success,
             keccak256(result),
             truncated
