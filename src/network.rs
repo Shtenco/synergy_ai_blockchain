@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::BTreeSet;
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -47,6 +48,65 @@ pub trait TransportReplayGuard {
         session_id: &[u8; 32],
         transcript_hash: &[u8; 32],
     ) -> bool;
+}
+
+pub const MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536;
+
+pub struct InMemoryTransportReplayGuard {
+    network_id: [u8; 32],
+    epoch: u64,
+    consumed: BTreeSet<([u8; 32], [u8; 32])>,
+}
+
+impl InMemoryTransportReplayGuard {
+    pub fn new(network_id: [u8; 32], epoch: u64) -> Option<Self> {
+        if network_id == [0u8; 32] {
+            return None;
+        }
+        Some(Self {
+            network_id,
+            epoch,
+            consumed: BTreeSet::new(),
+        })
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub fn consumed_sessions(&self) -> usize {
+        self.consumed.len()
+    }
+
+    pub fn rotate_epoch(&mut self, new_epoch: u64) -> bool {
+        if new_epoch <= self.epoch {
+            return false;
+        }
+        self.epoch = new_epoch;
+        self.consumed.clear();
+        true
+    }
+}
+
+impl TransportReplayGuard for InMemoryTransportReplayGuard {
+    fn consume_session(
+        &mut self,
+        network_id: &[u8; 32],
+        epoch: u64,
+        session_id: &[u8; 32],
+        transcript_hash: &[u8; 32],
+    ) -> bool {
+        if network_id != &self.network_id
+            || epoch != self.epoch
+            || session_id == &[0u8; 32]
+            || transcript_hash == &[0u8; 32]
+            || self.consumed.len() >= MAX_TRANSPORT_SESSIONS_PER_EPOCH
+        {
+            return false;
+        }
+
+        self.consumed.insert((*session_id, *transcript_hash))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -683,6 +743,37 @@ mod tests {
             expected_epoch: transcript.epoch,
             expected_session_id: transcript.session_id,
         }
+    }
+
+    #[test]
+    fn in_memory_replay_guard_is_bounded_and_epoch_monotonic() {
+        let network_id = [0xC1; 32];
+        let mut guard = InMemoryTransportReplayGuard::new(network_id, 7)
+            .expect("valid replay guard");
+        let session = [0xC2; 32];
+        let transcript = [0xC3; 32];
+
+        assert!(guard.consume_session(&network_id, 7, &session, &transcript));
+        assert!(!guard.consume_session(&network_id, 7, &session, &transcript));
+        assert!(!guard.consume_session(&[0xC4; 32], 7, &[0xC5; 32], &transcript));
+        assert!(!guard.consume_session(&network_id, 8, &[0xC5; 32], &transcript));
+
+        assert!(!guard.rotate_epoch(7));
+        assert!(!guard.rotate_epoch(6));
+        assert!(guard.rotate_epoch(8));
+        assert_eq!(guard.epoch(), 8);
+        assert_eq!(guard.consumed_sessions(), 0);
+        assert!(guard.consume_session(&network_id, 8, &session, &transcript));
+    }
+
+    #[test]
+    fn in_memory_replay_guard_rejects_zero_capabilities() {
+        let network_id = [0xD1; 32];
+        let mut guard = InMemoryTransportReplayGuard::new(network_id, 1)
+            .expect("valid replay guard");
+        assert!(!guard.consume_session(&network_id, 1, &[0u8; 32], &[1u8; 32]));
+        assert!(!guard.consume_session(&network_id, 1, &[1u8; 32], &[0u8; 32]));
+        assert!(InMemoryTransportReplayGuard::new([0u8; 32], 1).is_none());
     }
 
     #[derive(Default)]
