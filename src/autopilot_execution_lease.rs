@@ -5,8 +5,13 @@ use sha2::{Digest, Sha256};
 use crate::autopilot_budget::{
     verify_autopilot_execution_and_consume, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
     AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
+    AutopilotRealizedExecutionReceipt,
 };
-use crate::pq::{AuthorizationReplayState, ContextSignatureVerifier};
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
+};
 
 const AUTOPILOT_EXECUTION_LEASE_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION-LEASE/V1\0";
 const AUTOPILOT_LEASE_TERMINAL_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-LEASE-TERMINAL/V1\0";
@@ -166,7 +171,7 @@ impl AutopilotLeaseTerminalReceipt {
 }
 
 impl AutopilotExecutionLease {
-    pub fn finalize_once(
+    pub(crate) fn finalize_once(
         &mut self,
         terminal: &AutopilotLeaseTerminalReceipt,
     ) -> Result<[u8; 32], &'static str> {
@@ -184,6 +189,156 @@ impl AutopilotExecutionLease {
         self.status = terminal.status;
         Ok(commitment)
     }
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutopilotLeaseTerminalAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub terminal: AutopilotLeaseTerminalReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl AutopilotLeaseTerminalAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::AutopilotLeaseTerminal,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.terminal.commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutopilotLeaseTerminalValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_owner_account: [u8; 32],
+    pub expected_owner_keyset_commitment: [u8; 32],
+    pub expected_lease_root: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+fn verify_autopilot_lease_terminal<V: ContextSignatureVerifier>(
+    verifier: &V,
+    lease: &AutopilotExecutionLease,
+    reservation: &AutopilotBudgetReservation,
+    call: &AutopilotBudgetBoundCall,
+    realized: Option<&AutopilotRealizedExecutionReceipt>,
+    authorized: &AutopilotLeaseTerminalAuthorization,
+    validation: &AutopilotLeaseTerminalValidationContext,
+) -> bool {
+    if lease.status != AutopilotExecutionLeaseStatus::ExecutionLocked
+        || lease.lease_root != validation.expected_lease_root
+        || authorized.terminal.lease_root != lease.lease_root
+        || reservation.owner_account != validation.expected_owner_account
+        || authorized.authorization.policy != AuthPolicy::Max
+        || authorized.authorization.primary_account_identity_commitment()
+            != Some(validation.expected_owner_account)
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_owner_keyset_commitment)
+    {
+        return false;
+    }
+
+    match authorized.terminal.status {
+        AutopilotExecutionLeaseStatus::Settled => {
+            let receipt = match realized {
+                Some(receipt) if receipt.success => receipt,
+                _ => return false,
+            };
+            let receipt_root = match receipt.commitment_against(call) {
+                Some(root) => root,
+                None => return false,
+            };
+            if authorized.terminal.execution_receipt_root != Some(receipt_root)
+                || authorized.terminal.reason_root.is_some()
+            {
+                return false;
+            }
+        }
+        AutopilotExecutionLeaseStatus::Cancelled => {
+            if realized.is_some()
+                || authorized.terminal.reason_root.is_none()
+                || authorized.terminal.execution_receipt_root.is_some()
+            {
+                return false;
+            }
+        }
+        AutopilotExecutionLeaseStatus::ExecutionLocked => return false,
+    }
+
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::AutopilotLeaseTerminal,
+        expected_policy: AuthPolicy::Max,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
+pub fn finalize_autopilot_lease_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    lease: &mut AutopilotExecutionLease,
+    reservation: &AutopilotBudgetReservation,
+    call: &AutopilotBudgetBoundCall,
+    realized: Option<&AutopilotRealizedExecutionReceipt>,
+    authorized: &AutopilotLeaseTerminalAuthorization,
+    validation: &AutopilotLeaseTerminalValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> Result<[u8; 32], &'static str> {
+    if !verify_autopilot_lease_terminal(
+        verifier,
+        lease,
+        reservation,
+        call,
+        realized,
+        authorized,
+        validation,
+    ) {
+        return Err("invalid Autopilot terminal authorization");
+    }
+
+    let envelope = authorized
+        .envelope()
+        .ok_or("Autopilot terminal authorization envelope unavailable")?;
+
+    let mut next_lease = lease.clone();
+    let terminal_commitment = next_lease.finalize_once(&authorized.terminal)?;
+
+    let mut next_replay = replay.clone();
+    if !next_replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &envelope,
+        validation.expected_owner_account,
+    ) {
+        return Err("Autopilot terminal authorization replay rejected");
+    }
+
+    *lease = next_lease;
+    *replay = next_replay;
+    Ok(terminal_commitment)
 }
 
 #[cfg(test)]
@@ -370,6 +525,169 @@ mod tests {
             &lease,
         ));
         assert_eq!(replay.next_nonce(), 9);
+    }
+
+    #[test]
+    fn terminal_settlement_requires_max_owner_auth_and_realized_receipt() {
+        let (reservation, call) = reservation_and_call();
+        let call_root = call
+            .authorization_commitment(&reservation)
+            .expect("call root");
+        let mut lease = AutopilotExecutionLease {
+            lease_root: AutopilotExecutionLease::canonical_root(&reservation, &call)
+                .expect("lease root"),
+            reservation_root: reservation.reservation_root,
+            budget_bound_call_root: call_root,
+            proposal_root: call.proposal_root,
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+        let realized = AutopilotRealizedExecutionReceipt {
+            budget_bound_call_root: call_root,
+            reservation_root: reservation.reservation_root,
+            tx_hash: [0x51; 32],
+            realized_value: 400,
+            success: true,
+        };
+        let realized_root = realized
+            .commitment_against(&call)
+            .expect("realized receipt root");
+        let authorization = max_authorization();
+        let owner_keyset = authorization
+            .keyset_commitment()
+            .expect("owner keyset");
+        let terminal = AutopilotLeaseTerminalReceipt {
+            lease_root: lease.lease_root,
+            execution_receipt_root: Some(realized_root),
+            reason_root: None,
+            status: AutopilotExecutionLeaseStatus::Settled,
+        };
+        let authorized = AutopilotLeaseTerminalAuthorization {
+            chain_id: [0xC1; 32],
+            epoch: reservation.epoch,
+            nonce: 21,
+            expires_at: 170,
+            terminal,
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("terminal envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("terminal message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("terminal context"),
+        };
+        let validation = AutopilotLeaseTerminalValidationContext {
+            expected_chain_id: [0xC1; 32],
+            expected_epoch: reservation.epoch,
+            expected_nonce: 21,
+            expected_owner_account: reservation.owner_account,
+            expected_owner_keyset_commitment: owner_keyset,
+            expected_lease_root: lease.lease_root,
+            now: 100,
+            max_future_seconds: 100,
+        };
+        let mut replay = AuthorizationReplayState::new_for_subject(
+            [0xC1; 32],
+            AuthorizationDomain::AutopilotLeaseTerminal,
+            AuthPolicy::Max,
+            reservation.owner_account,
+            reservation.epoch,
+            21,
+        )
+        .expect("terminal replay");
+
+        assert!(finalize_autopilot_lease_and_consume(
+            &verifier,
+            &mut lease,
+            &reservation,
+            &call,
+            Some(&realized),
+            &authorized,
+            &validation,
+            &mut replay,
+        )
+        .is_ok());
+        assert_eq!(lease.status, AutopilotExecutionLeaseStatus::Settled);
+        assert_eq!(replay.next_nonce(), 22);
+    }
+
+    #[test]
+    fn invalid_terminal_receipt_does_not_burn_nonce_or_finalize_lease() {
+        let (reservation, call) = reservation_and_call();
+        let call_root = call
+            .authorization_commitment(&reservation)
+            .expect("call root");
+        let mut lease = AutopilotExecutionLease {
+            lease_root: AutopilotExecutionLease::canonical_root(&reservation, &call)
+                .expect("lease root"),
+            reservation_root: reservation.reservation_root,
+            budget_bound_call_root: call_root,
+            proposal_root: call.proposal_root,
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+        let failed = AutopilotRealizedExecutionReceipt {
+            budget_bound_call_root: call_root,
+            reservation_root: reservation.reservation_root,
+            tx_hash: [0x52; 32],
+            realized_value: 400,
+            success: false,
+        };
+        let authorization = max_authorization();
+        let owner_keyset = authorization.keyset_commitment().expect("owner keyset");
+        let terminal = AutopilotLeaseTerminalReceipt {
+            lease_root: lease.lease_root,
+            execution_receipt_root: Some([0x53; 32]),
+            reason_root: None,
+            status: AutopilotExecutionLeaseStatus::Settled,
+        };
+        let authorized = AutopilotLeaseTerminalAuthorization {
+            chain_id: [0xC1; 32],
+            epoch: reservation.epoch,
+            nonce: 21,
+            expires_at: 170,
+            terminal,
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("terminal envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
+            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+        };
+        let validation = AutopilotLeaseTerminalValidationContext {
+            expected_chain_id: [0xC1; 32],
+            expected_epoch: reservation.epoch,
+            expected_nonce: 21,
+            expected_owner_account: reservation.owner_account,
+            expected_owner_keyset_commitment: owner_keyset,
+            expected_lease_root: lease.lease_root,
+            now: 100,
+            max_future_seconds: 100,
+        };
+        let mut replay = AuthorizationReplayState::new_for_subject(
+            [0xC1; 32],
+            AuthorizationDomain::AutopilotLeaseTerminal,
+            AuthPolicy::Max,
+            reservation.owner_account,
+            reservation.epoch,
+            21,
+        )
+        .expect("terminal replay");
+
+        assert!(finalize_autopilot_lease_and_consume(
+            &verifier,
+            &mut lease,
+            &reservation,
+            &call,
+            Some(&failed),
+            &authorized,
+            &validation,
+            &mut replay,
+        )
+        .is_err());
+        assert_eq!(lease.status, AutopilotExecutionLeaseStatus::ExecutionLocked);
+        assert_eq!(replay.next_nonce(), 21);
     }
 
     #[test]
