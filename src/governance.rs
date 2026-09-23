@@ -250,6 +250,42 @@ mod tests {
     }
 
     #[test]
+    fn governance_consuming_api_accepts_nonce_once() {
+        let authorized = authorized();
+        let envelope = authorized.envelope().expect("governance envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("governance message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("governance context"),
+        };
+        let validation = validation_for(&authorized);
+        let mut replay = AuthorizationReplayState::new(
+            authorized.chain_id,
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            authorized.epoch,
+            authorized.nonce,
+        )
+        .expect("governance replay state");
+
+        assert!(verify_governance_action_and_consume(
+            &verifier,
+            &authorized,
+            &validation,
+            &mut replay,
+        ));
+        assert!(!verify_governance_action_and_consume(
+            &verifier,
+            &authorized,
+            &validation,
+            &mut replay,
+        ));
+    }
+
+    #[test]
     fn governance_rejects_unregistered_authority_keyset() {
         let authorized = authorized();
         let envelope = authorized.envelope().expect("governance envelope");
