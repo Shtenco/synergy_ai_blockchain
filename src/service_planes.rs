@@ -13,6 +13,79 @@ use crate::pq::{
 };
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
+const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
+pub const MAX_SERVICE_FINALITY_ITEMS: usize = 65_536;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ServiceFinalityKind {
+    PaymentSettlement,
+    AutopilotTerminal,
+    StorageReceipt,
+    CognitiveReceipt,
+    KvReplicaReceipt,
+}
+
+impl ServiceFinalityKind {
+    pub const fn protocol_code(self) -> u8 {
+        match self {
+            Self::PaymentSettlement => 1,
+            Self::AutopilotTerminal => 2,
+            Self::StorageReceipt => 3,
+            Self::CognitiveReceipt => 4,
+            Self::KvReplicaReceipt => 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceFinalityItem {
+    pub kind: ServiceFinalityKind,
+    pub root: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceFinalityBatch {
+    pub epoch: u64,
+    pub items: Vec<ServiceFinalityItem>,
+}
+
+impl ServiceFinalityBatch {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.epoch == 0 {
+            return Err("service finality epoch required");
+        }
+        if self.items.is_empty() || self.items.len() > MAX_SERVICE_FINALITY_ITEMS {
+            return Err("service finality item count invalid");
+        }
+        if self.items.iter().any(|item| item.root == [0u8; 32]) {
+            return Err("service finality item root required");
+        }
+
+        let mut ordered = self.items.clone();
+        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.root));
+        if ordered.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err("duplicate service finality item");
+        }
+        Ok(())
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        let mut ordered = self.items.clone();
+        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.root));
+        let count = u64::try_from(ordered.len()).ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(SERVICE_FINALITY_BATCH_DOMAIN);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(count.to_be_bytes());
+        for item in ordered {
+            hasher.update([item.kind.protocol_code()]);
+            hasher.update(item.root);
+        }
+        Some(hasher.finalize().into())
+    }
+}
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +101,21 @@ pub struct ServicePlaneRoots {
 }
 
 impl ServicePlaneRoots {
+    pub fn validate_against_finality(
+        &self,
+        finality: &ServiceFinalityBatch,
+    ) -> Result<(), &'static str> {
+        self.validate()?;
+        finality.validate()?;
+        if finality.epoch != self.epoch {
+            return Err("service finality epoch mismatch");
+        }
+        if finality.commitment() != Some(self.service_finality_root) {
+            return Err("service finality root mismatch");
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.epoch == 0 {
             return Err("service-plane epoch required");
@@ -177,7 +265,7 @@ impl ServicePlaneCapacityEnvelope {
 }
 
 
-pub fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVerifier>(
+pub(crate) fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &ServicePlaneCheckpointAuthorization,
     validation: &ServicePlaneCheckpointValidationContext,
@@ -194,6 +282,25 @@ pub fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVerifier>(
         &authorized.authorization,
         &envelope,
         validation.expected_authority_keyset_commitment,
+    )
+}
+
+
+pub fn verify_service_plane_checkpoint_with_finality_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &ServicePlaneCheckpointAuthorization,
+    finality: &ServiceFinalityBatch,
+    validation: &ServicePlaneCheckpointValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if authorized.roots.validate_against_finality(finality).is_err() {
+        return false;
+    }
+    verify_service_plane_checkpoint_and_consume(
+        verifier,
+        authorized,
+        validation,
+        replay,
     )
 }
 
@@ -252,6 +359,22 @@ mod tests {
         }
     }
 
+    fn finality() -> ServiceFinalityBatch {
+        ServiceFinalityBatch {
+            epoch: 7,
+            items: vec![
+                ServiceFinalityItem {
+                    kind: ServiceFinalityKind::PaymentSettlement,
+                    root: [0x71; 32],
+                },
+                ServiceFinalityItem {
+                    kind: ServiceFinalityKind::AutopilotTerminal,
+                    root: [0x72; 32],
+                },
+            ],
+        }
+    }
+
     fn roots() -> ServicePlaneRoots {
         ServicePlaneRoots {
             epoch: 7,
@@ -261,10 +384,33 @@ mod tests {
             cognitive_evidence_root: [4; 32],
             autopilot_policy_graph_root: [5; 32],
             data_availability_root: [6; 32],
-            service_finality_root: [7; 32],
+            service_finality_root: finality().commitment().expect("finality root"),
         }
     }
 
+
+    #[test]
+    fn service_finality_batch_is_order_independent_and_duplicate_closed() {
+        let a = finality();
+        let mut b = a.clone();
+        b.items.reverse();
+        assert_eq!(a.commitment(), b.commitment());
+
+        let mut duplicate = a.clone();
+        duplicate.items.push(duplicate.items[0]);
+        assert!(duplicate.commitment().is_none());
+    }
+
+    #[test]
+    fn service_plane_roots_require_exact_finality_batch() {
+        let roots = roots();
+        let batch = finality();
+        assert_eq!(roots.validate_against_finality(&batch), Ok(()));
+
+        let mut changed = batch;
+        changed.items[0].root[0] ^= 1;
+        assert!(roots.validate_against_finality(&changed).is_err());
+    }
 
     #[test]
     fn service_plane_checkpoint_requires_registered_max_authority() {
