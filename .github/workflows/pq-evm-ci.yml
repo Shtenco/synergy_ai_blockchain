@@ -47,14 +47,19 @@ jobs:
             echo "::warning::Cargo.lock is absent; generating bootstrap lockfile. M2 cannot become GREEN until this exact lockfile is committed and a later run succeeds with it."
             cargo generate-lockfile
           fi
-          cargo metadata --locked --format-version 1 > m2-cargo-metadata.json
-          python3 scripts/m2_verify_lock.py Cargo.lock m2-cargo-metadata.json
-          cargo tree --locked --edges normal,build,dev > m2-cargo-tree.txt
-          cargo tree --locked --duplicates > m2-cargo-duplicates.txt
+          cargo metadata --locked --format-version 1 > m2-cargo-metadata-core.json
+          cargo metadata --locked --format-version 1 --features reference-pq > m2-cargo-metadata-reference-pq.json
+          python3 scripts/m2_verify_lock.py Cargo.lock m2-cargo-metadata-reference-pq.json
+          cargo tree --locked --edges normal,build,dev > m2-cargo-tree-core.txt
+          cargo tree --locked --edges normal,build,dev --features reference-pq > m2-cargo-tree-reference-pq.txt
+          cargo tree --locked --duplicates --features reference-pq > m2-cargo-duplicates-reference-pq.txt
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           python3 scripts/m2_spdx_from_cargo_metadata.py \
-            m2-cargo-metadata.json \
-            m2-spdx.json
+            m2-cargo-metadata-core.json \
+            m2-spdx-core.json
+          python3 scripts/m2_spdx_from_cargo_metadata.py \
+            m2-cargo-metadata-reference-pq.json \
+            m2-spdx-reference-pq.json
 
       - name: Formatting gate
         run: cargo fmt --all -- --check
@@ -87,9 +92,12 @@ jobs:
           name: m2-cargo-reproducibility-${{ github.run_id }}
           path: |
             Cargo.lock
-            m2-cargo-metadata.json
-            m2-cargo-tree.txt
-            m2-cargo-duplicates.txt
-            m2-spdx.json
+            m2-cargo-metadata-core.json
+            m2-cargo-metadata-reference-pq.json
+            m2-cargo-tree-core.txt
+            m2-cargo-tree-reference-pq.txt
+            m2-cargo-duplicates-reference-pq.txt
+            m2-spdx-core.json
+            m2-spdx-reference-pq.json
           if-no-files-found: warn
           retention-days: 30
