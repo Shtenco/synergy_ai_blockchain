@@ -191,7 +191,7 @@ pub fn verify_binding_and_consume<L: LegacyProofVerifier, P: ContextSignatureVer
     if !replay.consume_verified_for_subject(
         &binding.authorization,
         &envelope,
-        binding.binding.pq_identity_commitment,
+        binding.binding.synergy_account_id,
     ) {
         return Err(MigrationError::InvalidPqAuthorization);
     }
