@@ -153,6 +153,7 @@ pub enum AuthorizationDomain {
     CognitiveEvidence,
     KvReplicaReceipt,
     TransportHandshake,
+    AutopilotLeaseTerminal,
 }
 
 impl AuthorizationDomain {
@@ -179,6 +180,7 @@ impl AuthorizationDomain {
             Self::CognitiveEvidence => 14,
             Self::KvReplicaReceipt => 15,
             Self::TransportHandshake => 16,
+            Self::AutopilotLeaseTerminal => 17,
         }
     }
 }
@@ -1357,6 +1359,7 @@ mod tests {
             AuthorizationDomain::CognitiveEvidence.protocol_code(),
             AuthorizationDomain::KvReplicaReceipt.protocol_code(),
             AuthorizationDomain::TransportHandshake.protocol_code(),
+            AuthorizationDomain::AutopilotLeaseTerminal.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
