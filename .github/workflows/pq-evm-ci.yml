@@ -69,6 +69,7 @@ jobs:
 
           {
             echo "git_commit=$(git rev-parse HEAD)"
+            echo "rustup=$(rustup --version 2>&1 | head -n 1)"
             echo "rustc=$(rustc --version)"
             echo "cargo=$(cargo --version)"
             echo "rustfmt=$(rustfmt --version)"
@@ -91,6 +92,13 @@ jobs:
             m2-build-environment.txt \
             tests/vectors/M2_FIXTURE_MANIFEST.json \
             > m2-evidence-sha256.txt
+
+      - name: Committed Cargo.lock gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          git diff --exit-code -- Cargo.lock
 
       - name: Formatting gate
         run: cargo fmt --all -- --check
