@@ -640,4 +640,11 @@ require(
     "verifier receipts must remain state-aware PQ-only authorized",
 )
 
+
+require(
+    "VerificationReceipt" in pq
+    and "Self::VerificationReceipt => 7" in pq,
+    "verification receipt authorization domain code missing or changed",
+)
+
 print("M2 static guard: PASS")
