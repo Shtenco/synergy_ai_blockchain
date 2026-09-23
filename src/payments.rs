@@ -274,6 +274,7 @@ pub struct SettlementBatchValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_lane_id: [u8; 16],
+    pub current_sequence: u64,
     pub expected_sequence: u64,
     pub expected_lane_authority_keyset_commitment: [u8; 32],
     pub now: u64,
@@ -285,7 +286,13 @@ pub fn verify_settlement_batch<V: ContextSignatureVerifier>(
     authorized: &SettlementBatchAuthorization,
     validation: &SettlementBatchValidationContext,
 ) -> bool {
+    let next_sequence = match validation.current_sequence.checked_add(1) {
+        Some(sequence) => sequence,
+        None => return false,
+    };
+
     if authorized.authorization.policy != AuthPolicy::PqOnly
+        || validation.expected_sequence != next_sequence
         || authorized.batch.lane_id != validation.expected_lane_id
         || authorized.batch.sequence != validation.expected_sequence
         || authorized.authorization.keyset_commitment()
@@ -512,6 +519,7 @@ mod tests {
             expected_epoch: 9,
             expected_nonce: 10,
             expected_lane_id: [1; 16],
+            current_sequence: 6,
             expected_sequence: 7,
             expected_lane_authority_keyset_commitment: lane_authority,
             now: 100,
@@ -530,6 +538,56 @@ mod tests {
             &verifier,
             &authorized,
             &wrong,
+        ));
+    }
+
+    #[test]
+    fn settlement_batch_requires_exact_next_lane_sequence() {
+        let authorization = pq_only_authorization();
+        let lane_authority = authorization
+            .keyset_commitment()
+            .expect("lane authority keyset");
+        let authorized = SettlementBatchAuthorization {
+            chain_id: [0xD1; 32],
+            epoch: 9,
+            nonce: 10,
+            expires_at: 200,
+            batch: settlement_batch(),
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("batch envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let mut validation = SettlementBatchValidationContext {
+            expected_chain_id: [0xD1; 32],
+            expected_epoch: 9,
+            expected_nonce: 10,
+            expected_lane_id: [1; 16],
+            current_sequence: 5,
+            expected_sequence: 7,
+            expected_lane_authority_keyset_commitment: lane_authority,
+            now: 100,
+            max_future_seconds: 200,
+        };
+
+        assert!(!verify_settlement_batch(
+            &verifier,
+            &authorized,
+            &validation,
+        ));
+
+        validation.current_sequence = 7;
+        validation.expected_sequence = 7;
+        assert!(!verify_settlement_batch(
+            &verifier,
+            &authorized,
+            &validation,
         ));
     }
 
