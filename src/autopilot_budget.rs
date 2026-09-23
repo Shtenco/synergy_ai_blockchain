@@ -173,6 +173,7 @@ pub struct AutopilotExecutionValidationContext {
     pub expected_chain_id: [u8; 32],
     pub expected_nonce: u64,
     pub expected_owner_account: [u8; 32],
+    pub expected_owner_keyset_commitment: [u8; 32],
     pub expected_reservation_root: [u8; 32],
     pub expected_policy_root: [u8; 32],
     pub now: u64,
@@ -187,7 +188,10 @@ pub(crate) fn verify_autopilot_execution<V: ContextSignatureVerifier>(
 ) -> bool {
     if authorized.authorization.policy != AuthPolicy::Max
         || reservation.owner_account != validation.expected_owner_account
-        || authorized.authorization.keyset_commitment() != Some(reservation.owner_account)
+        || authorized.authorization.primary_account_identity_commitment()
+            != Some(reservation.owner_account)
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_owner_keyset_commitment)
         || reservation.reservation_root != validation.expected_reservation_root
         || reservation.policy_root != validation.expected_policy_root
         || authorized.call.validate_against(reservation, validation.now).is_err()
@@ -325,8 +329,8 @@ mod tests {
 
     fn reservation() -> AutopilotBudgetReservation {
         let owner_account = max_authorization()
-            .keyset_commitment()
-            .expect("owner keyset commitment");
+            .primary_account_identity_commitment()
+            .expect("owner account identity");
         AutopilotBudgetReservation {
             owner_account,
             reservation_id: [1; 32],
@@ -359,6 +363,9 @@ mod tests {
         let reservation = reservation();
         let authorization = max_authorization();
         let owner_account = authorization
+            .primary_account_identity_commitment()
+            .expect("owner account identity");
+        let owner_keyset = authorization
             .keyset_commitment()
             .expect("owner keyset commitment");
         let authorized = AutopilotExecutionAuthorization {
@@ -379,6 +386,7 @@ mod tests {
             expected_chain_id: [0xB1; 32],
             expected_nonce: 9,
             expected_owner_account: owner_account,
+            expected_owner_keyset_commitment: owner_keyset,
             expected_reservation_root: reservation.reservation_root,
             expected_policy_root: reservation.policy_root,
             now: 120,
@@ -403,10 +411,31 @@ mod tests {
     }
 
     #[test]
+    fn autopilot_owner_identity_is_stable_across_secondary_key_rotation() {
+        let auth = max_authorization();
+        let owner = auth
+            .primary_account_identity_commitment()
+            .expect("owner account identity");
+
+        let mut rotated = auth.clone();
+        rotated.evidence[0].public_key[1] ^= 1;
+        rotated.evidence[2].public_key[0] ^= 1;
+
+        assert_eq!(
+            rotated.primary_account_identity_commitment(),
+            Some(owner)
+        );
+        assert_ne!(auth.keyset_commitment(), rotated.keyset_commitment());
+    }
+
+    #[test]
     fn autopilot_execution_rejects_reservation_owned_by_different_account() {
         let mut reservation = reservation();
         let authorization = max_authorization();
         let owner_account = authorization
+            .primary_account_identity_commitment()
+            .expect("owner account identity");
+        let owner_keyset = authorization
             .keyset_commitment()
             .expect("owner keyset commitment");
         reservation.owner_account[0] ^= 1;
@@ -429,6 +458,7 @@ mod tests {
             expected_chain_id: [0xB1; 32],
             expected_nonce: 9,
             expected_owner_account: owner_account,
+            expected_owner_keyset_commitment: owner_keyset,
             expected_reservation_root: reservation.reservation_root,
             expected_policy_root: reservation.policy_root,
             now: 120,
@@ -448,6 +478,9 @@ mod tests {
         let reservation = reservation();
         let authorization = max_authorization();
         let owner_account = authorization
+            .primary_account_identity_commitment()
+            .expect("owner account identity");
+        let owner_keyset = authorization
             .keyset_commitment()
             .expect("owner keyset commitment");
         let authorized = AutopilotExecutionAuthorization {
@@ -468,6 +501,7 @@ mod tests {
             expected_chain_id: [0xB1; 32],
             expected_nonce: 9,
             expected_owner_account: owner_account,
+            expected_owner_keyset_commitment: owner_keyset,
             expected_reservation_root: reservation.reservation_root,
             expected_policy_root: reservation.policy_root,
             now: 180,
