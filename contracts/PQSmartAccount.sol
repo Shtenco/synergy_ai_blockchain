@@ -15,10 +15,12 @@ contract PQSmartAccount {
     bytes public mlDsa87PublicKey;
     bytes public slhDsaPublicKey;
     uint256 public nonce;
+    bool private executing;
 
     error InvalidKeyMaterial();
     error InvalidSignatureEncoding();
     error Unauthorized();
+    error ReentrantExecution();
 
     event Executed(
         uint256 indexed nonce,
@@ -96,6 +98,7 @@ contract PQSmartAccount {
         bytes calldata mlDsaSignature,
         bytes calldata slhDsaSignature
     ) external returns (bool success, bytes memory result) {
+        if (executing) revert ReentrantExecution();
         if (mlDsaSignature.length != 4627 || slhDsaSignature.length != 29792) {
             revert InvalidSignatureEncoding();
         }
@@ -121,7 +124,9 @@ contract PQSmartAccount {
         // failure is an execution outcome, not a reason to resurrect an already
         // authorized signed operation.
         nonce = current + 1;
+        executing = true;
         (success, result) = target.call{value: value}(data);
+        executing = false;
 
         emit Executed(
             current,
