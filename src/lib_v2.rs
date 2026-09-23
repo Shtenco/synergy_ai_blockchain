@@ -64,8 +64,14 @@ pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
     KvReplicaReceiptAuthorization, KvReplicaReceiptValidationContext, MAX_KV_REPLICAS,
 };
-pub use migration::{LegacyChain, LegacyIdentityBinding};
-pub use model_shard::{ModelLineageTransition, ModelManifestCommitment, ModelShardOutput};
+pub use migration::{
+    verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,
+    MigrationAuthorization, MigrationError, MigrationValidationContext,
+};
+pub use model_shard::{
+    verify_model_upgrade_and_consume, ModelLineageTransition, ModelManifestCommitment,
+    ModelShardOutput, ModelUpgradeAuthorization, ModelUpgradeValidationContext,
+};
 pub use network::{
     derive_transport_session_key, establish_shared_secret, validate_shared_secret,
     ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard, MlKem1024Provider,
@@ -118,7 +124,10 @@ pub use storage::{
     StorageProofValidationContext,
 };
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
-pub use validator::{ValidatorIdentity, ValidatorPolicy};
+pub use validator::{
+    verify_validator_vote_and_consume, ValidatorIdentity, ValidatorPolicy,
+    ValidatorVoteAuthorization, ValidatorVoteValidationContext,
+};
 pub use verification::{
     verify_verifier_receipt_and_consume, VerificationAggregate, VerificationChallenge, VerificationVerdict,
     VerifierReceipt, VerifierReceiptAuthorization, VerifierReceiptValidationContext,
