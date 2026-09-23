@@ -1097,7 +1097,6 @@ for stateless, consuming in (
     ("verify_governance_action", "verify_governance_action_and_consume"),
     ("verify_consensus_activation", "verify_consensus_activation_and_consume"),
     ("verify_service_plane_checkpoint", "verify_service_plane_checkpoint_and_consume"),
-    ("verify_autopilot_execution", "verify_autopilot_execution_and_consume"),
     ("verify_payment_intent", "verify_payment_intent_and_consume"),
     ("verify_settlement_batch", "verify_settlement_batch_and_consume"),
     ("verify_storage_proof", "verify_storage_proof_and_consume"),
@@ -1115,6 +1114,13 @@ for stateless, consuming in (
         and f" {stateless}," not in lib_v2,
         f"public crate surface must export consuming API only for {stateless}",
     )
+
+require(
+    "authorize_and_lock_autopilot_execution" in lib_v2
+    and "verify_autopilot_execution_and_consume" not in lib_v2
+    and "pub(crate) fn verify_autopilot_execution_and_consume" in autopilot_budget,
+    "Autopilot public crate surface must expose lease-enforced authorization only",
+)
 
 
 require(
