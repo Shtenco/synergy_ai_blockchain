@@ -240,6 +240,9 @@ impl HybridAuthorization {
             if !required.contains(&evidence.scheme) {
                 return Err("authorization contains a scheme outside its policy");
             }
+            if evidence.scheme != required[index] {
+                return Err("authorization evidence order is noncanonical");
+            }
             if evidence.public_key.is_empty() || evidence.signature.is_empty() {
                 return Err("authorization evidence must contain key and signature bytes");
             }
@@ -564,6 +567,18 @@ mod tests {
             ],
         };
         assert!(auth.structurally_complete());
+    }
+
+    #[test]
+    fn reordered_required_schemes_are_rejected_as_noncanonical() {
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                evidence(AuthScheme::SlhDsaShake256s),
+                evidence(AuthScheme::MlDsa87),
+            ],
+        };
+        assert!(auth.validate_structure().is_err());
     }
 
     #[test]
