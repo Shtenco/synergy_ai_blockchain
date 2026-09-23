@@ -14,6 +14,7 @@ lib_v2 = (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8")
 pq_sol = (ROOT / "contracts/IPQVerifier.sol").read_text(encoding="utf-8")
 smart_account_sol = (ROOT / "contracts/PQSmartAccount.sol").read_text(encoding="utf-8")
 nexus_sol = (ROOT / "contracts/INexusAI.sol").read_text(encoding="utf-8")
+evm_fips_context_fixture = (ROOT / "tests/fixtures/evm_fips_context_v1.hex").read_text(encoding="utf-8").strip()
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
 tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
@@ -1689,6 +1690,22 @@ require(
     and "conflicting service finality subject" in service_planes
     and "hasher.update(item.subject_id)" in service_planes,
     "service finality must bind canonical subjects and reject conflicting roots per subject",
+)
+
+
+require(
+    evm_fips_context_fixture
+        == "53594e455247592f50512d464950532d434f4e5445585400000100000000000000000000000000000000000000000000000000000000000021050103020304"
+    and "evm_fips_context_fixture_matches_rust_profile_v1" in pq
+    and '"SYNERGY/PQ-FIPS-CONTEXT"' in smart_account_sol
+    and "bytes2(CRYPTO_PROFILE_VERSION)" in smart_account_sol
+    and "bytes32(block.chainid)" in smart_account_sol
+    and "bytes1(AUTH_DOMAIN_TRANSACTION)" in smart_account_sol
+    and "bytes1(AUTH_POLICY_PQ_ONLY)" in smart_account_sol
+    and "bytes1(uint8(2))" in smart_account_sol
+    and "bytes1(uint8(3))" in smart_account_sol
+    and "bytes1(uint8(4))" in smart_account_sol,
+    "Rust/Solidity transaction FIPS context must remain byte-for-byte profile-v1 compatible",
 )
 
 print("M2 static guard: PASS")
