@@ -1719,4 +1719,12 @@ require(
     "FIPS parity fixture must remain in the tamper-evident CI evidence bundle",
 )
 
+
+require(
+    '"tests/fixtures/evm_fips_context_v1.hex"' in fixture_manifest
+    and "expected_auxiliary_paths" in fixture_verifier
+    and "unexpected/unmanifested auxiliary fixture inventory" in fixture_verifier,
+    "auxiliary protocol parity fixtures must remain fully manifest-covered",
+)
+
 print("M2 static guard: PASS")
