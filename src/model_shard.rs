@@ -234,6 +234,7 @@ pub struct ModelUpgradeValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_authority_keyset_commitment: [u8; 32],
+    pub expected_activation_epoch: u64,
     pub now: u64,
     pub max_future_seconds: u64,
 }
@@ -244,6 +245,7 @@ pub fn verify_model_upgrade<V: ContextSignatureVerifier>(
     validation: &ModelUpgradeValidationContext,
 ) -> bool {
     if upgrade.authorization.policy != AuthPolicy::Max
+        || upgrade.transition.activation_epoch != validation.expected_activation_epoch
         || upgrade.authorization.keyset_commitment()
             != Some(validation.expected_authority_keyset_commitment)
     {
@@ -458,6 +460,7 @@ mod tests {
             expected_authority_keyset_commitment: max_authorization()
                 .keyset_commitment()
                 .expect("model authority keyset"),
+            expected_activation_epoch: 10,
             now: 1_000,
             max_future_seconds: 200,
         };
@@ -507,12 +510,62 @@ mod tests {
                 .authorization
                 .keyset_commitment()
                 .expect("model authority keyset"),
+            expected_activation_epoch: 10,
             now: 1_000,
             max_future_seconds: 200,
         };
         validation.expected_authority_keyset_commitment[0] ^= 1;
 
         assert!(!verify_model_upgrade(&verifier, &upgrade, &validation));
+    }
+
+    #[test]
+    fn model_upgrade_rejects_wrong_activation_epoch() {
+        let transition = ModelLineageTransition {
+            transition_commitment: [7; 32],
+            target_model_root: [1; 32],
+            generation: 1,
+            consumed_shards: vec![[8; 32], [9; 32]],
+            created_shards: vec![
+                shard(1, 0, Some([8; 32])),
+                shard(1, 1, Some([9; 32])),
+            ],
+            activation_epoch: 10,
+        };
+        let upgrade = ModelUpgradeAuthorization {
+            chain_id: [0x71; 32],
+            epoch: 10,
+            nonce: 11,
+            expires_at: 1_100,
+            transition,
+            authorization: max_authorization(),
+        };
+        let envelope = upgrade.envelope().expect("upgrade envelope");
+        let verifier = ExpectedUpgradeVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("upgrade message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("upgrade context"),
+        };
+        let mut validation = ModelUpgradeValidationContext {
+            expected_chain_id: [0x71; 32],
+            expected_epoch: 10,
+            expected_nonce: 11,
+            expected_authority_keyset_commitment: upgrade
+                .authorization
+                .keyset_commitment()
+                .expect("model authority keyset"),
+            expected_activation_epoch: 11,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+
+        assert!(!verify_model_upgrade(&verifier, &upgrade, &validation));
+
+        validation.expected_activation_epoch = 10;
+        assert!(verify_model_upgrade(&verifier, &upgrade, &validation));
     }
 
     #[test]
