@@ -1,8 +1,10 @@
+use sha2::{Digest, Sha256};
+
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthScheme, AuthorizationDomain,
     AuthorizationEnvelope, AuthorizationValidationContext, ContextSignatureVerifier,
-    HybridAuthorization, ML_DSA_87_PUBLIC_KEY_BYTES, SECP256K1_PUBLIC_KEY_BYTES,
-    SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+    HybridAuthorization, CRYPTO_PROFILE_VERSION, ML_DSA_87_PUBLIC_KEY_BYTES,
+    SECP256K1_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +24,8 @@ impl ValidatorPolicy {
     }
 }
 
+const VALIDATOR_IDENTITY_DOMAIN: &[u8] = b"SYNERGY/VALIDATOR-IDENTITY/V1\0";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatorIdentity {
     pub validator_id: [u8; 32],
@@ -32,9 +36,39 @@ pub struct ValidatorIdentity {
 }
 
 impl ValidatorIdentity {
+    pub fn pq_identity_commitment(&self) -> Option<[u8; 32]> {
+        if self.ml_dsa87_public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
+            || self.slh_dsa_shake256s_public_key.len() != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
+            || self.ml_dsa87_public_key.iter().all(|byte| *byte == 0)
+            || self
+                .slh_dsa_shake256s_public_key
+                .iter()
+                .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(VALIDATOR_IDENTITY_DOMAIN);
+        hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
+
+        hasher.update([AuthScheme::MlDsa87.protocol_code()]);
+        hasher.update((self.ml_dsa87_public_key.len() as u64).to_be_bytes());
+        hasher.update(&self.ml_dsa87_public_key);
+
+        hasher.update([AuthScheme::SlhDsaShake256s.protocol_code()]);
+        hasher.update((self.slh_dsa_shake256s_public_key.len() as u64).to_be_bytes());
+        hasher.update(&self.slh_dsa_shake256s_public_key);
+
+        Some(hasher.finalize().into())
+    }
+
     pub fn validate_for_policy(&self, policy: ValidatorPolicy) -> Result<(), &'static str> {
         if self.validator_id == [0u8; 32] {
             return Err("validator id required");
+        }
+        if self.pq_identity_commitment() != Some(self.validator_id) {
+            return Err("validator id does not match PQ identity commitment");
         }
         if self.ml_dsa87_public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
             || self.slh_dsa_shake256s_public_key.len() != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
@@ -190,8 +224,8 @@ mod tests {
     fn identity_for(policy: ValidatorPolicy) -> ValidatorIdentity {
         let mut secp = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
         secp[0] = 0x02;
-        ValidatorIdentity {
-            validator_id: [0x11; 32],
+        let mut identity = ValidatorIdentity {
+            validator_id: [0u8; 32],
             legacy_public_key: if matches!(policy, ValidatorPolicy::HybridTransition) {
                 secp
             } else {
@@ -199,7 +233,11 @@ mod tests {
             },
             ml_dsa87_public_key: vec![0x22; ML_DSA_87_PUBLIC_KEY_BYTES],
             slh_dsa_shake256s_public_key: vec![0x33; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
-        }
+        };
+        identity.validator_id = identity
+            .pq_identity_commitment()
+            .expect("validator PQ identity commitment");
+        identity
     }
 
     fn evidence(scheme: AuthScheme, public_key: Vec<u8>) -> SignatureEvidence {
@@ -258,13 +296,27 @@ mod tests {
 
     fn validation() -> ValidatorVoteValidationContext {
         ValidatorVoteValidationContext {
-            expected_validator_id: [0x11; 32],
+            expected_validator_id: identity_for(ValidatorPolicy::PqOnly).validator_id,
             expected_chain_id: [0x55; 32],
             expected_epoch: 9,
             expected_nonce: 10,
             now: 1_000,
             max_future_seconds: 200,
         }
+    }
+
+    #[test]
+    fn validator_id_is_stable_across_legacy_key_retirement() {
+        let hybrid = identity_for(ValidatorPolicy::HybridTransition);
+        let pq_only = identity_for(ValidatorPolicy::PqOnly);
+        assert_eq!(hybrid.validator_id, pq_only.validator_id);
+    }
+
+    #[test]
+    fn validator_id_rejects_pq_key_substitution() {
+        let mut identity = identity_for(ValidatorPolicy::PqOnly);
+        identity.ml_dsa87_public_key[0] ^= 1;
+        assert!(identity.validate_for_policy(ValidatorPolicy::PqOnly).is_err());
     }
 
     #[test]
