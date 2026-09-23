@@ -86,9 +86,9 @@ contract PQSmartAccount {
             bytes1(uint8(2)),
             bytes1(uint8(3)),
             bytes1(uint8(4)),
-            bytes8(AUTHORIZATION_EPOCH),
-            bytes8(txNonce),
-            bytes8(validUntil),
+            AUTHORIZATION_EPOCH,
+            txNonce,
+            validUntil,
             payloadCommitment
         );
     }
