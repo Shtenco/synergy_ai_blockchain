@@ -940,4 +940,12 @@ require(
     "reference signer must remain ML-DSA-only; stable SLH signing is external-provider-only",
 )
 
+
+require(
+    "pub const fn active_in_crypto_profile_v1" in pq
+    and "Self::Secp256k1 | Self::MlDsa87 | Self::SlhDsaShake256s" in pq
+    and "crypto_profile_v1_keeps_ed25519_reserved_but_inactive" in pq,
+    "Ed25519 must remain reserved/inactive in crypto profile v1",
+)
+
 print("M2 static guard: PASS")
