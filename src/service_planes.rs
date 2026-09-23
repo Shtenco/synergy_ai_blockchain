@@ -1,3 +1,10 @@
+//! Canonical commitments for horizontally scaled SYNERGY service planes.
+//!
+//! World-scale payments, archival storage, CognitiveNodes and Autopilot work are
+//! not executed as one giant serial EVM transaction stream. Each service plane
+//! may execute/aggregate independently and the canonical chain commits bounded
+//! roots plus availability/finality evidence.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -7,12 +14,6 @@ use crate::pq::{
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 
-//! Canonical commitments for horizontally scaled SYNERGY service planes.
-//!
-//! World-scale payments, archival storage, CognitiveNodes and Autopilot work are
-//! not executed as one giant serial EVM transaction stream. Each service plane
-//! may execute/aggregate independently and the canonical chain commits bounded
-//! roots plus availability/finality evidence.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServicePlaneRoots {
