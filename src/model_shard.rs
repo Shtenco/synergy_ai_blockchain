@@ -186,6 +186,20 @@ impl ModelLineageTransition {
             {
                 return Err("duplicate created shard commitment");
             }
+            if self.created_shards[..i]
+                .iter()
+                .any(|prior| prior.shard_index == shard.shard_index)
+            {
+                return Err("duplicate created shard index");
+            }
+            if self.generation > 0 {
+                let parent = shard
+                    .parent_shard_commitment
+                    .ok_or("updated shard requires parent commitment")?;
+                if !self.consumed_shards.contains(&parent) {
+                    return Err("created shard parent was not consumed by transition");
+                }
+            }
         }
         Ok(())
     }
@@ -297,6 +311,41 @@ mod tests {
             activation_epoch: 10,
         };
         assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn transition_rejects_duplicate_created_shard_index() {
+        let mut second = shard(1, 0, Some([9; 32]));
+        second.shard_commitment = [12; 32];
+
+        let transition = ModelLineageTransition {
+            transition_commitment: [7; 32],
+            target_model_root: [1; 32],
+            generation: 1,
+            consumed_shards: vec![[8; 32], [9; 32]],
+            created_shards: vec![
+                shard(1, 0, Some([8; 32])),
+                second,
+            ],
+            activation_epoch: 10,
+        };
+        assert!(transition.validate().is_err());
+    }
+
+    #[test]
+    fn transition_rejects_parent_outside_consumed_lineage() {
+        let transition = ModelLineageTransition {
+            transition_commitment: [7; 32],
+            target_model_root: [1; 32],
+            generation: 1,
+            consumed_shards: vec![[8; 32], [9; 32]],
+            created_shards: vec![
+                shard(1, 0, Some([8; 32])),
+                shard(1, 1, Some([10; 32])),
+            ],
+            activation_epoch: 10,
+        };
+        assert!(transition.validate().is_err());
     }
 
     #[test]
