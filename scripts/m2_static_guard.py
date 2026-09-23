@@ -20,6 +20,7 @@ validator = (ROOT / "src/validator.rs").read_text(encoding="utf-8")
 migration = (ROOT / "src/migration.rs").read_text(encoding="utf-8")
 model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
 inference = (ROOT / "src/inference.rs").read_text(encoding="utf-8")
+governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -552,6 +553,16 @@ require(
     and "expected_worker_id" in inference
     and "authorization_commitment" in inference,
     "inference receipts must remain state-aware PQ-only authorized",
+)
+
+
+require(
+    "verify_envelope_authorization" in governance
+    and "AuthorizationDomain::Governance" in governance
+    and "authorized.authorization.policy != AuthPolicy::Max" in governance
+    and "expected_governance_state_root" in governance
+    and "expected_proposal_id" in governance,
+    "governance actions must remain state-root-bound MAX-authorized transitions",
 )
 
 print("M2 static guard: PASS")
