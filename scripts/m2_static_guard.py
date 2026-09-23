@@ -815,4 +815,24 @@ require(
     "storage/cognitive authorization domain codes missing or changed",
 )
 
+
+require(
+    "pub(crate) fn validate_against(" in payment_funding
+    and "pub fn validate_against_intent(" in payment_funding,
+    "reservation-only funding consumption validator must remain crate-internal",
+)
+
+for name, source in (
+    ("payments", payments),
+    ("payment_funding", payment_funding),
+    ("storage", storage),
+    ("cognitive", cognitive),
+    ("service_planes", service_planes),
+    ("autopilot_budget", autopilot_budget),
+):
+    require(
+        source.startswith("//!"),
+        f"{name} inner module docs must precede all Rust items",
+    )
+
 print("M2 static guard: PASS")
