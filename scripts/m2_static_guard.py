@@ -1284,4 +1284,36 @@ require(
     "Solidity NEXUS v1 facade must expose Score-only consensus mode",
 )
 
+
+require(
+    "Self::TransportHandshake => 16" in pq
+    and "AuthorizationDomain::TransportHandshake.protocol_code()" in pq,
+    "transport handshake authorization domain code missing or outside registry test",
+)
+
+require(
+    "pub fn establish_authenticated_shared_secret" in network
+    and "pub(crate) fn establish_shared_secret" in network
+    and "AuthorizationDomain::TransportHandshake" in network
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in network
+    and "TransportRole::Initiator" in network
+    and "TransportRole::Responder" in network
+    and "consume_verified_for_subject" in network
+    and "let mut next_initiator = initiator_replay.clone()" in network
+    and "let mut next_responder = responder_replay.clone()" in network,
+    "transport establishment must authenticate both peers and atomically consume auth replay state",
+)
+
+require(
+    "establish_authenticated_shared_secret" in lib_v2
+    and "establish_shared_secret," not in lib_v2,
+    "public crate surface must not expose unauthenticated transport establishment",
+)
+
+require(
+    "transport_handshake_rejects_role_swap" in network
+    and "transport_session_replay_failure_does_not_burn_peer_auth_nonces" in network,
+    "transport handshake role and replay atomicity regressions missing",
+)
+
 print("M2 static guard: PASS")
