@@ -17,6 +17,21 @@ pub enum TransportPolicy {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportRole {
+    Initiator,
+    Responder,
+}
+
+impl TransportRole {
+    pub const fn protocol_code(self) -> u8 {
+        match self {
+            Self::Initiator => 1,
+            Self::Responder => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClassicalKexScheme {
     X25519,
     Secp256k1,
@@ -145,6 +160,7 @@ pub struct TransportTranscript {
     pub responder: TransportPeerIdentity,
     pub policy: TransportPolicy,
     pub rekey_policy: RekeyPolicy,
+    pub ml_kem_recipient: TransportRole,
     pub ml_kem_ciphertext: Vec<u8>,
     pub classical_transcript_hash: Option<[u8; 32]>,
 }
@@ -157,6 +173,17 @@ impl TransportTranscript {
 
         if self.initiator.node_id == self.responder.node_id {
             return Err("transport peers must be distinct");
+        }
+        if self.initiator.ml_kem1024_public_key == self.responder.ml_kem1024_public_key {
+            return Err("transport peers must use distinct ML-KEM public keys");
+        }
+        if matches!(self.policy, TransportPolicy::Hybrid) {
+            if self.initiator.legacy_kex_scheme != self.responder.legacy_kex_scheme {
+                return Err("hybrid transport peers must agree on classical KEX scheme");
+            }
+            if self.initiator.legacy_kex_public_key == self.responder.legacy_kex_public_key {
+                return Err("hybrid transport peers must use distinct classical KEX public keys");
+            }
         }
         if self.ml_kem_ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
             return Err("ML-KEM-1024 ciphertext length mismatch");
@@ -199,6 +226,7 @@ impl TransportTranscript {
         }]);
         hasher.update(self.rekey_policy.max_messages.to_be_bytes());
         hasher.update(self.rekey_policy.max_seconds.to_be_bytes());
+        hasher.update([self.ml_kem_recipient.protocol_code()]);
 
         // Role order is canonical: initiator first, responder second.
         for peer in [&self.initiator, &self.responder] {
@@ -476,6 +504,7 @@ mod tests {
             responder,
             policy,
             rekey_policy: RekeyPolicy::default(),
+            ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: vec![3u8; ML_KEM_1024_CIPHERTEXT_BYTES],
             classical_transcript_hash: matches!(policy, TransportPolicy::Hybrid)
                 .then_some([4u8; 32]),
@@ -576,6 +605,34 @@ mod tests {
             &valid_transcript(TransportPolicy::Hybrid),
         );
         assert!(secret.is_none());
+    }
+
+    #[test]
+    fn hybrid_transcript_rejects_kex_algorithm_mismatch_and_key_reuse() {
+        let mut mismatch = valid_transcript(TransportPolicy::Hybrid);
+        mismatch.initiator.legacy_kex_scheme = Some(ClassicalKexScheme::X25519);
+        mismatch.initiator.legacy_kex_public_key = vec![7u8; X25519_PUBLIC_KEY_BYTES];
+        assert!(mismatch.commitment().is_none());
+
+        let mut same_kem = valid_transcript(TransportPolicy::Hybrid);
+        same_kem.responder.ml_kem1024_public_key =
+            same_kem.initiator.ml_kem1024_public_key.clone();
+        assert!(same_kem.commitment().is_none());
+
+        let mut same_classical = valid_transcript(TransportPolicy::Hybrid);
+        same_classical.responder.legacy_kex_public_key =
+            same_classical.initiator.legacy_kex_public_key.clone();
+        assert!(same_classical.commitment().is_none());
+    }
+
+    #[test]
+    fn transcript_commitment_binds_ml_kem_recipient_role() {
+        let base = valid_transcript(TransportPolicy::Hybrid);
+        let commitment = base.commitment().expect("commitment");
+
+        let mut changed = base;
+        changed.ml_kem_recipient = TransportRole::Initiator;
+        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
     }
 
     #[test]
