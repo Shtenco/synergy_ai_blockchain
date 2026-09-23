@@ -1104,4 +1104,49 @@ for stateless, consuming in (
         f"public crate surface must export consuming API only for {stateless}",
     )
 
+
+require(
+    "subject_commitment: [u8; 32]" in pq
+    and "pub fn new_for_subject(" in pq
+    and "pub fn consume_verified_for_subject(" in pq
+    and "pub fn verify_and_consume_for_subject<" in pq
+    and "hasher.update(self.subject_commitment)" in pq,
+    "production replay state must remain authority-subject-bound",
+)
+
+require(
+    "pub fn new(" not in pq
+    and "pub fn consume_verified(" not in pq
+    and "pub fn verify_and_consume<" not in pq,
+    "unbound replay constructor/consume APIs must not be public in production",
+)
+
+for name, source in (
+    ("governance", governance),
+    ("consensus", consensus),
+    ("service_planes", service_planes),
+    ("autopilot_budget", autopilot_budget),
+    ("payments", payments),
+    ("storage", storage),
+    ("cognitive", cognitive),
+    ("inference", inference),
+    ("verification", verification),
+    ("model_shard", model_shard),
+    ("migration", migration),
+    ("validator", validator),
+    ("kv_cache", kv_cache),
+):
+    require(
+        "replay.consume_verified_for_subject" in source,
+        f"{name} consuming verifier must bind replay state to authority subject",
+    )
+
+require(
+    "pub(crate) fn validate<V: ContextSignatureVerifier>" in tx
+    and "pub fn validate_and_consume<V: ContextSignatureVerifier>" in tx
+    and "replay.consume_verified_for_subject" in tx
+    and "self.sender_account" in tx,
+    "transaction public validation must consume subject-bound replay state",
+)
+
 print("M2 static guard: PASS")
