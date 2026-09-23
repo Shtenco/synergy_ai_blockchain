@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -62,7 +62,7 @@ pub const MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536;
 pub struct InMemoryTransportReplayGuard {
     network_id: [u8; 32],
     epoch: u64,
-    consumed: BTreeSet<[u8; 32]>,
+    consumed: BTreeMap<[u8; 32], [u8; 32]>,
 }
 
 impl InMemoryTransportReplayGuard {
@@ -73,7 +73,7 @@ impl InMemoryTransportReplayGuard {
         Some(Self {
             network_id,
             epoch,
-            consumed: BTreeSet::new(),
+            consumed: BTreeMap::new(),
         })
     }
 
@@ -96,8 +96,9 @@ impl InMemoryTransportReplayGuard {
         hasher.update(self.network_id);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(count.to_be_bytes());
-        for session_id in &self.consumed {
+        for (session_id, transcript_hash) in &self.consumed {
             hasher.update(session_id);
+            hasher.update(transcript_hash);
         }
         Some(hasher.finalize().into())
     }
@@ -129,7 +130,11 @@ impl TransportReplayGuard for InMemoryTransportReplayGuard {
             return false;
         }
 
-        self.consumed.insert(*session_id)
+        if self.consumed.contains_key(session_id) {
+            return false;
+        }
+        self.consumed.insert(*session_id, *transcript_hash);
+        true
     }
 }
 
@@ -1148,6 +1153,25 @@ mod tests {
         };
         assert!(too_weak.validate().is_err());
         assert!(too_weak.should_rekey(0, 0));
+    }
+
+    #[test]
+    fn transport_replay_commitment_binds_transcript_hash() {
+        let network_id = [0xAA; 32];
+        let session_id = [0xBB; 32];
+
+        let mut a = InMemoryTransportReplayGuard::new(network_id, 7)
+            .expect("replay guard");
+        let mut b = InMemoryTransportReplayGuard::new(network_id, 7)
+            .expect("replay guard");
+
+        assert!(a.consume_session(&network_id, 7, &session_id, &[0x01; 32]));
+        assert!(b.consume_session(&network_id, 7, &session_id, &[0x02; 32]));
+
+        assert_ne!(
+            a.commitment().expect("commitment A"),
+            b.commitment().expect("commitment B")
+        );
     }
 
     #[test]
