@@ -8,7 +8,7 @@ pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
 pub const X25519_PUBLIC_KEY_BYTES: usize = 32;
 pub const SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33;
-pub const MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128;
+pub const CLASSICAL_SHARED_SECRET_BYTES: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportPolicy {
@@ -102,8 +102,7 @@ pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
     pub fn new(bytes: Vec<u8>) -> Option<Self> {
-        (!bytes.is_empty() && bytes.len() <= MAX_CLASSICAL_SHARED_SECRET_BYTES)
-            .then_some(Self(bytes))
+        (bytes.len() == CLASSICAL_SHARED_SECRET_BYTES).then_some(Self(bytes))
     }
 
     pub fn len(&self) -> usize {
@@ -239,7 +238,7 @@ impl HybridSharedSecret {
                 if classical_shared
                     .as_ref()
                     .map(|secret| {
-                        secret.len() < 32 || secret.len() > MAX_CLASSICAL_SHARED_SECRET_BYTES
+                        secret.len() != CLASSICAL_SHARED_SECRET_BYTES
                     })
                     .unwrap_or(true) =>
             {
@@ -307,7 +306,7 @@ pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecr
         TransportPolicy::Hybrid => secret
             .classical_shared()
             .map(|shared| {
-                shared.len() >= 32 && shared.len() <= MAX_CLASSICAL_SHARED_SECRET_BYTES
+                shared.len() == CLASSICAL_SHARED_SECRET_BYTES
             })
             .unwrap_or(false),
     }
@@ -456,8 +455,8 @@ mod tests {
 
     #[test]
     fn transport_classical_material_is_bounded() {
-        assert!(SecretBytes::new(vec![1u8; MAX_CLASSICAL_SHARED_SECRET_BYTES]).is_some());
-        assert!(SecretBytes::new(vec![1u8; MAX_CLASSICAL_SHARED_SECRET_BYTES + 1]).is_none());
+        assert!(SecretBytes::new(vec![1u8; CLASSICAL_SHARED_SECRET_BYTES]).is_some());
+        assert!(SecretBytes::new(vec![1u8; CLASSICAL_SHARED_SECRET_BYTES + 1]).is_none());
 
         let peer = TransportPeerIdentity {
             node_id: [1u8; 32],
@@ -502,7 +501,7 @@ mod tests {
         let secret = HybridSharedSecret::from_transcript(
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
-            SecretBytes::new(vec![2u8; MAX_CLASSICAL_SHARED_SECRET_BYTES + 1]),
+            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES + 1]),
             &valid_transcript(TransportPolicy::Hybrid),
         );
         assert!(secret.is_none());
