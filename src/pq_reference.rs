@@ -17,7 +17,29 @@ use crate::pq::{
     SignatureVerifier, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
     SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
 };
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct InternalCapabilityId([u8; 32]);
+
+impl From<[u8; 32]> for InternalCapabilityId {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl Borrow<[u8; 32]> for InternalCapabilityId {
+    fn borrow(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl Drop for InternalCapabilityId {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
+    }
+}
 
 use ml_kem::{
     ml_kem_1024::{
@@ -64,7 +86,7 @@ impl Drop for MlKemSecretHandle {
 /// its private components on drop. Callers receive only an opaque handle.
 #[derive(Default)]
 pub struct ReferenceMlKem1024Provider {
-    secrets: BTreeMap<[u8; 32], MlKem1024DecapsulationKey>,
+    secrets: BTreeMap<InternalCapabilityId, MlKem1024DecapsulationKey>,
 }
 
 impl ReferenceMlKem1024Provider {
@@ -95,7 +117,7 @@ impl ReferenceMlKem1024Provider {
         }
         let handle = selected?;
 
-        if self.secrets.insert(*handle.as_id_bytes(), dk).is_some() {
+        if self.secrets.insert(InternalCapabilityId::from(*handle.as_id_bytes()), dk).is_some() {
             return None;
         }
 
@@ -165,7 +187,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
 /// backend (or HSM/keystore integration) is selected.
 #[derive(Default)]
 pub struct ReferencePqSigner {
-    ml_dsa_keys: BTreeMap<[u8; 32], ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
+    ml_dsa_keys: BTreeMap<InternalCapabilityId, ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
 }
 
 impl ReferencePqSigner {
@@ -211,7 +233,7 @@ impl ContextSignatureSigner for ReferencePqSigner {
 
         if self
             .ml_dsa_keys
-            .insert(*handle.as_id_bytes(), signing_key)
+            .insert(InternalCapabilityId::from(*handle.as_id_bytes()), signing_key)
             .is_some() {
             return None;
         }
