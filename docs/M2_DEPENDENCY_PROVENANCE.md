@@ -240,3 +240,51 @@ The M2 static guard now checks the following before any Cargo step can run:
 - immutable transcript commitment after derivation.
 
 A bug in the guard itself was found during this audit: it originally split `pq_reference.rs` at the first `#[cfg(test)]` attribute, which occurred on a small helper before the production provider. Commit `cfc2b89527199b8fd09012e29574ea1225af10f3` changes the boundary to the actual `#[cfg(test)] mod tests` module, so the entire production provider is now inspected.
+
+
+## HKDF transport combiner provenance and memory boundary
+
+The transport combiner now pins:
+
+- `hkdf = 0.12.4`;
+- upstream repository: `RustCrypto/KDFs`;
+- tag: `hkdf-v0.12.4`;
+- commit: `1ac16e8b9d4ee7a67613c9396c6cc1327652eaba`.
+
+The exact `hmac 0.12.1` implementation used by this HKDF line was also inspected at
+`RustCrypto/MACs`, tag `hmac-v0.12.1`, commit
+`46797e3b44973a30edb9d7f3a3ebb41810061d90`.
+
+Important memory-hardening limitation: neither `hkdf 0.12.4` nor `hmac 0.12.1`
+implements `Zeroize` / zeroize-on-drop for the internal HKDF PRK/HMAC state.
+Stable `hkdf 0.13.0` was inspected as well and does not add that guarantee.
+
+SYNERGY therefore does **not** claim zeroization of the library-internal PRK state.
+Instead the implementation:
+
+- keeps the HKDF object as a function-local one-shot value;
+- performs one Expand operation only;
+- explicitly drops the HKDF object immediately after Expand;
+- explicitly zeroizes the assembled IKM buffer;
+- explicitly zeroizes the HKDF info buffer;
+- returns only an opaque `TransportSessionKey` whose 32-byte output zeroizes on drop;
+- never stores or exposes an HKDF/PRK object in protocol state.
+
+This is a deliberate residual-risk boundary. Replacing RFC5869 with a custom KDF merely
+to obtain explicit memory wiping is prohibited without an independently reviewed construction.
+
+The canonical combiner is domain-separated by
+`SYNERGY/PQ-TRANSPORT/KDF\0`, crypto-profile version, transport policy,
+ML-KEM algorithm code, KDF algorithm code, and the canonical transcript commitment.
+
+An independently calculated known-answer vector is committed in the network tests:
+
+```text
+transcript SHA-256
+7cedd002de19f032b45bdde3d99eef89eb9b12b30bbfbcf9e66740c060b297e8
+
+HKDF-SHA256 session key
+c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890
+```
+
+These vectors bind the canonical byte layout and KDF output, pending executable Cargo confirmation.
