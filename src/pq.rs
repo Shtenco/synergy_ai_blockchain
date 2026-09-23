@@ -293,6 +293,22 @@ impl AuthorizationReplayState {
         true
     }
 
+
+    pub fn rotate_epoch_and_subject(
+        &mut self,
+        new_epoch: u64,
+        new_subject_commitment: [u8; 32],
+        next_nonce: u64,
+    ) -> bool {
+        if new_epoch <= self.epoch || new_subject_commitment == [0u8; 32] {
+            return false;
+        }
+        self.epoch = new_epoch;
+        self.subject_commitment = new_subject_commitment;
+        self.next_nonce = next_nonce;
+        true
+    }
+
     pub fn consume_verified_for_subject(
         &mut self,
         authorization: &HybridAuthorization,
@@ -1727,6 +1743,27 @@ mod tests {
         assert!(replay.rotate_epoch(13, 0));
         assert_eq!(replay.epoch(), 13);
         assert_eq!(replay.next_nonce(), 0);
+    }
+
+    #[test]
+    fn replay_subject_rotation_requires_forward_epoch_and_nonzero_subject() {
+        let mut state = AuthorizationReplayState::new_for_subject(
+            [0xE1; 32],
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            [0xE2; 32],
+            7,
+            9,
+        )
+        .expect("replay state");
+        let before = state.commitment();
+
+        assert!(!state.rotate_epoch_and_subject(7, [0xE3; 32], 0));
+        assert!(!state.rotate_epoch_and_subject(8, [0u8; 32], 0));
+        assert!(state.rotate_epoch_and_subject(8, [0xE3; 32], 0));
+        assert_eq!(state.epoch(), 8);
+        assert_eq!(state.next_nonce(), 0);
+        assert_ne!(before, state.commitment());
     }
 
     #[test]
