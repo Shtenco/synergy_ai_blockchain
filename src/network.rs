@@ -326,9 +326,11 @@ impl TransportTranscript {
     pub fn commitment(&self) -> Option<[u8; 32]> {
         self.validate().ok()?;
 
-        fn put_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
-            hasher.update((bytes.len() as u64).to_be_bytes());
+        fn put_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) -> Option<()> {
+            let len = u64::try_from(bytes.len()).ok()?;
+            hasher.update(len.to_be_bytes());
             hasher.update(bytes);
+            Some(())
         }
 
         let mut hasher = Sha256::new();
@@ -350,20 +352,20 @@ impl TransportTranscript {
         // Role order is canonical: initiator first, responder second.
         for peer in [&self.initiator, &self.responder] {
             hasher.update(peer.node_id);
-            put_len_prefixed(&mut hasher, &peer.ml_kem1024_public_key);
+            put_len_prefixed(&mut hasher, &peer.ml_kem1024_public_key)?;
             match peer.legacy_kex_scheme {
                 Some(scheme) => {
                     hasher.update([1, scheme.protocol_code()]);
-                    put_len_prefixed(&mut hasher, &peer.legacy_kex_public_key);
+                    put_len_prefixed(&mut hasher, &peer.legacy_kex_public_key)?;
                 }
                 None => {
                     hasher.update([0, 0]);
-                    put_len_prefixed(&mut hasher, &[]);
+                    put_len_prefixed(&mut hasher, &[])?;
                 }
             }
         }
 
-        put_len_prefixed(&mut hasher, &self.ml_kem_ciphertext);
+        put_len_prefixed(&mut hasher, &self.ml_kem_ciphertext)?;
         match self.classical_transcript_hash {
             Some(hash) => {
                 hasher.update([1]);
