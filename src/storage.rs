@@ -220,7 +220,11 @@ pub struct StorageBid {
 }
 
 impl StorageBid {
-    pub fn validate_against(&self, archive: &ArchiveReceipt) -> Result<(), &'static str> {
+    pub fn validate_against(
+        &self,
+        archive: &ArchiveReceipt,
+        current_epoch: u64,
+    ) -> Result<(), &'static str> {
         archive.validate()?;
         if self.provider_id == [0u8; 32] || self.object_id == [0u8; 32] {
             return Err("storage bid provider/object required");
@@ -230,6 +234,13 @@ impl StorageBid {
         }
         if self.price_per_gib_epoch == 0 || self.max_epochs == 0 {
             return Err("storage bid price/term required");
+        }
+        let remaining_epochs = archive
+            .expires_at_epoch
+            .checked_sub(current_epoch)
+            .ok_or("storage bid starts after archive expiry")?;
+        if remaining_epochs == 0 || self.max_epochs > remaining_epochs {
+            return Err("storage bid term exceeds archive lifetime");
         }
         if self.availability_commitment == [0u8; 32] {
             return Err("storage bid availability commitment required");
@@ -521,10 +532,10 @@ mod tests {
             availability_commitment: [0x22; 32],
             codec_supported: a.codec_id,
         };
-        assert_eq!(bid.validate_against(&a), Ok(()));
+        assert_eq!(bid.validate_against(&a, 50), Ok(()));
 
         bid.object_id[0] ^= 1;
-        assert!(bid.validate_against(&a).is_err());
+        assert!(bid.validate_against(&a, 50).is_err());
         bid = StorageBid {
             provider_id: [0x21; 32],
             object_id: a.object_id,
@@ -533,7 +544,33 @@ mod tests {
             availability_commitment: [0x22; 32],
             codec_supported: [0xFF; 16],
         };
-        assert!(bid.validate_against(&a).is_err());
+        assert!(bid.validate_against(&a, 50).is_err());
+    }
+
+    #[test]
+    fn storage_bid_term_cannot_outlive_archive() {
+        let a = archive();
+        let bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 51,
+            availability_commitment: [0x22; 32],
+            codec_supported: a.codec_id,
+        };
+
+        assert_eq!(
+            bid.validate_against(&a, 50),
+            Err("storage bid term exceeds archive lifetime")
+        );
+        assert_eq!(
+            bid.validate_against(&a, 100),
+            Err("storage bid term exceeds archive lifetime")
+        );
+        assert_eq!(
+            bid.validate_against(&a, 101),
+            Err("storage bid starts after archive expiry")
+        );
     }
 
     #[test]
