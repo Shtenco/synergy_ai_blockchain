@@ -26,6 +26,7 @@ for exact in (
     'rand = { version = "=0.8.5"',
     'zeroize = { version = "=1.8.1"',
     'sha2 = { version = "=0.10.9"',
+    'hkdf = { version = "=0.12.4"',
     'hex = "=0.4.3"',
     'serde = { version = "=1.0.228"',
     'serde_json = "=1.0.145"',
@@ -445,6 +446,23 @@ require(
     and "pub(crate) fn from_transcript" in network
     and "replay_guard.consume_session" in network,
     "one-shot transport replay guard boundary missing",
+)
+
+
+require(
+    "pub struct TransportSessionKey([u8; TRANSPORT_SESSION_KEY_BYTES]);" in network
+    and "impl Drop for TransportSessionKey" in network
+    and "TransportSessionKey(<redacted>)" in network
+    and "pub fn derive_transport_session_key" in network
+    and "Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm)" in network
+    and "ikm.zeroize();" in network,
+    "transcript-bound zeroizing HKDF transport session key missing",
+)
+
+require(
+    '"hkdf": "0.12.4"' in lock_policy
+    and '("hkdf", "0.12.4"): set()' in lock_policy,
+    "HKDF exact lock/feature policy missing",
 )
 
 print("M2 static guard: PASS")
