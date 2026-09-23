@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const MIGRATION_BINDING_DOMAIN: &[u8] = b"SYNERGY/BRIDGE-MIGRATION/V1\0";
@@ -127,7 +127,7 @@ pub struct MigrationValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
+pub(crate) fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
     binding: &MigrationAuthorization,
     legacy_proof: &[u8],
     legacy: &L,
@@ -172,6 +172,25 @@ pub fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
         return Err(MigrationError::InvalidPqAuthorization);
     }
 
+    Ok(())
+}
+
+
+pub fn verify_binding_and_consume<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
+    binding: &MigrationAuthorization,
+    legacy_proof: &[u8],
+    legacy: &L,
+    pq: &P,
+    validation: &MigrationValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> Result<(), MigrationError> {
+    verify_binding(binding, legacy_proof, legacy, pq, validation)?;
+    let envelope = binding
+        .envelope()
+        .ok_or(MigrationError::InvalidPqAuthorization)?;
+    if !replay.consume_verified(&binding.authorization, &envelope) {
+        return Err(MigrationError::InvalidPqAuthorization);
+    }
     Ok(())
 }
 
