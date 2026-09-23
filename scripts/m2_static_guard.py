@@ -465,4 +465,14 @@ require(
     "HKDF exact lock/feature policy missing",
 )
 
+
+require(
+    "pub struct InMemoryTransportReplayGuard" in network
+    and "MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536" in network
+    and "consumed: BTreeSet<[u8; 32]>" in network
+    and "if new_epoch <= self.epoch" in network
+    and "self.consumed.len() >= MAX_TRANSPORT_SESSIONS_PER_EPOCH" in network,
+    "bounded monotonic reference replay guard missing",
+)
+
 print("M2 static guard: PASS")
