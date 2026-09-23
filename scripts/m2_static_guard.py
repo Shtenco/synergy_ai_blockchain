@@ -630,4 +630,14 @@ require(
     "AI verification aggregate must remain bound to canonical unique verifier receipts",
 )
 
+
+require(
+    "AuthorizationDomain::VerificationReceipt" in verification
+    and "verify_envelope_authorization" in verification
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in verification
+    and "expected_verifier_keyset_commitment" in verification
+    and "pub fn verify_verifier_receipt" in verification,
+    "verifier receipts must remain state-aware PQ-only authorized",
+)
+
 print("M2 static guard: PASS")
