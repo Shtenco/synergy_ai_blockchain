@@ -606,3 +606,31 @@ The authorization registry now also covers two consensus-critical state transiti
 Old authorization-domain codes 1–7 were left unchanged. The protocol-code uniqueness test and static guard include the new domains.
 
 This expands the M2 source-level privileged-state matrix from AI/transaction/governance paths to protocol activation and canonical service-plane state. It remains pending executable Rust confirmation.
+
+
+## Extended privileged-state and determinism hardening
+
+The M2 source boundary now covers additional existing protocol state transitions rather than limiting PQ authorization to the cryptographic helper layer.
+
+New authorization domains and enforcement paths added during this pass:
+
+- `ConsensusActivation` (code 8): MAX authority, implementation/model/gas-schedule commitment, future activation delay.
+- `ServicePlaneCheckpoint` (code 9): MAX authority, exact next service-plane epoch, all canonical service roots.
+- `AutopilotExecution` (code 10): MAX owner authority, budget reservation/policy/call commitment, exclusive expiry.
+- `PaymentIntent` (code 11): payer identity equals authorization keyset; economic fields/rails/compliance bound.
+- `SettlementBatch` (code 12): PQ-only lane authority, exact monotonic lane sequence, accounting/availability/finality bound.
+- `StorageProof` (code 13): PQ-only registered provider keyset over object/challenge/proof/served bytes.
+- `CognitiveEvidence` (code 14): PQ-only CognitiveNode keyset over request/model/input/output/proof/price/policy evidence.
+
+Additional deterministic arithmetic/source fixes:
+
+- consensus gas sizing now uses checked `usize -> u64` conversions;
+- canonical network length prefixes are fallible;
+- canonical transaction signing preimages are fallible and unavailable for oversized calldata;
+- inference stage counts are protocol-bounded and stage indexes use checked conversion;
+- model-lineage vector lengths use checked `usize -> u64` conversion;
+- storage and service-plane ratios fail closed instead of truncating or saturating overflow.
+
+Autopilot delegated-policy validation now rejects invalid windows, duplicate capabilities, zero commitments, per-action limits above epoch limits, and proposals that outlive their policy.
+
+All items remain source/test-definition evidence until a real Rust runner executes the frozen Cargo gates.
