@@ -165,3 +165,24 @@ FIPS context:
 Tests deliberately mutate domain/policy context without mutating the signed message to prove that the FIPS API itself enforces the second boundary.
 
 This is source/test-definition evidence until the Rust test suite actually executes.
+
+
+## Internal Rust/Solidity FIPS context parity fixture
+
+`tests/fixtures/evm_fips_context_v1.hex` is an internally derived protocol-parity fixture, not an imported NIST/ACVP vector.
+
+It freezes the exact profile-v1 FIPS signature context bytes for:
+
+- chain ID 8453 encoded as a 32-byte big-endian value;
+- Transaction authorization domain code 1;
+- PQ-only policy code 3;
+- suite count 2;
+- ML-DSA-87 code 3;
+- SLH-DSA-SHAKE-256s code 4.
+
+Pinned local integrity:
+
+- Git blob SHA-1: `194a3ae08eca936f89701b4c5eadf08c8f714d9a`;
+- SHA-256: `6fb451f77be80a61010a6d686fa383139e58b387b2d16afecfdac2ca018fed95`.
+
+The fixture is included in `M2_FIXTURE_MANIFEST.json` and is checked by the same SHA-1 + SHA-256 manifest verifier as the external cryptographic vectors. Its purpose is to detect cross-language drift in prefix bytes, version encoding, chain endianness, authorization-domain/policy codes or ordered PQ suite encoding.
