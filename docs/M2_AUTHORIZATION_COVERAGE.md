@@ -66,3 +66,12 @@ cargo test --frozen --release --lib --features reference-pq
 
 M2 must remain YELLOW until real runner logs exist and the exact generated
 `Cargo.lock` is committed and revalidated with `--frozen`.
+
+
+## Replay-consumption API boundary
+
+All privileged authorization verifiers in the public crate surface now use a consuming API. The stateless cryptographic/domain checks remain `pub(crate)` implementation primitives, while public entrypoints are `verify_*_and_consume` wrappers that call `AuthorizationReplayState::consume_verified` only after the full domain-specific verification succeeds.
+
+Covered paths: governance, consensus activation, service-plane checkpoints, Autopilot execution, payment intents, settlement batches, storage proofs, CognitiveNode evidence, inference receipts, verifier receipts, model upgrades, bridge migration and validator votes.
+
+This prevents integrations from accidentally treating a matching signed nonce as replay protection without actually advancing replay state.
