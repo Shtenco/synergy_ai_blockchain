@@ -291,7 +291,12 @@ impl AuthorizationReplayState {
 
 fn append_policy_suite(out: &mut Vec<u8>, policy: AuthPolicy) {
     let schemes = policy.required_schemes();
-    out.push(schemes.len() as u8);
+    let scheme_count = match policy {
+        AuthPolicy::Online => 2u8,
+        AuthPolicy::Max => 3u8,
+        AuthPolicy::PqOnly => 2u8,
+    };
+    out.push(scheme_count);
     for scheme in schemes {
         out.push(scheme.protocol_code());
     }
@@ -420,7 +425,8 @@ pub fn primary_account_identity_commitment(
     hasher.update(DOMAIN);
     hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
     hasher.update([AuthScheme::MlDsa87.protocol_code()]);
-    hasher.update((ml_dsa87_public_key.len() as u64).to_be_bytes());
+    let public_key_len = u64::try_from(ml_dsa87_public_key.len()).ok()?;
+    hasher.update(public_key_len.to_be_bytes());
     hasher.update(ml_dsa87_public_key);
     Some(hasher.finalize().into())
 }
@@ -440,7 +446,12 @@ where
     hasher.update(DOMAIN);
     hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
     hasher.update([policy.protocol_code()]);
-    hasher.update([required.len() as u8]);
+    let required_count = match policy {
+        AuthPolicy::Online => 2u8,
+        AuthPolicy::Max => 3u8,
+        AuthPolicy::PqOnly => 2u8,
+    };
+    hasher.update([required_count]);
 
     for required_scheme in required {
         let (scheme, public_key) = keys.next()?;
@@ -458,7 +469,8 @@ where
         }
 
         hasher.update([scheme.protocol_code()]);
-        hasher.update((public_key.len() as u64).to_be_bytes());
+        let public_key_len = u64::try_from(public_key.len()).ok()?;
+        hasher.update(public_key_len.to_be_bytes());
         hasher.update(public_key);
     }
 
