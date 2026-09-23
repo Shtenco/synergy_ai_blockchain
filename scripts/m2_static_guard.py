@@ -1568,4 +1568,28 @@ require(
     "transport replay-state commitment must bind each session ID to exact transcript hash",
 )
 
+
+require(
+    "dedup catalog root must change when unique bytes are stored" in storage
+    and "self.newly_stored_unique_bytes > 0" in storage
+    and "self.catalog_root_before == self.catalog_root_after" in storage,
+    "dedup state root must advance whenever new unique bytes are introduced",
+)
+
+require(
+    "dedup.validate_against(archive)?" in storage
+    and "self.erasure_k != archive.erasure_k" in storage
+    and "self.erasure_n != archive.erasure_n" in storage
+    and "erasure placement policy differs from archive metadata" in storage,
+    "erasure placement must remain bound to archive durability policy",
+)
+
+require(
+    "current_epoch: u64" in storage
+    and "archive.expires_at_epoch.checked_sub(current_epoch)" in storage
+    and "storage bid term exceeds archive lifetime" in storage
+    and "storage bid starts after archive expiry" in storage,
+    "storage provider bids must remain bounded by archive lifetime",
+)
+
 print("M2 static guard: PASS")
