@@ -438,4 +438,13 @@ require(
     "shared secret construction must require state-aware transcript validation",
 )
 
+
+require(
+    "pub trait TransportReplayGuard" in network
+    and "pub fn establish_shared_secret" in network
+    and "pub(crate) fn from_transcript" in network
+    and "replay_guard.consume_session" in network,
+    "one-shot transport replay guard boundary missing",
+)
+
 print("M2 static guard: PASS")
