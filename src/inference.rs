@@ -3,6 +3,15 @@
 //! Large-model execution happens off-consensus. These structures define the
 //! bounded commitments that can be verified/finalized by protocol logic.
 
+use sha2::{Digest, Sha256};
+
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+};
+
+const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceStageKind {
     ModelLoad,
@@ -161,6 +170,109 @@ impl InferenceStageReceipt {
     }
 }
 
+
+impl InferenceStageReceipt {
+    pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
+        if self.output_commitment == [0; 32]
+            || self.execution_trace_commitment == [0; 32]
+            || self.worker_signature_commitment == [0; 32]
+            || self.job_id == [0; 32]
+            || self.worker_id == [0; 32]
+            || self.model_shard_commitment == [0; 32]
+            || self.input_commitment == [0; 32]
+            || self.compute_units == 0
+            || self.elapsed_micros == 0
+        {
+            return None;
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(INFERENCE_RECEIPT_DOMAIN);
+        hasher.update(self.job_id);
+        hasher.update(self.stage_index.to_be_bytes());
+        hasher.update(self.worker_id);
+        hasher.update(self.model_shard_commitment);
+        hasher.update(self.input_commitment);
+        hasher.update(self.output_commitment);
+        hasher.update(self.execution_trace_commitment);
+        hasher.update(self.worker_signature_commitment);
+        hasher.update(self.compute_units.to_be_bytes());
+        hasher.update(self.bytes_read.to_be_bytes());
+        hasher.update(self.bytes_written.to_be_bytes());
+        hasher.update(self.elapsed_micros.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceReceiptAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub receipt: InferenceStageReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl InferenceReceiptAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::InferenceReceipt,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.receipt.authorization_commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InferenceReceiptValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_worker_id: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_inference_receipt<V: ContextSignatureVerifier>(
+    verifier: &V,
+    assignment: &InferenceStageAssignment,
+    authorized: &InferenceReceiptAuthorization,
+    validation: &InferenceReceiptValidationContext,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.worker_id != validation.expected_worker_id
+        || authorized.receipt.validate_against(assignment).is_err()
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::InferenceReceipt,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceOutcome {
     pub job_id: [u8; 32],
@@ -194,6 +306,48 @@ impl InferenceOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{
+        AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn pq_only_authorization() -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x61; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x62; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x63; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x64; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
 
     fn job() -> InferenceJob {
         InferenceJob {
@@ -260,6 +414,128 @@ mod tests {
         assert_eq!(r.validate_against(&a), Ok(()));
         r.worker_id = [99; 32];
         assert!(r.validate_against(&a).is_err());
+    }
+
+    #[test]
+    fn inference_receipt_requires_state_aware_pq_authorization() {
+        let assignment = stage(0);
+        let receipt = InferenceStageReceipt {
+            job_id: assignment.job_id,
+            stage_index: assignment.stage_index,
+            worker_id: assignment.worker_id,
+            model_shard_commitment: assignment.model_shard_commitment,
+            input_commitment: assignment.input_commitment,
+            output_commitment: [50; 32],
+            execution_trace_commitment: [51; 32],
+            worker_signature_commitment: [52; 32],
+            compute_units: 10,
+            bytes_read: 100,
+            bytes_written: 20,
+            elapsed_micros: 1,
+        };
+        let authorized = InferenceReceiptAuthorization {
+            chain_id: [0x71; 32],
+            epoch: 7,
+            nonce: 8,
+            expires_at: 1_100,
+            receipt,
+            authorization: pq_only_authorization(),
+        };
+        let envelope = authorized.envelope().expect("receipt envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("receipt context"),
+        };
+        let validation = InferenceReceiptValidationContext {
+            expected_chain_id: [0x71; 32],
+            expected_epoch: 7,
+            expected_nonce: 8,
+            expected_worker_id: assignment.worker_id,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_inference_receipt(
+            &verifier,
+            &assignment,
+            &authorized,
+            &validation,
+        ));
+
+        let mut replay = validation;
+        replay.expected_nonce += 1;
+        assert!(!verify_inference_receipt(
+            &verifier,
+            &assignment,
+            &authorized,
+            &replay,
+        ));
+    }
+
+    #[test]
+    fn inference_receipt_rejects_worker_substitution_and_policy_downgrade() {
+        let assignment = stage(0);
+        let receipt = InferenceStageReceipt {
+            job_id: assignment.job_id,
+            stage_index: assignment.stage_index,
+            worker_id: assignment.worker_id,
+            model_shard_commitment: assignment.model_shard_commitment,
+            input_commitment: assignment.input_commitment,
+            output_commitment: [50; 32],
+            execution_trace_commitment: [51; 32],
+            worker_signature_commitment: [52; 32],
+            compute_units: 10,
+            bytes_read: 100,
+            bytes_written: 20,
+            elapsed_micros: 1,
+        };
+        let mut authorized = InferenceReceiptAuthorization {
+            chain_id: [0x71; 32],
+            epoch: 7,
+            nonce: 8,
+            expires_at: 1_100,
+            receipt,
+            authorization: pq_only_authorization(),
+        };
+        let envelope = authorized.envelope().expect("receipt envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("receipt context"),
+        };
+        let validation = InferenceReceiptValidationContext {
+            expected_chain_id: [0x71; 32],
+            expected_epoch: 7,
+            expected_nonce: 8,
+            expected_worker_id: assignment.worker_id,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+
+        authorized.authorization.policy = AuthPolicy::Online;
+        assert!(!verify_inference_receipt(
+            &verifier,
+            &assignment,
+            &authorized,
+            &validation,
+        ));
+
+        let mut authorized = authorized;
+        authorized.authorization = pq_only_authorization();
+        authorized.receipt.worker_id = [0xFF; 32];
+        assert!(!verify_inference_receipt(
+            &verifier,
+            &assignment,
+            &authorized,
+            &validation,
+        ));
     }
 
     #[test]
