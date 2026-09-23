@@ -958,7 +958,7 @@ pub(crate) fn verify_authorization_with_context<V: ContextSignatureVerifier>(
     })
 }
 
-pub fn verify_envelope_authorization<V: ContextSignatureVerifier>(
+pub(crate) fn verify_envelope_authorization<V: ContextSignatureVerifier>(
     verifier: &V,
     authorization: &HybridAuthorization,
     envelope: &AuthorizationEnvelope,
