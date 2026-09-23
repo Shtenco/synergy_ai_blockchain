@@ -27,6 +27,7 @@ governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
 verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
 consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
 service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
+autopilot = (ROOT / "src/autopilot.rs").read_text(encoding="utf-8")
 autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
 payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
 payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
@@ -876,6 +877,29 @@ require(
     and "u8::try_from(schemes.len()).ok()?" in tx
     and "self.data.len() > MAX_TX_CALLDATA_BYTES" in tx,
     "canonical transaction encoding must remain fallible and protocol-bounded",
+)
+
+
+require(
+    "current_sequence" in payments
+    and "checked_add(1)" in payments
+    and "validation.expected_sequence != next_sequence" in payments,
+    "settlement lane sequence must remain strictly monotonic",
+)
+
+require(
+    "pub fn validate(&self) -> Result<(), &'static str>" in autopilot
+    and "Autopilot policy contains duplicate capability" in autopilot
+    and "Autopilot per-action limit exceeds epoch limit" in autopilot
+    and "now < self.valid_until" in autopilot
+    and "proposal outlives Autopilot policy" in autopilot,
+    "Autopilot delegated policy semantics must remain fail closed",
+)
+
+require(
+    "checked_mul(10_000)?" in service_planes
+    and "u64::try_from(value).ok()" in service_planes,
+    "service-plane capacity ratio must remain checked and non-saturating",
 )
 
 print("M2 static guard: PASS")
