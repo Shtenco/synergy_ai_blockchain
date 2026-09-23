@@ -649,3 +649,10 @@ Additional M2 source-level controls added in the latest pass:
 - the stable local reference signer remains ML-DSA-only. SLH signing custody is external-provider/HSM-only until a reviewed stable zeroizing SLH backend is executable-tested.
 
 These are source/test-definition controls only; executable Cargo evidence remains blocked by zero-step GitHub Actions runner provisioning.
+
+
+## Fixture integrity and ML-KEM canonical-encoding negative coverage
+
+The four pinned M2 ACVP/Wycheproof fixture files are now committed in the local fixture manifest with both their Git blob SHA-1 identifiers and independent SHA-256 digests. The verifier checks both and rejects any extra unmanifested JSON file under `tests/vectors`.
+
+A separate ML-KEM-1024 regression test no longer relies on malformed-length negative vectors: it starts from a valid 1568-byte encapsulation key and forces the first 12-bit coefficient to 4095 (> q=3329) while preserving exact key length. The reference provider must reject that key. This specifically exercises canonical modulus decoding rather than the earlier length prefilter.
