@@ -1,3 +1,9 @@
+//! Consensus-neutral primitives for globally sharded payment settlement.
+//!
+//! The design intentionally avoids forcing every retail payment through one
+//! serial global execution lane. Edge/corridor lanes can execute independently
+//! and commit bounded settlement batches to the canonical SYNERGY chain.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -7,11 +13,6 @@ use crate::pq::{
 
 const PAYMENT_INTENT_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-INTENT/V1\0";
 
-//! Consensus-neutral primitives for globally sharded payment settlement.
-//!
-//! The design intentionally avoids forcing every retail payment through one
-//! serial global execution lane. Edge/corridor lanes can execute independently
-//! and commit bounded settlement batches to the canonical SYNERGY chain.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaymentRail {
