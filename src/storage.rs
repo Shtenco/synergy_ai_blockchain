@@ -71,14 +71,20 @@ impl ArchiveReceipt {
     }
 
     /// Archive/raw ratio in basis points: 10000 = same size, 1000 = 10x smaller.
-    pub fn archive_to_raw_bps(&self) -> u64 {
-        ((self.archive_bytes as u128) * 10_000u128 / (self.raw_bytes as u128)) as u64
+    pub fn archive_to_raw_bps(&self) -> Option<u64> {
+        let raw = u128::from(self.raw_bytes);
+        if raw == 0 {
+            return None;
+        }
+        let numerator = u128::from(self.archive_bytes).checked_mul(10_000)?;
+        let ratio = numerator.checked_div(raw)?;
+        u64::try_from(ratio).ok()
     }
 
-    /// Compression-only storage saving in basis points. Saturates at zero when
-    /// the lossless archive is larger than the source.
-    pub fn saving_bps(&self) -> u64 {
-        10_000u64.saturating_sub(self.archive_to_raw_bps())
+    /// Compression-only storage saving in basis points. Returns `None` for an
+    /// invalid zero-length raw object instead of panicking.
+    pub fn saving_bps(&self) -> Option<u64> {
+        Some(10_000u64.saturating_sub(self.archive_to_raw_bps()?))
     }
 }
 
@@ -427,8 +433,16 @@ mod tests {
     #[test]
     fn ratio_is_measured_not_assumed() {
         let r = archive();
-        assert_eq!(r.archive_to_raw_bps(), 2500);
-        assert_eq!(r.saving_bps(), 7500);
+        assert_eq!(r.archive_to_raw_bps(), Some(2500));
+        assert_eq!(r.saving_bps(), Some(7500));
+    }
+
+    #[test]
+    fn archive_ratio_fails_closed_on_zero_raw_bytes() {
+        let mut r = archive();
+        r.raw_bytes = 0;
+        assert_eq!(r.archive_to_raw_bps(), None);
+        assert_eq!(r.saving_bps(), None);
     }
 
     #[test]
