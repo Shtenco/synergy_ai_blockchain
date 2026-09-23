@@ -1396,4 +1396,13 @@ require(
     "public crate surface must expose bounded transport record sequencing",
 )
 
+
+require(
+    "expected_authorization_keyset_commitment" in tx
+    and "self.authorization.keyset_commitment()" in tx
+    and "primary_account_identity_commitment() != Some(self.sender_account)" in tx
+    and "transaction_rejects_unregistered_secondary_pq_keyset" in tx,
+    "transaction authorization must bind stable account identity and registered current keyset",
+)
+
 print("M2 static guard: PASS")
