@@ -74,16 +74,33 @@ pub enum NexusError {
     GasOverflow,
 }
 
+fn i128_to_i64_saturating(value: i128) -> i64 {
+    if value > i128::from(i64::MAX) {
+        i64::MAX
+    } else if value < i128::from(i64::MIN) {
+        i64::MIN
+    } else {
+        match i64::try_from(value) {
+            Ok(value) => value,
+            Err(_) => {
+                if value.is_negative() {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }
+        }
+    }
+}
+
 fn qmul(a: i64, b: i64) -> i64 {
     let p = i128::from(a) * i128::from(b);
-    let shifted = p >> 16;
-    let clamped = shifted.clamp(i128::from(i64::MIN), i128::from(i64::MAX));
-    i64::try_from(clamped).expect("clamped Q16.16 product must fit i64")
+    i128_to_i64_saturating(p >> 16)
 }
 
 fn avg3(a: i64, b: i64, c: i64) -> i64 {
     let sum = i128::from(a) + i128::from(b) + i128::from(c);
-    i64::try_from(sum / 3).expect("average of three i64 values must fit i64")
+    i128_to_i64_saturating(sum / 3)
 }
 
 fn qadd_saturating(a: i64, b: i64) -> i64 {
