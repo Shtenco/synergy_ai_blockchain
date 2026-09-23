@@ -137,6 +137,11 @@ pub fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
     if binding.authorization.policy != AuthPolicy::PqOnly {
         return Err(MigrationError::PolicyMismatch);
     }
+    if binding.authorization.keyset_commitment()
+        != Some(binding.binding.pq_identity_commitment)
+    {
+        return Err(MigrationError::InvalidPqAuthorization);
+    }
     if !legacy.verify_legacy_ownership(&binding.binding, legacy_proof) {
         return Err(MigrationError::InvalidLegacyProof);
     }
@@ -202,20 +207,9 @@ mod tests {
     }
 
     fn authorization() -> MigrationAuthorization {
-        MigrationAuthorization {
-            chain_id: [0x51; 32],
-            epoch: 8,
-            binding: LegacyIdentityBinding {
-                source_chain: LegacyChain::Ethereum,
-                legacy_identifier: vec![0x11; 20],
-                pq_identity_commitment: [0x22; 32],
-                synergy_account_id: [0x33; 32],
-                nonce: 17,
-                expires_at: 2_000,
-            },
-            authorization: HybridAuthorization {
-                policy: AuthPolicy::PqOnly,
-                evidence: vec![
+        let authorization = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
                     SignatureEvidence {
                         scheme: AuthScheme::MlDsa87,
                         public_key: vec![0x44; ML_DSA_87_PUBLIC_KEY_BYTES],
@@ -226,8 +220,24 @@ mod tests {
                         public_key: vec![0x46; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
                         signature: vec![0x47; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
                     },
-                ],
+            ],
+        };
+        let pq_identity_commitment = authorization
+            .keyset_commitment()
+            .expect("migration PQ identity commitment");
+
+        MigrationAuthorization {
+            chain_id: [0x51; 32],
+            epoch: 8,
+            binding: LegacyIdentityBinding {
+                source_chain: LegacyChain::Ethereum,
+                legacy_identifier: vec![0x11; 20],
+                pq_identity_commitment,
+                synergy_account_id: [0x33; 32],
+                nonce: 17,
+                expires_at: 2_000,
             },
+            authorization,
         }
     }
 
@@ -313,6 +323,32 @@ mod tests {
                 &validation(),
             ),
             Err(MigrationError::PolicyMismatch)
+        );
+    }
+
+    #[test]
+    fn migration_rejects_pq_keyset_substitution() {
+        let mut binding = authorization();
+        let envelope = binding.envelope().expect("migration envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("migration message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("migration context"),
+        };
+
+        binding.authorization.evidence[0].public_key[0] ^= 1;
+        assert_eq!(
+            verify_binding(
+                &binding,
+                b"legacy-ok",
+                &LegacyOk,
+                &verifier,
+                &validation(),
+            ),
+            Err(MigrationError::InvalidPqAuthorization)
         );
     }
 
