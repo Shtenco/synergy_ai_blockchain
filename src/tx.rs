@@ -163,6 +163,9 @@ impl PqEvmTransaction {
         if self.authorization.policy != context.required_policy {
             return Err(TxError::PolicyMismatch);
         }
+        if self.authorization.keyset_commitment() != Some(self.sender_account) {
+            return Err(TxError::AuthorizationFailed);
+        }
         if self.gas_limit == 0 {
             return Err(TxError::ZeroGasLimit);
         }
@@ -217,20 +220,9 @@ mod tests {
     }
 
     fn test_tx() -> PqEvmTransaction {
-        PqEvmTransaction {
-            chain_id: 8453,
-            sender_account: [0x11; 32],
-            nonce: 7,
-            authorization_epoch: 12,
-            authorization_expires_at: 1_000,
-            gas_limit: 100_000,
-            max_fee_per_gas: [0x22; 32],
-            to: Some([0x33; 20]),
-            value: [0x44; 32],
-            data: vec![1, 2, 3],
-            authorization: HybridAuthorization {
-                policy: AuthPolicy::PqOnly,
-                evidence: vec![
+        let authorization = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
                     SignatureEvidence {
                         scheme: AuthScheme::MlDsa87,
                         public_key: vec![1; ML_DSA_87_PUBLIC_KEY_BYTES],
@@ -241,8 +233,24 @@ mod tests {
                         public_key: vec![3; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
                         signature: vec![4; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
                     },
-                ],
-            },
+            ],
+        };
+        let sender_account = authorization
+            .keyset_commitment()
+            .expect("sender keyset commitment");
+
+        PqEvmTransaction {
+            chain_id: 8453,
+            sender_account,
+            nonce: 7,
+            authorization_epoch: 12,
+            authorization_expires_at: 1_000,
+            gas_limit: 100_000,
+            max_fee_per_gas: [0x22; 32],
+            to: Some([0x33; 20]),
+            value: [0x44; 32],
+            data: vec![1, 2, 3],
+            authorization,
         }
     }
 
@@ -391,6 +399,33 @@ mod tests {
                 },
             ),
             Err(TxError::DataTooLarge)
+        );
+    }
+
+    #[test]
+    fn transaction_rejects_authorization_keyset_not_bound_to_sender_account() {
+        let mut tx = test_tx();
+        tx.authorization.evidence[0].public_key[0] ^= 1;
+
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage(),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 999,
+                    max_authorization_future_seconds: 60,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationFailed)
         );
     }
 
