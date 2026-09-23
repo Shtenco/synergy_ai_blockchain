@@ -1,8 +1,12 @@
+use sha2::{Digest, Sha256};
+
 //! Replication-first proof-of-inference primitives.
 //!
 //! V1 deliberately does not pretend that a hash is a proof of correct inference.
 //! Finalization requires independently assigned verifier evidence over the same
 //! committed execution outcome. More expensive TEE/zk proof lanes can be added later.
+
+const VERIFICATION_RECEIPT_SET_DOMAIN: &[u8] = b"SYNERGY/VERIFICATION-RECEIPTS/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerificationVerdict {
@@ -104,6 +108,68 @@ pub struct VerificationAggregate {
     pub inconclusive: u16,
 }
 
+fn canonical_receipt_set(
+    challenge: &VerificationChallenge,
+    receipts: &[VerifierReceipt],
+) -> Result<([u8; 32], u16, u16, u16), &'static str> {
+    challenge.validate()?;
+    let count = u16::try_from(receipts.len()).map_err(|_| "too many verifier receipts")?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(VERIFICATION_RECEIPT_SET_DOMAIN);
+    hasher.update(challenge.challenge_id);
+    hasher.update((receipts.len() as u64).to_be_bytes());
+
+    let mut previous_verifier: Option<[u8; 32]> = None;
+    let mut matches = 0u16;
+    let mut mismatches = 0u16;
+    let mut inconclusive = 0u16;
+
+    for receipt in receipts {
+        receipt.validate_against(challenge)?;
+
+        if let Some(previous) = previous_verifier {
+            if receipt.verifier_id <= previous {
+                return Err("verifier receipts must be strictly ordered and unique");
+            }
+        }
+        previous_verifier = Some(receipt.verifier_id);
+
+        match receipt.verdict {
+            VerificationVerdict::Match => {
+                matches = matches.checked_add(1).ok_or("match count overflow")?;
+            }
+            VerificationVerdict::Mismatch => {
+                mismatches = mismatches.checked_add(1).ok_or("mismatch count overflow")?;
+            }
+            VerificationVerdict::Inconclusive => {
+                inconclusive = inconclusive
+                    .checked_add(1)
+                    .ok_or("inconclusive count overflow")?;
+            }
+        }
+
+        hasher.update(receipt.challenge_id);
+        hasher.update(receipt.verifier_id);
+        hasher.update(receipt.recomputed_output_commitment);
+        hasher.update(receipt.trace_commitment);
+        hasher.update(receipt.signature_commitment);
+        hasher.update([match receipt.verdict {
+            VerificationVerdict::Match => 1,
+            VerificationVerdict::Mismatch => 2,
+            VerificationVerdict::Inconclusive => 3,
+        }]);
+        hasher.update(receipt.completed_at.to_be_bytes());
+    }
+
+    let root: [u8; 32] = hasher.finalize().into();
+    if count == 0 {
+        return Err("verification receipt set must not be empty");
+    }
+
+    Ok((root, matches, mismatches, inconclusive))
+}
+
 impl VerificationAggregate {
     pub fn validate(&self, challenge: &VerificationChallenge) -> Result<(), &'static str> {
         if self.challenge_id != challenge.challenge_id || self.receipt_root == [0; 32] {
@@ -116,6 +182,28 @@ impl VerificationAggregate {
         if self.distinct_verifiers < challenge.required_replications {
             return Err("insufficient independent verifier receipts");
         }
+        Ok(())
+    }
+
+    pub fn validate_receipts(
+        &self,
+        challenge: &VerificationChallenge,
+        receipts: &[VerifierReceipt],
+    ) -> Result<(), &'static str> {
+        self.validate(challenge)?;
+
+        let (root, matches, mismatches, inconclusive) =
+            canonical_receipt_set(challenge, receipts)?;
+
+        if receipts.len() != self.distinct_verifiers as usize
+            || root != self.receipt_root
+            || matches != self.matches
+            || mismatches != self.mismatches
+            || inconclusive != self.inconclusive
+        {
+            return Err("verification aggregate does not match canonical receipt set");
+        }
+
         Ok(())
     }
 
@@ -143,6 +231,22 @@ mod tests {
             required_replications: 2,
             opened_at: 10,
             closes_at: 20,
+        }
+    }
+
+    fn receipt(
+        verifier: u8,
+        verdict: VerificationVerdict,
+        recomputed: [u8; 32],
+    ) -> VerifierReceipt {
+        VerifierReceipt {
+            challenge_id: [1; 32],
+            verifier_id: [verifier; 32],
+            recomputed_output_commitment: recomputed,
+            trace_commitment: [6 + verifier; 32],
+            signature_commitment: [20 + verifier; 32],
+            verdict,
+            completed_at: 15,
         }
     }
 
@@ -189,6 +293,48 @@ mod tests {
             completed_at: 15,
         };
         assert_eq!(r.validate_against(&c), Ok(()));
+    }
+
+    #[test]
+    fn aggregate_must_match_canonical_unique_receipt_set() {
+        let challenge = challenge();
+        let receipts = vec![
+            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(6, VerificationVerdict::Match, challenge.challenged_output_commitment),
+        ];
+        let (root, matches, mismatches, inconclusive) =
+            canonical_receipt_set(&challenge, &receipts).expect("receipt set");
+
+        let aggregate = VerificationAggregate {
+            challenge_id: challenge.challenge_id,
+            receipt_root: root,
+            distinct_verifiers: 2,
+            matches,
+            mismatches,
+            inconclusive,
+        };
+        assert_eq!(aggregate.validate_receipts(&challenge, &receipts), Ok(()));
+
+        let mut forged = aggregate.clone();
+        forged.matches = 1;
+        forged.inconclusive = 1;
+        assert!(forged.validate_receipts(&challenge, &receipts).is_err());
+    }
+
+    #[test]
+    fn duplicate_or_reordered_verifiers_are_rejected() {
+        let challenge = challenge();
+        let duplicate = vec![
+            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+        ];
+        assert!(canonical_receipt_set(&challenge, &duplicate).is_err());
+
+        let reordered = vec![
+            receipt(6, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+        ];
+        assert!(canonical_receipt_set(&challenge, &reordered).is_err());
     }
 
     #[test]
