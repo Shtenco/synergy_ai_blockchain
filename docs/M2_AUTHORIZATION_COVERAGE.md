@@ -13,6 +13,7 @@ domain currently present in `AuthorizationDomain`.
 | `ModelUpgrade` | model lineage/state upgrade | `Max` | expected authority keyset commitment | chain, epoch, nonce, expiry, activation epoch, lineage parent/index closure |
 | `InferenceReceipt` | off-consensus AI worker receipt accepted by protocol | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, expiry, assignment/worker/shard/input binding |
 | `Governance` | privileged governance action | `Max` | expected governance authority keyset commitment | chain, epoch, nonce, expiry, proposal ID, governance state root, activation epoch |
+| `VerificationReceipt` | independent AI verifier receipt | `PqOnly` | expected verifier ID + expected verifier keyset commitment | challenge ID, chain, epoch, nonce, expiry, verifier receipt payload |
 
 ## Keyset identity primitive
 
