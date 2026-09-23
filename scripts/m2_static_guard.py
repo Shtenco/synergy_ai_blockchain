@@ -28,6 +28,8 @@ verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
 consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
 service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
 autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
+payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
+payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -746,6 +748,36 @@ require(
 require(
     "Self::AutopilotExecution => 10" in pq,
     "Autopilot authorization domain code missing or changed",
+)
+
+
+require(
+    "AuthorizationDomain::PaymentIntent" in payments
+    and "authorized.authorization.keyset_commitment() != Some(authorized.intent.payer)" in payments
+    and "required_policy" in payments
+    and "authorization_commitment" in payments,
+    "payment intents must remain payer-keyset-bound and state-aware",
+)
+
+require(
+    "AuthorizationDomain::SettlementBatch" in payments
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in payments
+    and "expected_lane_authority_keyset_commitment" in payments
+    and "expected_sequence" in payments,
+    "settlement batches must remain PQ-authorized by registered lane authority",
+)
+
+require(
+    "validate_against_intent" in payment_funding
+    and "funding reservation payment intent root mismatch" in payment_funding
+    and "funding reservation amount/intention mismatch" in payment_funding,
+    "funding reservations must remain bound to canonical payment intent",
+)
+
+require(
+    "Self::PaymentIntent => 11" in pq
+    and "Self::SettlementBatch => 12" in pq,
+    "payment authorization domain codes missing or changed",
 )
 
 print("M2 static guard: PASS")
