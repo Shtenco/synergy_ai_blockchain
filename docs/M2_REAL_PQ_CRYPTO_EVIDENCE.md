@@ -594,3 +594,15 @@ logs_url = null
 
 No repository step executed. M2 therefore remains YELLOW and no compilation or
 test PASS is claimed.
+
+
+## Consensus and service-plane privileged-state closure
+
+The authorization registry now also covers two consensus-critical state transitions that previously had structural validation but no cryptographic authority gate:
+
+- `AuthorizationDomain::ConsensusActivation` (protocol code 8): `ConsensusActivationAuthorization` requires `AuthPolicy::Max`, the expected authority keyset, expected activation block, and state-aware chain/epoch/nonce/expiry validation. Its payload commitment binds the model manifest hash, implementation hash and every gas-schedule field.
+- `AuthorizationDomain::ServicePlaneCheckpoint` (protocol code 9): `ServicePlaneCheckpointAuthorization` requires `AuthPolicy::Max`, the expected authority keyset, expected service-plane epoch, and state-aware chain/authorization-epoch/nonce/expiry validation. Its payload commitment binds every canonical payment/storage/cognitive/autopilot/data-availability/finality root.
+
+Old authorization-domain codes 1–7 were left unchanged. The protocol-code uniqueness test and static guard include the new domains.
+
+This expands the M2 source-level privileged-state matrix from AI/transaction/governance paths to protocol activation and canonical service-plane state. It remains pending executable Rust confirmation.
