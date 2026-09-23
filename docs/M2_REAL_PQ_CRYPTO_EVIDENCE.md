@@ -634,3 +634,18 @@ Additional deterministic arithmetic/source fixes:
 Autopilot delegated-policy validation now rejects invalid windows, duplicate capabilities, zero commitments, per-action limits above epoch limits, and proposals that outlive their policy.
 
 All items remain source/test-definition evidence until a real Rust runner executes the frozen Cargo gates.
+
+
+## Replay-state, minimal feature surface and profile registry hardening
+
+Additional M2 source-level controls added in the latest pass:
+
+- `AuthorizationReplayState` now provides a canonical stateful `verify_and_consume` path. It validates chain/domain/policy/epoch/nonce/expiry through the existing envelope verifier and advances the nonce only after successful authorization. Nonce overflow fails closed; epoch rotation is forward-only.
+- `slh-dsa = =0.1.0` now disables default features and explicitly enables only `alloc`.
+- `rand = =0.8.5` now disables default features and explicitly enables only `getrandom`; `std` / `std_rng` are not part of the allowed reference-provider feature surface.
+- the locked-feature verifier requires those exact resolved feature sets and rejects unexpected crypto features.
+- `AutopilotBudgetReservation` now contains an explicit `owner_account`; the MAX-authorized execution path requires reservation owner, expected owner and authorization keyset commitment to be identical, and the owner is included in the signed execution commitment.
+- `AuthScheme::Ed25519` remains protocol code 2 for append-only registry stability but is explicitly inactive in crypto profile v1. No active policy may silently start using it under profile v1.
+- the stable local reference signer remains ML-DSA-only. SLH signing custody is external-provider/HSM-only until a reviewed stable zeroizing SLH backend is executable-tested.
+
+These are source/test-definition controls only; executable Cargo evidence remains blocked by zero-step GitHub Actions runner provisioning.
