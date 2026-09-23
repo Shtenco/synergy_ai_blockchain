@@ -209,10 +209,7 @@ pub fn verify_validator_vote_and_consume<V: ContextSignatureVerifier>(
     if !verify_validator_vote(verifier, policy, identity, vote, validation) {
         return false;
     }
-    let envelope = match Some(vote.envelope()) {
-        Some(envelope) => envelope,
-        None => return false,
-    };
+    let envelope = vote.envelope();
     replay.consume_verified(&vote.authorization, &envelope)
 }
 
