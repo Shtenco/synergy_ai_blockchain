@@ -60,7 +60,10 @@ pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
     GovernanceValidationContext,
 };
-pub use kv_cache::{KvCacheLease, KvReplicaReceipt};
+pub use kv_cache::{
+    verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
+    KvReplicaReceiptAuthorization, KvReplicaReceiptValidationContext, MAX_KV_REPLICAS,
+};
 pub use migration::{LegacyChain, LegacyIdentityBinding};
 pub use model_shard::{ModelLineageTransition, ModelManifestCommitment, ModelShardOutput};
 pub use network::{
