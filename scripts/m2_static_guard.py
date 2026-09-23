@@ -420,4 +420,22 @@ require(
     "transport role/KEX agreement binding missing",
 )
 
+
+require(
+    "pub struct TransportValidationContext" in network
+    and "pub network_id: [u8; 32]" in network
+    and "pub epoch: u64" in network
+    and "pub session_id: [u8; 32]" in network
+    and "transport network mismatch" in network
+    and "transport epoch mismatch" in network
+    and "transport session mismatch" in network
+    and "commitment_in_context" in network,
+    "transport network/epoch/session anti-replay binding missing",
+)
+
+require(
+    "transcript.commitment_in_context(validation)?" in network,
+    "shared secret construction must require state-aware transcript validation",
+)
+
 print("M2 static guard: PASS")
