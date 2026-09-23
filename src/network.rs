@@ -54,6 +54,9 @@ impl TransportPeerIdentity {
         if self.ml_kem1024_public_key.len() != ML_KEM_1024_PUBLIC_KEY_BYTES {
             return Err("ML-KEM-1024 public key length mismatch");
         }
+        if self.ml_kem1024_public_key.iter().all(|byte| *byte == 0) {
+            return Err("ML-KEM-1024 public key must not be all-zero");
+        }
         match policy {
             TransportPolicy::PqOnly => {
                 if self.legacy_kex_scheme.is_some() || !self.legacy_kex_public_key.is_empty() {
@@ -66,6 +69,14 @@ impl TransportPeerIdentity {
                     .ok_or("hybrid transport requires classical KEX scheme")?;
                 if self.legacy_kex_public_key.len() != scheme.expected_public_key_bytes() {
                     return Err("classical KEX public key length mismatch");
+                }
+                if self.legacy_kex_public_key.iter().all(|byte| *byte == 0) {
+                    return Err("classical KEX public key must not be all-zero");
+                }
+                if scheme == ClassicalKexScheme::Secp256k1
+                    && !matches!(self.legacy_kex_public_key.first(), Some(0x02 | 0x03))
+                {
+                    return Err("secp256k1 KEX public key must use compressed encoding");
                 }
             }
         }
@@ -396,7 +407,11 @@ mod tests {
             node_id: [1u8; 32],
             ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
             legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
-            legacy_kex_public_key: vec![3u8; SECP256K1_KEX_PUBLIC_KEY_BYTES],
+            legacy_kex_public_key: {
+                let mut key = vec![3u8; SECP256K1_KEX_PUBLIC_KEY_BYTES];
+                key[0] = 0x02;
+                key
+            },
         };
 
         assert_eq!(peer.validate_for_policy(TransportPolicy::Hybrid), Ok(()));
@@ -419,7 +434,11 @@ mod tests {
             node_id: [node; 32],
             ml_kem1024_public_key: vec![node; ML_KEM_1024_PUBLIC_KEY_BYTES],
             legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
-            legacy_kex_public_key: vec![node; SECP256K1_KEX_PUBLIC_KEY_BYTES],
+            legacy_kex_public_key: {
+                let mut key = vec![node; SECP256K1_KEX_PUBLIC_KEY_BYTES];
+                key[0] = 0x02;
+                key
+            },
         }
     }
 
@@ -451,6 +470,29 @@ mod tests {
             &valid_transcript(TransportPolicy::Hybrid),
         )
         .expect("valid hybrid shared secret")
+    }
+
+    #[test]
+    fn peer_identity_rejects_zero_and_noncanonical_kex_keys() {
+        let mut peer = test_peer(7);
+        peer.ml_kem1024_public_key.fill(0);
+        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+
+        let mut peer = test_peer(7);
+        peer.legacy_kex_public_key.fill(0);
+        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+
+        let mut peer = test_peer(7);
+        peer.legacy_kex_public_key[0] = 0x04;
+        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+
+        let peer = TransportPeerIdentity {
+            node_id: [8u8; 32],
+            ml_kem1024_public_key: vec![8u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
+            legacy_kex_scheme: Some(ClassicalKexScheme::X25519),
+            legacy_kex_public_key: vec![9u8; X25519_PUBLIC_KEY_BYTES],
+        };
+        assert_eq!(peer.validate_for_policy(TransportPolicy::Hybrid), Ok(()));
     }
 
     #[test]
