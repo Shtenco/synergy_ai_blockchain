@@ -6,28 +6,32 @@ pub enum AuthScheme {
     SlhDsaShake256s,
 }
 
+pub const SECP256K1_PUBLIC_KEY_BYTES: usize = 33;
+pub const SECP256K1_SIGNATURE_BYTES: usize = 65;
+pub const ED25519_PUBLIC_KEY_BYTES: usize = 32;
+pub const ED25519_SIGNATURE_BYTES: usize = 64;
 pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
 pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
-pub const MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 65;
-pub const MAX_CLASSICAL_SIGNATURE_BYTES: usize = 72;
 pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000;
 
 impl AuthScheme {
     pub fn expected_public_key_bytes(self) -> Option<usize> {
         match self {
+            Self::Secp256k1 => Some(SECP256K1_PUBLIC_KEY_BYTES),
+            Self::Ed25519 => Some(ED25519_PUBLIC_KEY_BYTES),
             Self::MlDsa87 => Some(ML_DSA_87_PUBLIC_KEY_BYTES),
             Self::SlhDsaShake256s => Some(SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES),
-            Self::Secp256k1 | Self::Ed25519 => None,
         }
     }
 
     pub fn expected_signature_bytes(self) -> Option<usize> {
         match self {
+            Self::Secp256k1 => Some(SECP256K1_SIGNATURE_BYTES),
+            Self::Ed25519 => Some(ED25519_SIGNATURE_BYTES),
             Self::MlDsa87 => Some(ML_DSA_87_SIGNATURE_BYTES),
             Self::SlhDsaShake256s => Some(SLH_DSA_SHAKE_256S_SIGNATURE_BYTES),
-            Self::Secp256k1 | Self::Ed25519 => None,
         }
     }
 }
@@ -128,7 +132,7 @@ impl AuthorizationEnvelope {
         if self.nonce != context.expected_nonce {
             return Err("authorization nonce mismatch");
         }
-        if context.now > self.expires_at {
+        if context.now >= self.expires_at {
             return Err("authorization expired");
         }
         Ok(())
@@ -226,23 +230,14 @@ impl HybridAuthorization {
                 return Err("authorization evidence must contain key and signature bytes");
             }
 
-            if matches!(evidence.scheme, AuthScheme::Secp256k1 | AuthScheme::Ed25519) {
-                if evidence.public_key.len() > MAX_CLASSICAL_PUBLIC_KEY_BYTES {
-                    return Err("authorization classical public key exceeds protocol maximum");
-                }
-                if evidence.signature.len() > MAX_CLASSICAL_SIGNATURE_BYTES {
-                    return Err("authorization classical signature exceeds protocol maximum");
-                }
-            }
-
             if let Some(expected) = evidence.scheme.expected_public_key_bytes() {
                 if evidence.public_key.len() != expected {
-                    return Err("authorization PQ public key length mismatch");
+                    return Err("authorization public key length mismatch");
                 }
             }
             if let Some(expected) = evidence.scheme.expected_signature_bytes() {
                 if evidence.signature.len() != expected {
-                    return Err("authorization PQ signature length mismatch");
+                    return Err("authorization signature length mismatch");
                 }
             }
             if self.evidence[..index]
@@ -583,14 +578,14 @@ mod tests {
     }
 
     #[test]
-    fn oversized_classical_evidence_is_rejected_before_backend_verification() {
+    fn classical_evidence_requires_canonical_exact_lengths() {
         let auth = HybridAuthorization {
             policy: AuthPolicy::Online,
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: vec![1; MAX_CLASSICAL_PUBLIC_KEY_BYTES + 1],
-                    signature: vec![2; 64],
+                    public_key: vec![1; SECP256K1_PUBLIC_KEY_BYTES + 1],
+                    signature: vec![2; SECP256K1_SIGNATURE_BYTES],
                 },
                 evidence(AuthScheme::MlDsa87),
             ],
@@ -602,8 +597,8 @@ mod tests {
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: vec![1; 33],
-                    signature: vec![2; MAX_CLASSICAL_SIGNATURE_BYTES + 1],
+                    public_key: vec![1; SECP256K1_PUBLIC_KEY_BYTES],
+                    signature: vec![2; SECP256K1_SIGNATURE_BYTES - 1],
                 },
                 evidence(AuthScheme::MlDsa87),
             ],
@@ -862,7 +857,7 @@ mod tests {
             expected_policy: auth.policy,
             expected_epoch: envelope.epoch,
             expected_nonce: envelope.nonce,
-            now: envelope.expires_at,
+            now: envelope.expires_at - 1,
         };
         assert!(verify_envelope_authorization(
             &verifier,
@@ -898,7 +893,7 @@ mod tests {
             expected_policy: AuthPolicy::PqOnly,
             expected_epoch: 12,
             expected_nonce: 44,
-            now: 1_000,
+            now: 999,
         };
         assert!(envelope.validate_in_context(&ok).is_ok());
 
@@ -919,7 +914,7 @@ mod tests {
         assert!(envelope.validate_in_context(&bad).is_err());
 
         let mut bad = ok;
-        bad.now = 1_001;
+        bad.now = 1_000;
         assert!(envelope.validate_in_context(&bad).is_err());
     }
 
