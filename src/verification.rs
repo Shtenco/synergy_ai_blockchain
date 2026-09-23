@@ -1,3 +1,9 @@
+//! Replication-first proof-of-inference primitives.
+//!
+//! V1 deliberately does not pretend that a hash is a proof of correct inference.
+//! Finalization requires independently assigned verifier evidence over the same
+//! committed execution outcome. More expensive TEE/zk proof lanes can be added later.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -5,11 +11,6 @@ use crate::pq::{
     AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
-//! Replication-first proof-of-inference primitives.
-//!
-//! V1 deliberately does not pretend that a hash is a proof of correct inference.
-//! Finalization requires independently assigned verifier evidence over the same
-//! committed execution outcome. More expensive TEE/zk proof lanes can be added later.
 
 const VERIFICATION_RECEIPT_SET_DOMAIN: &[u8] = b"SYNERGY/VERIFICATION-RECEIPTS/V1\0";
 
