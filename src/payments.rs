@@ -220,6 +220,103 @@ impl SettlementBatch {
     }
 }
 
+
+impl SettlementBatch {
+    pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        if self.finality_proof_commitment == [0u8; 32] {
+            return None;
+        }
+
+        const DOMAIN: &[u8] = b"SYNERGY/SETTLEMENT-BATCH/V1\0";
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(self.lane_id);
+        hasher.update(self.sequence.to_be_bytes());
+        hasher.update(self.intents_root);
+        hasher.update(self.accounting_root);
+        hasher.update(self.availability_root);
+        hasher.update(self.item_count.to_be_bytes());
+        hasher.update(self.gross_amount.to_be_bytes());
+        hasher.update(self.total_fees.to_be_bytes());
+        hasher.update(self.finality_proof_commitment);
+        Some(hasher.finalize().into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettlementBatchAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub batch: SettlementBatch,
+    pub authorization: HybridAuthorization,
+}
+
+impl SettlementBatchAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::SettlementBatch,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.batch.authorization_commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettlementBatchValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_lane_id: [u8; 16],
+    pub expected_sequence: u64,
+    pub expected_lane_authority_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_settlement_batch<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &SettlementBatchAuthorization,
+    validation: &SettlementBatchValidationContext,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.batch.lane_id != validation.expected_lane_id
+        || authorized.batch.sequence != validation.expected_sequence
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_lane_authority_keyset_commitment)
+        || authorized.batch.validate().is_err()
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::SettlementBatch,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
 /// Stable partition key used by edge routers. It keeps hot corridors independent
 /// while preserving deterministic settlement ordering within each lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -233,6 +330,21 @@ pub struct PaymentLaneKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settlement_batch() -> SettlementBatch {
+        SettlementBatch {
+            lane_id: [1; 16],
+            sequence: 7,
+            intents_root: [2; 32],
+            accounting_root: [3; 32],
+            availability_root: [4; 32],
+            item_count: 5,
+            gross_amount: 100,
+            total_fees: 2,
+            finality_proof_commitment: [5; 32],
+        }
+    }
+
     use crate::pq::{
         AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
         ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
@@ -369,6 +481,69 @@ mod tests {
             expires_at: 10,
         };
         assert!(p.validate(10).is_err());
+    }
+
+    #[test]
+    fn settlement_batch_requires_registered_lane_authority() {
+        let authorization = pq_only_authorization();
+        let lane_authority = authorization
+            .keyset_commitment()
+            .expect("lane authority keyset");
+        let authorized = SettlementBatchAuthorization {
+            chain_id: [0xD1; 32],
+            epoch: 9,
+            nonce: 10,
+            expires_at: 200,
+            batch: settlement_batch(),
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("batch envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let validation = SettlementBatchValidationContext {
+            expected_chain_id: [0xD1; 32],
+            expected_epoch: 9,
+            expected_nonce: 10,
+            expected_lane_id: [1; 16],
+            expected_sequence: 7,
+            expected_lane_authority_keyset_commitment: lane_authority,
+            now: 100,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_settlement_batch(
+            &verifier,
+            &authorized,
+            &validation,
+        ));
+
+        let mut wrong = validation;
+        wrong.expected_sequence = 8;
+        assert!(!verify_settlement_batch(
+            &verifier,
+            &authorized,
+            &wrong,
+        ));
+    }
+
+    #[test]
+    fn settlement_batch_commitment_binds_finality_and_accounting() {
+        let base = settlement_batch();
+        let commitment = base.authorization_commitment().expect("batch commitment");
+
+        let mut changed = base.clone();
+        changed.accounting_root[0] ^= 1;
+        assert_ne!(commitment, changed.authorization_commitment().expect("accounting"));
+
+        let mut changed = base;
+        changed.finality_proof_commitment[0] ^= 1;
+        assert_ne!(commitment, changed.authorization_commitment().expect("finality"));
     }
 
     #[test]
