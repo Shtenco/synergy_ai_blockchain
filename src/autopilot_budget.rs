@@ -308,9 +308,6 @@ mod tests {
         AutopilotBudgetReservation {
             owner_account,
             reservation_id: [1; 32],
-            owner_account: max_authorization()
-                .keyset_commitment()
-                .expect("owner keyset commitment"),
             reservation_root: [2; 32],
             policy_root: [3; 32],
             grant_root: [4; 32],
