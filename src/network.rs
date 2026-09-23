@@ -1,4 +1,5 @@
 use core::fmt;
+use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
@@ -170,6 +171,8 @@ impl Drop for SecretBytes {
 }
 
 pub const TRANSPORT_TRANSCRIPT_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT\0";
+pub const TRANSPORT_KDF_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT/KDF\0";
+pub const TRANSPORT_SESSION_KEY_BYTES: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportTranscript {
@@ -408,6 +411,73 @@ pub fn establish_shared_secret<G: TransportReplayGuard>(
     }
 
     Some(secret)
+}
+
+pub struct TransportSessionKey([u8; TRANSPORT_SESSION_KEY_BYTES]);
+
+impl TransportSessionKey {
+    pub fn as_bytes(&self) -> &[u8; TRANSPORT_SESSION_KEY_BYTES] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for TransportSessionKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TransportSessionKey(<redacted>)")
+    }
+}
+
+impl Drop for TransportSessionKey {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+pub fn derive_transport_session_key(
+    secret: &HybridSharedSecret,
+) -> Option<TransportSessionKey> {
+    if !validate_shared_secret(secret.policy(), secret) {
+        return None;
+    }
+
+    let mut ikm = Vec::with_capacity(
+        2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES,
+    );
+    ikm.push(1); // PQ component present.
+    ikm.extend_from_slice(secret.pq_shared().as_bytes());
+
+    match secret.classical_shared() {
+        Some(classical) => {
+            ikm.push(1);
+            ikm.extend_from_slice(classical.as_bytes());
+        }
+        None => ikm.push(0),
+    }
+
+    let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
+    ikm.zeroize();
+
+    let mut info = Vec::with_capacity(
+        TRANSPORT_KDF_DOMAIN.len() + 2 + 2 + 32,
+    );
+    info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
+    info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+    info.push(match secret.policy() {
+        TransportPolicy::Hybrid => 1,
+        TransportPolicy::PqOnly => 2,
+    });
+    info.push(ML_KEM_1024_PROTOCOL_CODE);
+    info.extend_from_slice(secret.transcript_hash());
+
+    let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
+    if hkdf.expand(&info, &mut output).is_err() {
+        info.zeroize();
+        output.zeroize();
+        return None;
+    }
+    info.zeroize();
+
+    Some(TransportSessionKey(output))
 }
 
 impl fmt::Debug for HybridSharedSecret {
@@ -869,6 +939,35 @@ mod tests {
         let mut invalid = base;
         invalid.classical_transcript_hash = Some([0u8; 32]);
         assert!(invalid.commitment().is_none());
+    }
+
+    #[test]
+    fn transport_kdf_is_transcript_and_policy_bound() {
+        let hybrid = valid_secret();
+        let hybrid_key = derive_transport_session_key(&hybrid).expect("hybrid session key");
+        assert_eq!(hybrid_key.as_bytes().len(), TRANSPORT_SESSION_KEY_BYTES);
+
+        let pq_transcript = valid_transcript(TransportPolicy::PqOnly);
+        let pq_validation = validation_for(&pq_transcript);
+        let mut replay_guard = OneShotReplayGuard::default();
+        let pq_secret = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("PQ-only ML-KEM shared secret"),
+            None,
+            &pq_transcript,
+            &pq_validation,
+        )
+        .expect("PQ-only shared secret");
+        let pq_key = derive_transport_session_key(&pq_secret).expect("PQ-only session key");
+
+        assert_ne!(hybrid_key.as_bytes(), pq_key.as_bytes());
+    }
+
+    #[test]
+    fn transport_session_key_debug_is_redacted() {
+        let key = derive_transport_session_key(&valid_secret()).expect("session key");
+        assert_eq!(format!("{key:?}"), "TransportSessionKey(<redacted>)");
     }
 
     #[test]
