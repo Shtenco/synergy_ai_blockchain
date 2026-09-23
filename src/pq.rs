@@ -151,6 +151,7 @@ pub enum AuthorizationDomain {
     SettlementBatch,
     StorageProof,
     CognitiveEvidence,
+    KvReplicaReceipt,
 }
 
 impl AuthorizationDomain {
@@ -175,6 +176,7 @@ impl AuthorizationDomain {
             Self::SettlementBatch => 12,
             Self::StorageProof => 13,
             Self::CognitiveEvidence => 14,
+            Self::KvReplicaReceipt => 15,
         }
     }
 }
@@ -1221,6 +1223,7 @@ mod tests {
             AuthorizationDomain::SettlementBatch.protocol_code(),
             AuthorizationDomain::StorageProof.protocol_code(),
             AuthorizationDomain::CognitiveEvidence.protocol_code(),
+            AuthorizationDomain::KvReplicaReceipt.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
