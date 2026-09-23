@@ -55,8 +55,9 @@ pub use network::{
     validate_shared_secret, ClassicalKexScheme, HybridSharedSecret, MlKem1024Provider,
     MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerIdentity, TransportPolicy,
     TransportTranscript, MAX_CLASSICAL_SHARED_SECRET_BYTES, MAX_REKEY_MESSAGES,
-    MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES,
-    ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES, TRANSPORT_TRANSCRIPT_DOMAIN,
+    MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
+    ML_KEM_1024_PUBLIC_KEY_BYTES, ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES,
+    TRANSPORT_TRANSCRIPT_DOMAIN,
     X25519_PUBLIC_KEY_BYTES,
 };
 pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
@@ -69,8 +70,9 @@ pub use pq::{
     sign_envelope_evidence, verify_envelope_authorization, AuthPolicy, AuthScheme,
     AuthorizationDomain, AuthorizationEnvelope, AuthorizationValidationContext,
     ContextSignatureSigner, ContextSignatureVerifier, HybridAuthorization, PqSigningKeyHandle,
-    SchemeRoutedVerifier, SignatureEvidence, ED25519_PUBLIC_KEY_BYTES, ED25519_SIGNATURE_BYTES,
-    MAX_AUTHORIZATION_EVIDENCE_BYTES, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+    SchemeRoutedVerifier, SignatureEvidence, CRYPTO_PROFILE_VERSION, ED25519_PUBLIC_KEY_BYTES,
+    ED25519_SIGNATURE_BYTES, MAX_AUTHORIZATION_EVIDENCE_BYTES, ML_DSA_87_PUBLIC_KEY_BYTES,
+    ML_DSA_87_SIGNATURE_BYTES,
     SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
     SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
 };
@@ -84,7 +86,7 @@ pub use storage::{
     ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
     ProofOfStorageReceipt, StorageBid, StorageClass,
 };
-pub use tx::{PqEvmTransaction, TxError, TxValidationContext};
+pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
 pub use verification::{
     VerificationAggregate, VerificationChallenge, VerificationVerdict, VerifierReceipt,
