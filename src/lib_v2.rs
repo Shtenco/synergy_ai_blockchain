@@ -44,7 +44,7 @@ pub use cognitive_market::{
     VerifiedMarginalContribution,
 };
 pub use cognitive_registry::{
-    independent_prefix_count, structural_independence, CognitiveNodeProvenance,
+    independent_registered_count, structural_independence, CognitiveNodeProvenance,
     IndependenceVerdict,
 };
 pub use consensus::{
