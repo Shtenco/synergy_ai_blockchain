@@ -219,7 +219,8 @@ require(
     and "SECP256K1_SIGNATURE_BYTES: usize = 65" in pq
     and "ED25519_PUBLIC_KEY_BYTES: usize = 32" in pq
     and "ED25519_SIGNATURE_BYTES: usize = 64" in pq
-    and "MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000" in pq,
+    and "MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =" in pq
+    and "SLH_DSA_SHAKE_256S_SIGNATURE_BYTES;" in pq,
     "canonical classical authorization encodings missing or changed",
 )
 
@@ -391,6 +392,11 @@ require(
     and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"}' in lock_policy
     and '("slh-dsa", "0.1.0"): {"alloc", "default"}' in lock_policy,
     "critical crypto feature allowlist missing",
+)
+
+require(
+    "assert_eq!(MAX_AUTHORIZATION_EVIDENCE_BYTES, 37_173);" in pq,
+    "authorization byte budget must equal the exact MAX-policy suite size",
 )
 
 print("M2 static guard: PASS")
