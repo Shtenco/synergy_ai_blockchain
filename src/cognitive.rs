@@ -370,7 +370,7 @@ pub fn verify_cognitive_evidence_and_consume<V: ContextSignatureVerifier>(
     replay.consume_verified_for_subject(
         &authorized.authorization,
         &envelope,
-        node.pq_identity_commitment,
+        validation.expected_node_id,
     )
 }
 
