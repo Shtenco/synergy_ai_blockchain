@@ -245,6 +245,20 @@ impl AuthorizationReplayState {
         self.next_nonce
     }
 
+
+    pub fn commitment(&self) -> [u8; 32] {
+        const DOMAIN: &[u8] = b"SYNERGY/PQ-REPLAY-STATE/V1\0";
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update(self.chain_id);
+        hasher.update([self.domain.protocol_code()]);
+        hasher.update([self.policy.protocol_code()]);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(self.next_nonce.to_be_bytes());
+        hasher.finalize().into()
+    }
+
     pub fn rotate_epoch(&mut self, new_epoch: u64, next_nonce: u64) -> bool {
         if new_epoch <= self.epoch {
             return false;
@@ -1613,6 +1627,43 @@ mod tests {
         assert!(replay.rotate_epoch(13, 0));
         assert_eq!(replay.epoch(), 13);
         assert_eq!(replay.next_nonce(), 0);
+    }
+
+    #[test]
+    fn replay_state_commitment_binds_epoch_nonce_domain_and_policy() {
+        let base = AuthorizationReplayState::new(
+            [0xC1; 32],
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            7,
+            9,
+        )
+        .expect("replay state");
+        let root = base.commitment();
+
+        let other_domain = AuthorizationReplayState::new(
+            [0xC1; 32],
+            AuthorizationDomain::ModelUpgrade,
+            AuthPolicy::Max,
+            7,
+            9,
+        )
+        .expect("replay state");
+        assert_ne!(root, other_domain.commitment());
+
+        let other_policy = AuthorizationReplayState::new(
+            [0xC1; 32],
+            AuthorizationDomain::Governance,
+            AuthPolicy::PqOnly,
+            7,
+            9,
+        )
+        .expect("replay state");
+        assert_ne!(root, other_policy.commitment());
+
+        let mut advanced = base.clone();
+        assert!(advanced.rotate_epoch(8, 0));
+        assert_ne!(root, advanced.commitment());
     }
 
     #[test]
