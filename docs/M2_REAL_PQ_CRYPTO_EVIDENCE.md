@@ -709,3 +709,63 @@ The funded commitment rejects a mismatched batch root and requires
 `ServiceFinalityItem::payment_settlement` now requires both the authorized settlement batch and the funded-settlement commitment and uses only the funded root. A settlement batch without its matching funding-consumption commitment can no longer be inserted as canonical payment finality through this constructor.
 
 This remains source/test-definition evidence until the frozen Rust/Cargo gate executes.
+
+
+## Cross-plane identity, finality and EVM parity hardening
+
+The latest M2 source-level pass extends the protocol boundary beyond signature verification into replay-stable entity identity and canonical terminal/finality state.
+
+### Stable replay subjects across key rotation
+
+Replay nonce namespaces are now keyed by stable protocol entities rather than current keysets where a stable ID exists:
+
+- settlement batches -> domain-separated lane ID + sequence namespace;
+- storage proofs -> provider ID;
+- cognitive evidence -> CognitiveNode ID;
+- inference receipts -> worker ID;
+- verifier receipts -> verifier ID;
+- KV replica receipts -> worker ID.
+
+Current keyset commitments remain checked separately against registry/validation context. Key rotation therefore does not silently reset the entity nonce stream.
+
+### Canonical funding identity and funding-bound finality
+
+`PaymentFundingReservation.reservation_root` is now a canonical domain-separated commitment over immutable reservation identity: reservation ID, payment intent root, payer account, source asset, amount, account sequence, funding shard and epoch.
+
+Payment service finality uses `FundedSettlementCommitment::canonical_root`, binding the exact authorized settlement batch to its funding-consumption root and exact receipt/item counts.
+
+### Storage proof/archive binding
+
+`ArchiveReceipt` now has a canonical commitment. `ProofOfStorageReceipt` includes that exact archive commitment, and storage proof verification requires:
+
+- exact object/archive commitment match;
+- exact registered provider identity/keyset;
+- proof epoch strictly before archive expiry.
+
+Storage service finality repeats the archive binding and expiry check before admitting the proof root.
+
+### Applied terminal state and subject-conflict finality
+
+Autopilot service finality now requires the referenced execution lease to already be terminal and to match the signed terminal status.
+
+Every `ServiceFinalityItem` now carries a canonical domain-separated `subject_id`. A finality batch rejects more than one root for the same `(kind, subject_id)` in the same chain/epoch, preventing contradictory terminal outcomes (for example both Settled and Cancelled for one Autopilot lease).
+
+### Rust/Solidity FIPS context parity
+
+A fixed profile-v1 transaction FIPS context fixture was added at
+`tests/fixtures/evm_fips_context_v1.hex`.
+
+For chain ID 8453 it fixes the exact 63-byte context encoding for:
+
+- prefix `SYNERGY/PQ-FIPS-CONTEXT\0`;
+- crypto profile 1;
+- 32-byte big-endian chain ID;
+- Transaction domain code 1;
+- PQ-only policy code 3;
+- suite count 2;
+- ML-DSA-87 code 3;
+- SLH-DSA-SHAKE-256s code 4.
+
+A Rust test reproduces the exact fixture and the static guard checks Solidity's packed context construction against the same field order.
+
+All of the above remain source/test-definition evidence until executable Cargo and Solidity gates run successfully.
