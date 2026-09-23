@@ -125,9 +125,10 @@ pub use pq_reference::{
 };
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
 pub use service_planes::{
-    verify_service_plane_checkpoint_and_consume, ServicePlaneCapacityEnvelope,
+    verify_service_plane_checkpoint_with_finality_and_consume, ServiceFinalityBatch,
+    ServiceFinalityItem, ServiceFinalityKind, ServicePlaneCapacityEnvelope,
     ServicePlaneCheckpointAuthorization, ServicePlaneCheckpointValidationContext,
-    ServicePlaneRoots,
+    ServicePlaneRoots, MAX_SERVICE_FINALITY_ITEMS,
 };
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
