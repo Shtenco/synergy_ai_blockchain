@@ -52,11 +52,17 @@ impl PrecompileGasSchedule {
         edges: usize,
         layers: usize,
     ) -> Option<u64> {
-        let input = self.per_input_byte.checked_mul(input_bytes as u64)?;
-        let output = self.per_output_byte.checked_mul(output_bytes as u64)?;
-        let node = self.per_nexus_node.checked_mul(nodes as u64)?;
-        let edge = self.per_nexus_edge.checked_mul(edges as u64)?;
-        let layer = self.per_nexus_layer.checked_mul(layers as u64)?;
+        let input_bytes = u64::try_from(input_bytes).ok()?;
+        let output_bytes = u64::try_from(output_bytes).ok()?;
+        let nodes = u64::try_from(nodes).ok()?;
+        let edges = u64::try_from(edges).ok()?;
+        let layers = u64::try_from(layers).ok()?;
+
+        let input = self.per_input_byte.checked_mul(input_bytes)?;
+        let output = self.per_output_byte.checked_mul(output_bytes)?;
+        let node = self.per_nexus_node.checked_mul(nodes)?;
+        let edge = self.per_nexus_edge.checked_mul(edges)?;
+        let layer = self.per_nexus_layer.checked_mul(layers)?;
         self.base
             .checked_add(input)?
             .checked_add(output)?
