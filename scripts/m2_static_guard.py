@@ -212,10 +212,12 @@ require(
 )
 
 require(
-    "MAX_CLASSICAL_PUBLIC_KEY_BYTES: usize = 65" in pq
-    and "MAX_CLASSICAL_SIGNATURE_BYTES: usize = 72" in pq
+    "SECP256K1_PUBLIC_KEY_BYTES: usize = 33" in pq
+    and "SECP256K1_SIGNATURE_BYTES: usize = 65" in pq
+    and "ED25519_PUBLIC_KEY_BYTES: usize = 32" in pq
+    and "ED25519_SIGNATURE_BYTES: usize = 64" in pq
     and "MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000" in pq,
-    "authorization evidence byte caps missing or changed",
+    "canonical classical authorization encodings missing or changed",
 )
 
 
@@ -245,6 +247,12 @@ require(
     and "pub fn transcript_hash(&self) -> &[u8; 32]" in network
     and "if transcript_hash == [0u8; 32]" in network,
     "transport transcript commitment must be immutable and fail closed",
+)
+
+require(
+    "context.now >= self.expires_at" in pq
+    and "context.now >= self.authorization_expires_at" in tx,
+    "authorization expiry must be exclusive at the expiry instant",
 )
 
 print("M2 static guard: PASS")
