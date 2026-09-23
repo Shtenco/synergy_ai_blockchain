@@ -30,7 +30,9 @@ pub use autopilot::{
     AutopilotProposal,
 };
 pub use autopilot_budget::{
-    AutopilotBudgetBoundCall, AutopilotBudgetReservation, AutopilotRealizedExecutionReceipt,
+    verify_autopilot_execution, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
+    AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
+    AutopilotRealizedExecutionReceipt,
 };
 pub use cognitive::{
     CognitiveEvidence, CognitiveNodeManifest, CognitiveRole, CognitiveWorkReceipt,
