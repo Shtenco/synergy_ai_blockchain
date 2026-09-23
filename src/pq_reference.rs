@@ -452,6 +452,24 @@ mod tests {
     }
 
     #[test]
+    fn ml_kem_rejects_correct_length_noncanonical_public_key() {
+        let mut provider = ReferenceMlKem1024Provider::new();
+        let (_handle, mut public_key) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
+
+        assert_eq!(public_key.len(), ML_KEM_1024_PUBLIC_KEY_BYTES);
+
+        // ML-KEM encodes two coefficients into each 3-byte block using 12 bits
+        // per coefficient. Force the first coefficient to 4095, which is above
+        // q = 3329, while preserving the exact ML-KEM-1024 public-key length.
+        public_key[0] = 0xff;
+        public_key[1] = (public_key[1] & 0xf0) | 0x0f;
+
+        assert!(provider.encapsulate(&public_key).is_none());
+    }
+
+    #[test]
     fn ml_kem_handles_are_nonzero_and_unique_while_live() {
         let mut provider = ReferenceMlKem1024Provider::new();
         let (h1, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
