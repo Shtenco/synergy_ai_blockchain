@@ -59,6 +59,7 @@ def main() -> int:
     }
     expected_auxiliary_paths = {
         "tests/fixtures/evm_fips_context_v1.hex",
+        "tests/fixtures/evm_authorization_envelope_v1.hex",
     }
     expected_paths = expected_vector_paths | expected_auxiliary_paths
     if seen != expected_paths:
