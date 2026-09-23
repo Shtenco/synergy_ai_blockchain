@@ -309,7 +309,7 @@ impl AuthorizationReplayState {
         true
     }
 
-    pub fn consume_verified_for_subject(
+    pub(crate) fn consume_verified_for_subject(
         &mut self,
         authorization: &HybridAuthorization,
         envelope: &AuthorizationEnvelope,
@@ -366,7 +366,7 @@ impl AuthorizationReplayState {
         true
     }
 
-    pub fn verify_and_consume_for_subject<V: ContextSignatureVerifier>(
+    pub(crate) fn verify_and_consume_for_subject<V: ContextSignatureVerifier>(
         &mut self,
         verifier: &V,
         authorization: &HybridAuthorization,
