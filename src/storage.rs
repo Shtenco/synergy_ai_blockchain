@@ -423,7 +423,7 @@ pub fn verify_storage_proof_and_consume<V: ContextSignatureVerifier>(
     replay.consume_verified_for_subject(
         &authorized.authorization,
         &envelope,
-        validation.expected_provider_keyset_commitment,
+        validation.expected_provider_id,
     )
 }
 
