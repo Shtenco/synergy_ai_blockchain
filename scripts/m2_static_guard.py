@@ -409,4 +409,15 @@ require(
     "transport transcript must bind and enforce rekey policy",
 )
 
+
+require(
+    "pub enum TransportRole" in network
+    and "pub ml_kem_recipient: TransportRole" in network
+    and "hasher.update([self.ml_kem_recipient.protocol_code()])" in network
+    and "hybrid transport peers must agree on classical KEX scheme" in network
+    and "transport peers must use distinct ML-KEM public keys" in network
+    and "hybrid transport peers must use distinct classical KEX public keys" in network,
+    "transport role/KEX agreement binding missing",
+)
+
 print("M2 static guard: PASS")
