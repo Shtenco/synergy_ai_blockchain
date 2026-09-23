@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: M2 static security guard
         run: python3 scripts/m2_static_guard.py
@@ -62,14 +65,20 @@ jobs:
       - name: Reference PQ compile gate
         run: cargo check --locked --all-targets --features reference-pq
 
-      - name: Reference PQ clippy diagnostics
-        run: cargo clippy --locked --all-targets --features reference-pq -- -W clippy::all
+      - name: Reference PQ clippy gate
+        run: cargo clippy --locked --all-targets --features reference-pq -- -D warnings -D clippy::all
 
       - name: Core unit tests
         run: cargo test --locked --all-targets
 
       - name: Real PQ reference provider tests
         run: cargo test --locked --all-targets --features reference-pq
+
+      - name: Reference PQ doctests
+        run: cargo test --locked --doc --features reference-pq
+
+      - name: Release-mode PQ library tests
+        run: cargo test --locked --release --lib --features reference-pq
 
       - name: Upload M2 reproducibility evidence
         if: always()
