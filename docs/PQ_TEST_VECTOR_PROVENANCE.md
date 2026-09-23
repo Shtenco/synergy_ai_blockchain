@@ -189,3 +189,28 @@ Pinned local integrity:
 - SHA-256: `6fb451f77be80a61010a6d686fa383139e58b387b2d16afecfdac2ca018fed95`.
 
 The fixture is included in `M2_FIXTURE_MANIFEST.json` and is checked by the same SHA-1 + SHA-256 manifest verifier as the external cryptographic vectors. Its purpose is to detect cross-language drift in prefix bytes, version encoding, chain endianness, authorization-domain/policy codes or ordered PQ suite encoding.
+
+
+## Internal Rust/Solidity authorization-envelope parity fixture
+
+`tests/fixtures/evm_authorization_envelope_v1.hex` freezes the exact outer authorization message encoding shared by Rust `AuthorizationEnvelope::canonical_message` and the Solidity smart-account encoder.
+
+The fixed case uses:
+
+- chain ID 8453 as 32-byte big-endian;
+- Transaction domain code 1;
+- PQ-only policy code 3;
+- ordered suite `[ML-DSA-87 (3), SLH-DSA-SHAKE-256s (4)]`;
+- authorization epoch 1;
+- nonce 7;
+- expiry 1000;
+- payload commitment `0xaa` repeated 32 bytes.
+
+The resulting canonical message is exactly 111 bytes.
+
+Pinned local integrity:
+
+- Git blob SHA-1: `d86a50c7b7d3d82c04fb9c22eabc8b293d79b0a5`;
+- SHA-256: `0505fd868b3100e29b6126860b733740a3bc78b4367981265571546071d9cbd0`.
+
+The Solidity smart account now signs the common outer `SYNERGY/PQ-AUTH\0` envelope. Account-specific call fields remain inside a separate domain-separated SHA-256 payload commitment.
