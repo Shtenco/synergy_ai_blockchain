@@ -1531,4 +1531,21 @@ require(
     "cognitive reward path must reject invalid or silently clipped settlement receipts",
 )
 
+
+require(
+    "FUNDED_SETTLEMENT_DOMAIN" in payment_funding
+    and "pub fn validate_against_batch(" in payment_funding
+    and "pub fn canonical_root(" in payment_funding
+    and "funded settlement batch root mismatch" in payment_funding
+    and "funded settlement item count mismatch" in payment_funding,
+    "funded settlement commitment must bind exact authorized batch and receipt count",
+)
+
+require(
+    "funded: &FundedSettlementCommitment" in service_planes
+    and "root: funded.canonical_root(authorized)?" in service_planes
+    and "root: authorized.batch.authorization_commitment()?" not in service_planes,
+    "payment service finality must commit funded settlement root, never bare settlement root",
+)
+
 print("M2 static guard: PASS")
