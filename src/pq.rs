@@ -687,6 +687,36 @@ mod tests {
     }
 
     #[test]
+    fn authorization_registry_codes_are_nonzero_and_unique() {
+        let schemes = [
+            AuthScheme::Secp256k1.protocol_code(),
+            AuthScheme::Ed25519.protocol_code(),
+            AuthScheme::MlDsa87.protocol_code(),
+            AuthScheme::SlhDsaShake256s.protocol_code(),
+        ];
+        let policies = [
+            AuthPolicy::Online.protocol_code(),
+            AuthPolicy::Max.protocol_code(),
+            AuthPolicy::PqOnly.protocol_code(),
+        ];
+        let domains = [
+            AuthorizationDomain::Transaction.protocol_code(),
+            AuthorizationDomain::ValidatorVote.protocol_code(),
+            AuthorizationDomain::BridgeMigration.protocol_code(),
+            AuthorizationDomain::ModelUpgrade.protocol_code(),
+            AuthorizationDomain::InferenceReceipt.protocol_code(),
+            AuthorizationDomain::Governance.protocol_code(),
+        ];
+
+        for codes in [&schemes[..], &policies[..], &domains[..]] {
+            assert!(codes.iter().all(|code| *code != 0));
+            for (index, code) in codes.iter().enumerate() {
+                assert!(!codes[..index].contains(code));
+            }
+        }
+    }
+
+    #[test]
     fn policy_algorithm_suite_is_bound_into_message_and_context() {
         let envelope = AuthorizationEnvelope {
             chain_id: [0x21; 32],
