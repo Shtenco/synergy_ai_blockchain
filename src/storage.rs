@@ -54,6 +54,8 @@ impl ArchiveReceipt {
         if self.object_id == [0; 32]
             || self.raw_sha256 == [0; 32]
             || self.archive_sha256 == [0; 32]
+            || self.codec_id == [0; 16]
+            || self.codec_version_commitment == [0; 32]
             || self.chunk_root == [0; 32]
         {
             return Err("content commitments required");
@@ -63,6 +65,9 @@ impl ArchiveReceipt {
         }
         if self.replicas == 0 {
             return Err("at least one replica required");
+        }
+        if self.random_access_amplification_milli == 0 || self.expires_at_epoch == 0 {
+            return Err("archive access/expiry policy required");
         }
         if self.erasure_k == 0 || self.erasure_n < self.erasure_k {
             return Err("invalid erasure parameters");
@@ -197,6 +202,28 @@ pub struct StorageBid {
     pub max_epochs: u64,
     pub availability_commitment: [u8; 32],
     pub codec_supported: [u8; 16],
+}
+
+impl StorageBid {
+    pub fn validate_against(&self, archive: &ArchiveReceipt) -> Result<(), &'static str> {
+        archive.validate()?;
+        if self.provider_id == [0u8; 32] || self.object_id == [0u8; 32] {
+            return Err("storage bid provider/object required");
+        }
+        if self.object_id != archive.object_id {
+            return Err("storage bid object mismatch");
+        }
+        if self.price_per_gib_epoch == 0 || self.max_epochs == 0 {
+            return Err("storage bid price/term required");
+        }
+        if self.availability_commitment == [0u8; 32] {
+            return Err("storage bid availability commitment required");
+        }
+        if self.codec_supported == [0u8; 16] || self.codec_supported != archive.codec_id {
+            return Err("storage bid codec mismatch");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,6 +478,47 @@ mod tests {
             &authorized,
             &wrong,
         ));
+    }
+
+    #[test]
+    fn archive_requires_codec_version_access_and_expiry_metadata() {
+        let mut a = archive();
+        assert_eq!(a.validate(), Ok(()));
+
+        a.codec_id = [0; 16];
+        assert!(a.validate().is_err());
+        a = archive();
+        a.codec_version_commitment = [0; 32];
+        assert!(a.validate().is_err());
+        a = archive();
+        a.expires_at_epoch = 0;
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn storage_bid_is_bound_to_exact_archive_and_codec() {
+        let a = archive();
+        let mut bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 30,
+            availability_commitment: [0x22; 32],
+            codec_supported: a.codec_id,
+        };
+        assert_eq!(bid.validate_against(&a), Ok(()));
+
+        bid.object_id[0] ^= 1;
+        assert!(bid.validate_against(&a).is_err());
+        bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 30,
+            availability_commitment: [0x22; 32],
+            codec_supported: [0xFF; 16],
+        };
+        assert!(bid.validate_against(&a).is_err());
     }
 
     #[test]
