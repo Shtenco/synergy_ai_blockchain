@@ -30,7 +30,7 @@ pub use autopilot::{
     AutopilotProposal,
 };
 pub use autopilot_budget::{
-    verify_autopilot_execution, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
+    verify_autopilot_execution_and_consume, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
     AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
     AutopilotRealizedExecutionReceipt,
 };
@@ -48,7 +48,7 @@ pub use cognitive_registry::{
     IndependenceVerdict,
 };
 pub use consensus::{
-    verify_consensus_activation, ConsensusActivation, ConsensusActivationAuthorization,
+    verify_consensus_activation_and_consume, ConsensusActivation, ConsensusActivationAuthorization,
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
 pub use inference::{
@@ -57,7 +57,7 @@ pub use inference::{
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
 };
 pub use governance::{
-    verify_governance_action, GovernanceAction, GovernanceAuthorization,
+    verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
     GovernanceValidationContext,
 };
 pub use kv_cache::{KvCacheLease, KvReplicaReceipt};
@@ -105,7 +105,7 @@ pub use pq_reference::{
 };
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
 pub use service_planes::{
-    verify_service_plane_checkpoint, ServicePlaneCapacityEnvelope,
+    verify_service_plane_checkpoint_and_consume, ServicePlaneCapacityEnvelope,
     ServicePlaneCheckpointAuthorization, ServicePlaneCheckpointValidationContext,
     ServicePlaneRoots,
 };
