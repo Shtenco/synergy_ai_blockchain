@@ -369,8 +369,8 @@ require(
 require(
     "persist-credentials: false" in workflow
     and "-D warnings -D clippy::all" in workflow
-    and "cargo test --locked --doc --features reference-pq" in workflow
-    and "cargo test --locked --release --lib --features reference-pq" in workflow,
+    and "cargo test --frozen --doc --features reference-pq" in workflow
+    and "cargo test --frozen --release --lib --features reference-pq" in workflow,
     "hardened executable CI gates missing",
 )
 
@@ -408,7 +408,8 @@ require(
     "unexpected features enabled for" in lock_policy
     and '("ml-kem", "0.3.2"): {"getrandom", "zeroize"}' in lock_policy
     and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"}' in lock_policy
-    and '("slh-dsa", "0.1.0"): {"alloc", "default"}' in lock_policy,
+    and '("slh-dsa", "0.1.0"): {"alloc"}' in lock_policy
+    and '("rand", "0.8.5"): {"getrandom"}' in lock_policy,
     "critical crypto feature allowlist missing",
 )
 
@@ -900,6 +901,13 @@ require(
     "checked_mul(10_000)?" in service_planes
     and "u64::try_from(value).ok()" in service_planes,
     "service-plane capacity ratio must remain checked and non-saturating",
+)
+
+
+require(
+    'slh-dsa = { version = "=0.1.0", optional = true, default-features = false, features = ["alloc"] }' in cargo
+    and 'rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom"] }' in cargo,
+    "SLH-DSA/rand feature surface must remain explicit and minimal",
 )
 
 print("M2 static guard: PASS")
