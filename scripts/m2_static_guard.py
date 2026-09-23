@@ -910,4 +910,13 @@ require(
     "SLH-DSA/rand feature surface must remain explicit and minimal",
 )
 
+
+require(
+    "pub owner_account: [u8; 32]" in autopilot_budget
+    and "reservation.owner_account != validation.expected_owner_account" in autopilot_budget
+    and "authorized.authorization.keyset_commitment() != Some(reservation.owner_account)" in autopilot_budget
+    and "hasher.update(reservation.owner_account)" in autopilot_budget,
+    "Autopilot budget reservation ownership must remain keyset-bound",
+)
+
 print("M2 static guard: PASS")
