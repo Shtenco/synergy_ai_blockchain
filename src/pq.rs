@@ -9,6 +9,7 @@ pub enum AuthScheme {
 }
 
 pub const CRYPTO_PROFILE_VERSION: u16 = 1;
+pub const MAX_AUTHORIZATION_LIFETIME_SECONDS: u64 = 86_400;
 pub const SECP256K1_PUBLIC_KEY_BYTES: usize = 33;
 pub const SECP256K1_SIGNATURE_BYTES: usize = 65;
 pub const ED25519_PUBLIC_KEY_BYTES: usize = 32;
@@ -153,6 +154,11 @@ pub enum AuthorizationDomain {
 }
 
 impl AuthorizationDomain {
+    pub const fn max_lifetime_seconds(self) -> u64 {
+        let _ = self;
+        MAX_AUTHORIZATION_LIFETIME_SECONDS
+    }
+
     pub const fn protocol_code(self) -> u8 {
         match self {
             Self::Transaction => 1,
@@ -324,6 +330,9 @@ impl AuthorizationEnvelope {
         }
         if context.max_future_seconds == 0 {
             return Err("authorization lifetime policy required");
+        }
+        if context.max_future_seconds > self.domain.max_lifetime_seconds() {
+            return Err("authorization lifetime policy exceeds protocol ceiling");
         }
         let remaining = self
             .expires_at
@@ -1648,6 +1657,33 @@ mod tests {
         let mut bad = ok;
         bad.now = 1_000;
         assert!(envelope.validate_in_context(&bad).is_err());
+    }
+
+    #[test]
+    fn authorization_context_cannot_weaken_protocol_lifetime_ceiling() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0xA7; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 1,
+            nonce: 2,
+            expires_at: MAX_AUTHORIZATION_LIFETIME_SECONDS,
+            payload_commitment: [0xA8; 32],
+        };
+        let context = AuthorizationValidationContext {
+            expected_chain_id: envelope.chain_id,
+            expected_domain: envelope.domain,
+            expected_policy: AuthPolicy::PqOnly,
+            expected_epoch: envelope.epoch,
+            expected_nonce: envelope.nonce,
+            now: 0,
+            max_future_seconds: MAX_AUTHORIZATION_LIFETIME_SECONDS + 1,
+        };
+
+        assert!(envelope.validate_in_context(&context).is_err());
+
+        let mut allowed = context;
+        allowed.max_future_seconds = MAX_AUTHORIZATION_LIFETIME_SECONDS;
+        assert!(envelope.validate_in_context(&allowed).is_ok());
     }
 
     #[test]
