@@ -159,6 +159,8 @@ impl PqEvmTransaction {
             return Err(TxError::AuthorizationExpired);
         }
         if context.max_authorization_future_seconds == 0
+            || context.max_authorization_future_seconds
+                > crate::pq::AuthorizationDomain::Transaction.max_lifetime_seconds()
             || self
                 .authorization_expires_at
                 .checked_sub(context.now)
@@ -353,6 +355,32 @@ mod tests {
                     expected_authorization_epoch: 12,
                     now: 1_000,
                     max_authorization_future_seconds: 60,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationExpired)
+        );
+    }
+
+    #[test]
+    fn transaction_context_cannot_weaken_protocol_lifetime_ceiling() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    now: 999,
+                    max_authorization_future_seconds:
+                        crate::pq::MAX_AUTHORIZATION_LIFETIME_SECONDS + 1,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
