@@ -1621,4 +1621,22 @@ require(
     "Solidity M2 gate must remain pinned to verified solc 0.8.26 and compile every consensus contract",
 )
 
+
+require(
+    "ARCHIVE_RECEIPT_DOMAIN" in storage
+    and "pub fn commitment(&self) -> Option<[u8; 32]>" in storage
+    and "pub archive_commitment: [u8; 32]" in storage
+    and "authorized.receipt.archive_commitment != archive_commitment" in storage
+    and "authorized.receipt.epoch >= archive.expires_at_epoch" in storage
+    and "archive: &ArchiveReceipt" in storage,
+    "storage proof authorization must bind the exact unexpired archive receipt",
+)
+
+require(
+    "archive: &ArchiveReceipt" in service_planes
+    and "authorized.receipt.archive_commitment != archive_commitment" in service_planes
+    and "authorized.receipt.epoch >= archive.expires_at_epoch" in service_planes,
+    "storage service finality must reject archive substitution and expired proofs",
+)
+
 print("M2 static guard: PASS")
