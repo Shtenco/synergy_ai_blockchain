@@ -1325,4 +1325,21 @@ require(
     "stateless low-level authorization verification must remain crate-internal",
 )
 
+
+require(
+    "expected_keyset_commitment == [0u8; 32]" in network
+    and "initiator_validation.expected_keyset_commitment" in network
+    and "responder_validation.expected_keyset_commitment" in network
+    and "== responder_validation.expected_keyset_commitment" in network,
+    "transport peers must use distinct nonzero registered authentication keysets",
+)
+
+require(
+    "pub fn commitment(&self) -> Option<[u8; 32]>" in network
+    and 'SYNERGY/TRANSPORT-REPLAY-STATE/V1\\0' in network
+    and "for session_id in &self.consumed" in network
+    and "network_id == [0u8; 32] || epoch == 0" in network,
+    "transport replay state must remain persistently commit-able and reject zero epoch",
+)
+
 print("M2 static guard: PASS")
