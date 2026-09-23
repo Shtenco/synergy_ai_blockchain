@@ -100,7 +100,8 @@ pub use storage::{
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
 pub use verification::{
-    VerificationAggregate, VerificationChallenge, VerificationVerdict, VerifierReceipt,
+    verify_verifier_receipt, VerificationAggregate, VerificationChallenge, VerificationVerdict,
+    VerifierReceipt, VerifierReceiptAuthorization, VerifierReceiptValidationContext,
 };
 
 /// Consensus version for the first integrated SYNERGY PQ-EVM/NEXUS world-compute profile.
