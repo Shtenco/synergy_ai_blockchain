@@ -83,14 +83,14 @@ pub use network::{
     ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard, MlKem1024Provider,
     MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerAuthorization,
     TransportPeerAuthorizationValidationContext, TransportPeerIdentity, TransportPolicy,
-    TransportReplayGuard, TransportRole, TransportSessionKey, TransportSessionKeys,
-    TransportTranscript,
+    TransportRecordSequence, TransportReplayGuard, TransportRole, TransportSessionKey,
+    TransportSessionKeys, TransportTranscript,
     TransportValidationContext,
     CLASSICAL_SHARED_SECRET_BYTES,
     MAX_REKEY_MESSAGES,
     MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
     ML_KEM_1024_PUBLIC_KEY_BYTES, ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES,
-    TRANSPORT_TRANSCRIPT_DOMAIN,
+    TRANSPORT_RECORD_NONCE_BYTES, TRANSPORT_TRANSCRIPT_DOMAIN,
     X25519_PUBLIC_KEY_BYTES,
 };
 pub use nexus::{
