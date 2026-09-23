@@ -192,6 +192,90 @@ pub struct AuthorizationValidationContext {
     pub max_future_seconds: u64,
 }
 
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthorizationReplayState {
+    chain_id: [u8; 32],
+    domain: AuthorizationDomain,
+    policy: AuthPolicy,
+    epoch: u64,
+    next_nonce: u64,
+}
+
+impl AuthorizationReplayState {
+    pub fn new(
+        chain_id: [u8; 32],
+        domain: AuthorizationDomain,
+        policy: AuthPolicy,
+        epoch: u64,
+        next_nonce: u64,
+    ) -> Option<Self> {
+        if chain_id == [0u8; 32] || epoch == 0 {
+            return None;
+        }
+        Some(Self {
+            chain_id,
+            domain,
+            policy,
+            epoch,
+            next_nonce,
+        })
+    }
+
+    pub const fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub const fn next_nonce(&self) -> u64 {
+        self.next_nonce
+    }
+
+    pub fn rotate_epoch(&mut self, new_epoch: u64, next_nonce: u64) -> bool {
+        if new_epoch <= self.epoch {
+            return false;
+        }
+        self.epoch = new_epoch;
+        self.next_nonce = next_nonce;
+        true
+    }
+
+    pub fn verify_and_consume<V: ContextSignatureVerifier>(
+        &mut self,
+        verifier: &V,
+        authorization: &HybridAuthorization,
+        envelope: &AuthorizationEnvelope,
+        now: u64,
+        max_future_seconds: u64,
+    ) -> bool {
+        let advanced_nonce = match self.next_nonce.checked_add(1) {
+            Some(nonce) => nonce,
+            None => return false,
+        };
+
+        let validation = AuthorizationValidationContext {
+            expected_chain_id: self.chain_id,
+            expected_domain: self.domain,
+            expected_policy: self.policy,
+            expected_epoch: self.epoch,
+            expected_nonce: self.next_nonce,
+            now,
+            max_future_seconds,
+        };
+
+        if !verify_envelope_authorization(
+            verifier,
+            authorization,
+            envelope,
+            &validation,
+        ) {
+            return false;
+        }
+
+        self.next_nonce = advanced_nonce;
+        true
+    }
+}
+
 fn append_policy_suite(out: &mut Vec<u8>, policy: AuthPolicy) {
     let schemes = policy.required_schemes();
     out.push(schemes.len() as u8);
@@ -1382,6 +1466,104 @@ mod tests {
             &wrong_domain,
             &validation,
         ));
+    }
+
+    #[test]
+    fn replay_state_consumes_nonce_exactly_once_and_rotates_forward_only() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0x91; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 12,
+            nonce: 44,
+            expires_at: 1_000,
+            payload_commitment: [0x92; 32],
+        };
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let message = envelope
+            .canonical_message(AuthPolicy::PqOnly)
+            .expect("message");
+        let context = envelope
+            .fips_signature_context(AuthPolicy::PqOnly)
+            .expect("context");
+        let verifier = ExpectedContextVerifier { message, context };
+
+        let mut replay = AuthorizationReplayState::new(
+            envelope.chain_id,
+            envelope.domain,
+            AuthPolicy::PqOnly,
+            envelope.epoch,
+            envelope.nonce,
+        )
+        .expect("replay state");
+
+        assert!(replay.verify_and_consume(
+            &verifier,
+            &auth,
+            &envelope,
+            999,
+            60,
+        ));
+        assert_eq!(replay.next_nonce(), 45);
+
+        assert!(!replay.verify_and_consume(
+            &verifier,
+            &auth,
+            &envelope,
+            999,
+            60,
+        ));
+
+        assert!(!replay.rotate_epoch(12, 0));
+        assert!(!replay.rotate_epoch(11, 0));
+        assert!(replay.rotate_epoch(13, 0));
+        assert_eq!(replay.epoch(), 13);
+        assert_eq!(replay.next_nonce(), 0);
+    }
+
+    #[test]
+    fn replay_state_fails_closed_at_nonce_overflow() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0xA1; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 1,
+            nonce: u64::MAX,
+            expires_at: 100,
+            payload_commitment: [0xA2; 32],
+        };
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let verifier = ExpectedContextVerifier {
+            message: envelope.canonical_message(AuthPolicy::PqOnly).unwrap(),
+            context: envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap(),
+        };
+        let mut replay = AuthorizationReplayState::new(
+            envelope.chain_id,
+            envelope.domain,
+            AuthPolicy::PqOnly,
+            envelope.epoch,
+            u64::MAX,
+        )
+        .expect("replay state");
+
+        assert!(!replay.verify_and_consume(
+            &verifier,
+            &auth,
+            &envelope,
+            50,
+            60,
+        ));
+        assert_eq!(replay.next_nonce(), u64::MAX);
     }
 
     #[test]
