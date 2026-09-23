@@ -297,3 +297,10 @@ As of the current upstream tag set, the newest stable RustCrypto SLH-DSA tag rem
 M2 therefore keeps `slh-dsa = =0.1.0` pinned with only the explicit `alloc` feature and does **not** introduce local SLH signing-key custody. The production section of `ReferencePqSigner` creates and stores only `ml_dsa::SigningKey<MlDsa87>`; no `SigningKey<Shake256s>` or SLH key-generation path exists.
 
 SLH-DSA remains fully available for verification/FIPS-205 evidence. Production SLH signing must be supplied by a separate provider implementing the opaque `ContextSignatureSigner` interface (for example HSM/OS keystore/remote signer) until a reviewed stable zeroizing backend can be tested with executable Cargo.
+
+
+## Crypto profile v1 reserved algorithm policy
+
+`AuthScheme::Ed25519` retains protocol code `2` for append-only registry stability, but it is explicitly inactive in `CRYPTO_PROFILE_VERSION = 1`. No `AuthPolicy` includes it.
+
+Activating Ed25519 in a future authorization policy requires an explicit crypto-profile revision plus executable compatibility/vector evidence; it must not be enabled by silently changing the policy-to-suite mapping under profile v1.
