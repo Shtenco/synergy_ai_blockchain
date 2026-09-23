@@ -56,9 +56,11 @@ jobs:
           cargo tree --locked --duplicates --features reference-pq > m2-cargo-duplicates-reference-pq.txt
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           python3 scripts/m2_spdx_from_cargo_metadata.py \
+            Cargo.lock \
             m2-cargo-metadata-core.json \
             m2-spdx-core.json
           python3 scripts/m2_spdx_from_cargo_metadata.py \
+            Cargo.lock \
             m2-cargo-metadata-reference-pq.json \
             m2-spdx-reference-pq.json
 
