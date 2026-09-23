@@ -138,7 +138,24 @@ impl PqEvmTransaction {
         Some(out)
     }
 
-    pub fn validate<V: ContextSignatureVerifier>(
+    pub fn authorization_envelope(&self) -> Option<AuthorizationEnvelope> {
+        let payload = self.signing_preimage()?;
+        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        hasher.update(b"SYNERGY/PQ-EVM-TX/AUTH-PAYLOAD/V1\0");
+        hasher.update(&payload);
+
+        Some(AuthorizationEnvelope {
+            chain_id: self.authorization_chain_id(),
+            domain: AuthorizationDomain::Transaction,
+            epoch: self.authorization_epoch,
+            nonce: self.nonce,
+            expires_at: self.authorization_expires_at,
+            payload_commitment: hasher.finalize().into(),
+        })
+    }
+
+    pub(crate) fn validate<V: ContextSignatureVerifier>(
         &self,
         verifier: &V,
         context: TxValidationContext,
@@ -195,6 +212,22 @@ impl PqEvmTransaction {
             &message,
             &context,
         ) {
+            return Err(TxError::AuthorizationFailed);
+        }
+        Ok(())
+    }
+
+    pub fn validate_and_consume<V: ContextSignatureVerifier>(
+        &self,
+        verifier: &V,
+        context: TxValidationContext,
+        replay: &mut AuthorizationReplayState,
+    ) -> Result<(), TxError> {
+        self.validate(verifier, context)?;
+        let envelope = self
+            .authorization_envelope()
+            .ok_or(TxError::AuthorizationFailed)?;
+        if !replay.consume_verified(&self.authorization, &envelope) {
             return Err(TxError::AuthorizationFailed);
         }
         Ok(())
@@ -360,6 +393,41 @@ mod tests {
                 },
             ),
             Err(TxError::AuthorizationExpired)
+        );
+    }
+
+    #[test]
+    fn transaction_consuming_api_accepts_nonce_once() {
+        let tx = test_tx();
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            context: tx.fips_signature_context(),
+        };
+        let context = TxValidationContext {
+            expected_chain_id: 8453,
+            expected_nonce: 7,
+            expected_authorization_epoch: 12,
+            now: 999,
+            max_authorization_future_seconds: 60,
+            required_policy: AuthPolicy::PqOnly,
+            max_calldata_bytes: 1024,
+        };
+        let mut replay = AuthorizationReplayState::new(
+            tx.authorization_chain_id(),
+            AuthorizationDomain::Transaction,
+            AuthPolicy::PqOnly,
+            tx.authorization_epoch,
+            tx.nonce,
+        )
+        .expect("transaction replay state");
+
+        assert_eq!(
+            tx.validate_and_consume(&verifier, context, &mut replay),
+            Ok(())
+        );
+        assert_eq!(
+            tx.validate_and_consume(&verifier, context, &mut replay),
+            Err(TxError::AuthorizationFailed)
         );
     }
 
