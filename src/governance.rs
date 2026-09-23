@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const GOVERNANCE_ACTION_DOMAIN: &[u8] = b"SYNERGY/GOVERNANCE-ACTION/V1\0";
@@ -77,7 +77,7 @@ pub struct GovernanceValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_governance_action<V: ContextSignatureVerifier>(
+pub(crate) fn verify_governance_action<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &GovernanceAuthorization,
     validation: &GovernanceValidationContext,
@@ -114,6 +114,23 @@ pub fn verify_governance_action<V: ContextSignatureVerifier>(
         &envelope,
         &auth_validation,
     )
+}
+
+
+pub fn verify_governance_action_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &GovernanceAuthorization,
+    validation: &GovernanceValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_governance_action(verifier, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
