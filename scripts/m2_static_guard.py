@@ -25,6 +25,8 @@ model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
 inference = (ROOT / "src/inference.rs").read_text(encoding="utf-8")
 governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
 verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
+consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
+service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -686,6 +688,31 @@ require(
     and "SYNERGY/PQ-PRIMARY-ACCOUNT/V1" in pq
     and "primary_account_identity_is_stable_across_authorization_policies" in pq,
     "policy-independent stable account identity primitive missing",
+)
+
+
+require(
+    "AuthorizationDomain::ConsensusActivation" in consensus
+    and "authorized.authorization.policy != AuthPolicy::Max" in consensus
+    and "expected_activation_block" in consensus
+    and "expected_authority_keyset_commitment" in consensus
+    and "authorization_commitment" in consensus,
+    "consensus activation must remain MAX-authorized and authority-bound",
+)
+
+require(
+    "AuthorizationDomain::ServicePlaneCheckpoint" in service_planes
+    and "authorized.authorization.policy != AuthPolicy::Max" in service_planes
+    and "expected_service_plane_epoch" in service_planes
+    and "expected_authority_keyset_commitment" in service_planes
+    and "authorization_commitment" in service_planes,
+    "service-plane checkpoints must remain MAX-authorized and authority-bound",
+)
+
+require(
+    "Self::ConsensusActivation => 8" in pq
+    and "Self::ServicePlaneCheckpoint => 9" in pq,
+    "consensus/service authorization domain codes missing or changed",
 )
 
 print("M2 static guard: PASS")
