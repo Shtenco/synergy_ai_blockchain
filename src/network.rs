@@ -144,6 +144,7 @@ pub struct TransportTranscript {
     pub initiator: TransportPeerIdentity,
     pub responder: TransportPeerIdentity,
     pub policy: TransportPolicy,
+    pub rekey_policy: RekeyPolicy,
     pub ml_kem_ciphertext: Vec<u8>,
     pub classical_transcript_hash: Option<[u8; 32]>,
 }
@@ -152,6 +153,7 @@ impl TransportTranscript {
     pub fn validate(&self) -> Result<(), &'static str> {
         self.initiator.validate_for_policy(self.policy)?;
         self.responder.validate_for_policy(self.policy)?;
+        self.rekey_policy.validate()?;
 
         if self.initiator.node_id == self.responder.node_id {
             return Err("transport peers must be distinct");
@@ -195,6 +197,8 @@ impl TransportTranscript {
             TransportPolicy::Hybrid => 1,
             TransportPolicy::PqOnly => 2,
         }]);
+        hasher.update(self.rekey_policy.max_messages.to_be_bytes());
+        hasher.update(self.rekey_policy.max_seconds.to_be_bytes());
 
         // Role order is canonical: initiator first, responder second.
         for peer in [&self.initiator, &self.responder] {
@@ -227,6 +231,7 @@ impl TransportTranscript {
 
 pub struct HybridSharedSecret {
     policy: TransportPolicy,
+    rekey_policy: RekeyPolicy,
     pq_shared: MlKemSharedSecret,
     classical_shared: Option<SecretBytes>,
     transcript_hash: [u8; 32],
@@ -260,6 +265,7 @@ impl HybridSharedSecret {
 
         Some(Self {
             policy: transcript.policy,
+            rekey_policy: transcript.rekey_policy,
             pq_shared,
             classical_shared,
             transcript_hash,
@@ -268,6 +274,10 @@ impl HybridSharedSecret {
 
     pub fn policy(&self) -> TransportPolicy {
         self.policy
+    }
+
+    pub fn rekey_policy(&self) -> RekeyPolicy {
+        self.rekey_policy
     }
 
     pub fn pq_shared(&self) -> &MlKemSharedSecret {
@@ -287,6 +297,7 @@ impl fmt::Debug for HybridSharedSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HybridSharedSecret")
             .field("policy", &self.policy)
+            .field("rekey_policy", &self.rekey_policy)
             .field("pq_shared", &"<redacted>")
             .field("classical_shared", &"<redacted>")
             .field("transcript_hash", &self.transcript_hash)
@@ -456,6 +467,7 @@ mod tests {
             initiator,
             responder,
             policy,
+            rekey_policy: RekeyPolicy::default(),
             ml_kem_ciphertext: vec![3u8; ML_KEM_1024_CIPHERTEXT_BYTES],
             classical_transcript_hash: matches!(policy, TransportPolicy::Hybrid)
                 .then_some([4u8; 32]),
@@ -547,6 +559,20 @@ mod tests {
             &valid_transcript(TransportPolicy::Hybrid),
         );
         assert!(secret.is_none());
+    }
+
+    #[test]
+    fn transcript_commitment_binds_rekey_policy() {
+        let base = valid_transcript(TransportPolicy::Hybrid);
+        let commitment = base.commitment().expect("commitment");
+
+        let mut changed = base.clone();
+        changed.rekey_policy.max_messages -= 1;
+        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
+
+        let mut invalid = base;
+        invalid.rekey_policy.max_seconds = 0;
+        assert!(invalid.commitment().is_none());
     }
 
     #[test]
