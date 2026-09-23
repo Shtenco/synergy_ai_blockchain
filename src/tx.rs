@@ -26,6 +26,7 @@ pub struct TxValidationContext {
     pub expected_chain_id: u64,
     pub expected_nonce: u64,
     pub expected_authorization_epoch: u64,
+    pub expected_authorization_keyset_commitment: [u8; 32],
     pub now: u64,
     pub max_authorization_future_seconds: u64,
     pub required_policy: crate::pq::AuthPolicy,
@@ -189,6 +190,11 @@ impl PqEvmTransaction {
         if self.authorization.policy != context.required_policy {
             return Err(TxError::PolicyMismatch);
         }
+        if self.authorization.keyset_commitment()
+            != Some(context.expected_authorization_keyset_commitment)
+        {
+            return Err(TxError::AuthorizationFailed);
+        }
         if self.authorization.primary_account_identity_commitment() != Some(self.sender_account) {
             return Err(TxError::AuthorizationFailed);
         }
@@ -317,6 +323,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -333,6 +343,10 @@ mod tests {
                     expected_chain_id: 1,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -349,6 +363,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 8,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -374,6 +392,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 13,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -390,6 +412,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 1_000,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -411,6 +437,10 @@ mod tests {
             expected_chain_id: 8453,
             expected_nonce: 7,
             expected_authorization_epoch: 12,
+            expected_authorization_keyset_commitment: tx
+                .authorization
+                .keyset_commitment()
+                .expect("sender keyset commitment"),
             now: 999,
             max_authorization_future_seconds: 60,
             required_policy: AuthPolicy::PqOnly,
@@ -450,6 +480,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds:
                         crate::pq::MAX_AUTHORIZATION_LIFETIME_SECONDS + 1,
@@ -476,6 +510,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 900,
                     max_authorization_future_seconds: 99,
                     required_policy: AuthPolicy::PqOnly,
@@ -508,6 +546,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -515,6 +557,55 @@ mod tests {
                 },
             ),
             Err(TxError::DataTooLarge)
+        );
+    }
+
+    #[test]
+    fn transaction_rejects_unregistered_secondary_pq_keyset() {
+        let original = test_tx();
+        let expected_keyset = original
+            .authorization
+            .keyset_commitment()
+            .expect("registered sender keyset");
+
+        let mut tx = original;
+        let slh = tx
+            .authorization
+            .evidence
+            .iter_mut()
+            .find(|evidence| evidence.scheme == AuthScheme::SlhDsaShake256s)
+            .expect("SLH lane");
+        slh.public_key[0] ^= 1;
+
+        assert_eq!(
+            tx.authorization.primary_account_identity_commitment(),
+            Some(tx.sender_account)
+        );
+        assert_ne!(
+            tx.authorization.keyset_commitment(),
+            Some(expected_keyset)
+        );
+
+        let verifier = ExpectedTxVerifier {
+            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            context: tx.fips_signature_context(),
+        };
+
+        assert_eq!(
+            tx.validate(
+                &verifier,
+                TxValidationContext {
+                    expected_chain_id: 8453,
+                    expected_nonce: 7,
+                    expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: expected_keyset,
+                    now: 999,
+                    max_authorization_future_seconds: 60,
+                    required_policy: AuthPolicy::PqOnly,
+                    max_calldata_bytes: 1024,
+                },
+            ),
+            Err(TxError::AuthorizationFailed)
         );
     }
 
@@ -535,6 +626,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::PqOnly,
@@ -560,6 +655,10 @@ mod tests {
                     expected_chain_id: 8453,
                     expected_nonce: 7,
                     expected_authorization_epoch: 12,
+                    expected_authorization_keyset_commitment: tx
+                        .authorization
+                        .keyset_commitment()
+                        .expect("sender keyset commitment"),
                     now: 999,
                     max_authorization_future_seconds: 60,
                     required_policy: AuthPolicy::Max,
