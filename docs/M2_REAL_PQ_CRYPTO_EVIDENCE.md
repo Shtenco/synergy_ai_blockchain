@@ -689,3 +689,23 @@ The active Solidity facade is source-hardened to match the Rust M2 authorization
 - the active Solidity NEXUS facade exposes only the implemented Score mode.
 
 These Solidity changes remain source-level evidence until a Solidity compiler/test runner executes them.
+
+
+## Funding-bound payment finality
+
+The payment finality path now commits a canonical funded-settlement root rather than a bare settlement-batch root.
+
+`FundedSettlementCommitment::canonical_root(authorized_batch)` binds:
+
+- source chain ID and authorization epoch;
+- exact settlement-batch authorization commitment;
+- exact funding-consumption root;
+- settlement item count;
+- funding receipt count.
+
+The funded commitment rejects a mismatched batch root and requires
+`settlement_item_count == funding_receipt_count == authorized.batch.item_count`.
+
+`ServiceFinalityItem::payment_settlement` now requires both the authorized settlement batch and the funded-settlement commitment and uses only the funded root. A settlement batch without its matching funding-consumption commitment can no longer be inserted as canonical payment finality through this constructor.
+
+This remains source/test-definition evidence until the frozen Rust/Cargo gate executes.
