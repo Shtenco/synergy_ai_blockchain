@@ -17,6 +17,8 @@ domain currently present in `AuthorizationDomain`.
 | `ConsensusActivation` | activate consensus implementation/model/gas schedule | `Max` | expected consensus authority keyset commitment | chain, epoch, nonce, expiry, expected activation block, mandatory future activation delay, full activation commitment |
 | `ServicePlaneCheckpoint` | commit canonical payment/storage/cognitive/autopilot/finality roots | `Max` | expected service-plane authority keyset commitment | chain, authorization epoch, nonce, expiry, exact next service-plane epoch, all canonical roots |
 | `AutopilotExecution` | execute a value-bearing AI-prepared call | `Max` | owner account equals authorization keyset commitment | chain, reservation epoch, nonce, expiry, reservation root, policy root, proposal/call commitment |
+| `PaymentIntent` | authorize payer payment intent | caller/account-required policy | payer account equals authorization keyset commitment | chain, epoch, nonce, expiry, amount, fee, rails, corridor, compliance commitment |
+| `SettlementBatch` | authorize execution-lane settlement batch | `PqOnly` | expected lane authority keyset commitment | chain, epoch, nonce, expiry, lane ID, sequence, accounting/availability/finality commitments |
 
 ## Keyset identity primitive
 
