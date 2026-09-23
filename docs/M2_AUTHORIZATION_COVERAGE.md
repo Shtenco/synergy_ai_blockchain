@@ -22,6 +22,7 @@ domain currently present in `AuthorizationDomain`.
 | `StorageProof` | storage provider proof receipt | `PqOnly` | expected provider ID + expected provider keyset commitment | chain, storage epoch, nonce, expiry, object/challenge/proof/served-byte commitment |
 | `CognitiveEvidence` | CognitiveNode AI/symbolic evidence | `PqOnly` | node manifest PQ identity equals authorization keyset commitment | chain, epoch, nonce, expiry, request/node/model/input/output/proof/price/policy bindings |
 | `KvReplicaReceipt` | distributed KV-cache replica evidence | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, receipt validity, canonical lease root, KV root, stored bytes, replica authorization |
+| `TransportHandshake` | authenticate initiator/responder KEX identities before session establishment | `PqOnly` | expected node ID + registered current peer keyset commitment | network/epoch/session transcript, role, node ID, ML-KEM/classical KEX keys, auth nonce/expiry |
 
 ## Keyset identity primitive
 
