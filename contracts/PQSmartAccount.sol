@@ -11,6 +11,9 @@ contract PQSmartAccount {
     uint8 public constant AUTH_POLICY_PQ_ONLY = 3;
     uint64 public constant AUTHORIZATION_EPOCH = 1;
     uint256 public constant MAX_AUTHORIZATION_LIFETIME_SECONDS = 86_400;
+    uint256 public constant MAX_TX_CALLDATA_BYTES = 1_048_576;
+    uint256 public constant MAX_RETURN_DATA_BYTES = 4_096;
+    uint256 public constant POST_CALL_GAS_RESERVE = 250_000;
 
     bytes public mlDsa87PublicKey;
     bytes public slhDsaPublicKey;
@@ -21,6 +24,8 @@ contract PQSmartAccount {
     error InvalidSignatureEncoding();
     error Unauthorized();
     error ReentrantExecution();
+    error InvalidExecutionBounds();
+    error InsufficientExecutionGas();
 
     event Executed(
         uint256 indexed nonce,
@@ -28,7 +33,8 @@ contract PQSmartAccount {
         uint256 value,
         bytes32 callHash,
         bool success,
-        bytes32 returnDataHash
+        bytes32 boundedReturnDataHash,
+        bool returnDataTruncated
     );
 
     constructor(bytes memory mlDsa87PublicKey_, bytes memory slhDsaPublicKey_) {
@@ -56,7 +62,8 @@ contract PQSmartAccount {
     function callPayloadCommitment(
         address target,
         uint256 value,
-        bytes calldata data
+        bytes calldata data,
+        uint64 callGasLimit
     ) public view returns (bytes32) {
         return sha256(
             abi.encodePacked(
@@ -66,7 +73,8 @@ contract PQSmartAccount {
                 address(this),
                 target,
                 bytes32(value),
-                keccak256(data)
+                keccak256(data),
+                callGasLimit
             )
         );
     }
@@ -97,11 +105,12 @@ contract PQSmartAccount {
         address target,
         uint256 value,
         bytes calldata data,
+        uint64 callGasLimit,
         uint64 txNonce,
         uint64 validUntil
     ) public view returns (bytes memory) {
         return authorizationEnvelopeMessage(
-            callPayloadCommitment(target, value, data),
+            callPayloadCommitment(target, value, data, callGasLimit),
             txNonce,
             validUntil
         );
@@ -121,10 +130,50 @@ contract PQSmartAccount {
         );
     }
 
+    function _boundedCall(
+        address target,
+        uint256 value,
+        bytes memory callData,
+        uint64 callGasLimit
+    ) private returns (bool success, bytes memory result, bool truncated) {
+        uint256 maxReturnData = MAX_RETURN_DATA_BYTES;
+        uint256 fullReturnDataSize;
+
+        assembly {
+            success := call(
+                callGasLimit,
+                target,
+                value,
+                add(callData, 0x20),
+                mload(callData),
+                0,
+                0
+            )
+
+            fullReturnDataSize := returndatasize()
+            let copySize := fullReturnDataSize
+            if gt(copySize, maxReturnData) {
+                copySize := maxReturnData
+            }
+
+            result := mload(0x40)
+            mstore(result, copySize)
+            let resultData := add(result, 0x20)
+            returndatacopy(resultData, 0, copySize)
+            mstore(
+                0x40,
+                and(add(add(resultData, copySize), 31), not(31))
+            )
+        }
+
+        truncated = fullReturnDataSize > maxReturnData;
+    }
+
     function execute(
         address target,
         uint256 value,
         bytes calldata data,
+        uint64 callGasLimit,
         uint64 validUntil,
         bytes calldata mlDsaSignature,
         bytes calldata slhDsaSignature
@@ -132,6 +181,9 @@ contract PQSmartAccount {
         if (executing) revert ReentrantExecution();
         if (mlDsaSignature.length != 4627 || slhDsaSignature.length != 29792) {
             revert InvalidSignatureEncoding();
+        }
+        if (data.length > MAX_TX_CALLDATA_BYTES || callGasLimit == 0) {
+            revert InvalidExecutionBounds();
         }
         if (
             block.timestamp >= uint256(validUntil)
@@ -142,7 +194,8 @@ contract PQSmartAccount {
 
         uint64 current = nonce;
         if (current == type(uint64).max) revert Unauthorized();
-        bytes memory message = authorizationMessage(target, value, data, current, validUntil);
+        bytes memory message =
+            authorizationMessage(target, value, data, callGasLimit, current, validUntil);
         bytes memory context = fipsContext();
 
         if (!PQVerify.mlDsa87(mlDsa87PublicKey, message, context, mlDsaSignature)) {
@@ -152,12 +205,18 @@ contract PQSmartAccount {
             revert Unauthorized();
         }
 
-        // Authorization nonce is consumed before the downstream call. A target
-        // failure is an execution outcome, not a reason to resurrect an already
-        // authorized signed operation.
+        // All potentially reverting authorization and local allocation work is
+        // completed before nonce consumption. After this point the target receives
+        // only a signed, bounded gas budget and returndata copying is capped.
+        uint256 requiredGas = uint256(callGasLimit) + POST_CALL_GAS_RESERVE;
+        if (gasleft() <= requiredGas) revert InsufficientExecutionGas();
+        bytes memory callData = data;
+
         nonce = current + 1;
         executing = true;
-        (success, result) = target.call{value: value}(data);
+        bool truncated;
+        (success, result, truncated) =
+            _boundedCall(target, value, callData, callGasLimit);
         executing = false;
 
         emit Executed(
@@ -166,7 +225,8 @@ contract PQSmartAccount {
             value,
             keccak256(data),
             success,
-            keccak256(result)
+            keccak256(result),
+            truncated
         );
         return (success, result);
     }
