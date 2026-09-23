@@ -839,23 +839,45 @@ pub struct TransportRecordSequence {
     direction: TransportDirection,
     next_sequence: u64,
     max_messages: u64,
+    started_at: u64,
+    max_seconds: u64,
 }
 
 impl TransportRecordSequence {
-    pub fn new_initiator_to_responder(rekey_policy: RekeyPolicy) -> Option<Self> {
-        Self::new(TransportDirection::InitiatorToResponder, rekey_policy)
+    pub fn new_initiator_to_responder(
+        rekey_policy: RekeyPolicy,
+        started_at: u64,
+    ) -> Option<Self> {
+        Self::new(
+            TransportDirection::InitiatorToResponder,
+            rekey_policy,
+            started_at,
+        )
     }
 
-    pub fn new_responder_to_initiator(rekey_policy: RekeyPolicy) -> Option<Self> {
-        Self::new(TransportDirection::ResponderToInitiator, rekey_policy)
+    pub fn new_responder_to_initiator(
+        rekey_policy: RekeyPolicy,
+        started_at: u64,
+    ) -> Option<Self> {
+        Self::new(
+            TransportDirection::ResponderToInitiator,
+            rekey_policy,
+            started_at,
+        )
     }
 
-    fn new(direction: TransportDirection, rekey_policy: RekeyPolicy) -> Option<Self> {
+    fn new(
+        direction: TransportDirection,
+        rekey_policy: RekeyPolicy,
+        started_at: u64,
+    ) -> Option<Self> {
         rekey_policy.validate().ok()?;
         Some(Self {
             direction,
             next_sequence: 0,
             max_messages: rekey_policy.max_messages,
+            started_at,
+            max_seconds: rekey_policy.max_seconds,
         })
     }
 
@@ -863,8 +885,21 @@ impl TransportRecordSequence {
         self.next_sequence
     }
 
-    pub fn next_nonce(&mut self) -> Option<[u8; TRANSPORT_RECORD_NONCE_BYTES]> {
-        if self.next_sequence >= self.max_messages {
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    fn within_time_window(&self, now: u64) -> bool {
+        now.checked_sub(self.started_at)
+            .map(|elapsed| elapsed < self.max_seconds)
+            .unwrap_or(false)
+    }
+
+    pub fn next_nonce(
+        &mut self,
+        now: u64,
+    ) -> Option<[u8; TRANSPORT_RECORD_NONCE_BYTES]> {
+        if !self.within_time_window(now) || self.next_sequence >= self.max_messages {
             return None;
         }
         let sequence = self.next_sequence;
@@ -877,8 +912,8 @@ impl TransportRecordSequence {
         Some(nonce)
     }
 
-    pub fn exhausted(&self) -> bool {
-        self.next_sequence >= self.max_messages
+    pub fn exhausted(&self, now: u64) -> bool {
+        !self.within_time_window(now) || self.next_sequence >= self.max_messages
     }
 }
 
@@ -1800,19 +1835,41 @@ mod tests {
             max_seconds: 10,
         };
         let mut outbound =
-            TransportRecordSequence::new_initiator_to_responder(policy).expect("sequence");
+            TransportRecordSequence::new_initiator_to_responder(policy, 1_000).expect("sequence");
         let mut inbound =
-            TransportRecordSequence::new_responder_to_initiator(policy).expect("sequence");
+            TransportRecordSequence::new_responder_to_initiator(policy, 1_000).expect("sequence");
 
-        let out0 = outbound.next_nonce().expect("outbound nonce 0");
-        let out1 = outbound.next_nonce().expect("outbound nonce 1");
-        let in0 = inbound.next_nonce().expect("inbound nonce 0");
+        let out0 = outbound.next_nonce(1_000).expect("outbound nonce 0");
+        let out1 = outbound.next_nonce(1_001).expect("outbound nonce 1");
+        let in0 = inbound.next_nonce(1_000).expect("inbound nonce 0");
 
         assert_ne!(out0, out1);
         assert_ne!(out0, in0);
-        assert!(outbound.exhausted());
-        assert!(outbound.next_nonce().is_none());
+        assert!(outbound.exhausted(1_001));
+        assert!(outbound.next_nonce(1_001).is_none());
         assert_eq!(outbound.next_sequence(), 2);
+    }
+
+    #[test]
+    fn transport_record_sequence_enforces_time_rekey_and_clock_rollback() {
+        let policy = RekeyPolicy {
+            max_messages: 100,
+            max_seconds: 10,
+        };
+        let mut sequence =
+            TransportRecordSequence::new_initiator_to_responder(policy, 1_000)
+                .expect("sequence");
+
+        assert!(sequence.next_nonce(999).is_none());
+        assert_eq!(sequence.next_sequence(), 0);
+
+        assert!(sequence.next_nonce(1_000).is_some());
+        assert!(sequence.next_nonce(1_009).is_some());
+        assert!(!sequence.exhausted(1_009));
+
+        assert!(sequence.next_nonce(1_010).is_none());
+        assert!(sequence.exhausted(1_010));
+        assert_eq!(sequence.next_sequence(), 2);
     }
 
     #[test]
