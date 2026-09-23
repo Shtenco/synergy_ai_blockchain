@@ -78,13 +78,6 @@ def main() -> int:
                 "referenceLocator": f'pkg:cargo/{pkg["name"]}@{pkg["version"]}',
             }
         ]
-        if checksum:
-            external_refs.append({
-                "referenceCategory": "SECURITY",
-                "referenceType": "cpe23Type",
-                "referenceLocator": f"cargo-checksum-sha256:{checksum}",
-            })
-
         annotations = []
         if lock_source:
             annotations.append({
