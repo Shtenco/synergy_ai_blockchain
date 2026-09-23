@@ -89,7 +89,7 @@ impl ArchiveReceipt {
     /// Compression-only storage saving in basis points. Returns `None` for an
     /// invalid zero-length raw object instead of panicking.
     pub fn saving_bps(&self) -> Option<u64> {
-        Some(10_000u64.saturating_sub(self.archive_to_raw_bps()?))
+        10_000u64.checked_sub(self.archive_to_raw_bps()?)
     }
 }
 
@@ -578,6 +578,14 @@ mod tests {
         let r = archive();
         assert_eq!(r.archive_to_raw_bps(), Some(2500));
         assert_eq!(r.saving_bps(), Some(7500));
+    }
+
+    #[test]
+    fn archive_saving_fails_closed_when_archive_expands_data() {
+        let mut r = archive();
+        r.archive_bytes = r.raw_bytes.checked_add(1).expect("expanded archive bytes");
+        assert!(r.archive_to_raw_bps().expect("ratio") > 10_000);
+        assert_eq!(r.saving_bps(), None);
     }
 
     #[test]
