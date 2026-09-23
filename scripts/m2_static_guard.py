@@ -15,6 +15,7 @@ pq_sol = (ROOT / "contracts/IPQVerifier.sol").read_text(encoding="utf-8")
 smart_account_sol = (ROOT / "contracts/PQSmartAccount.sol").read_text(encoding="utf-8")
 nexus_sol = (ROOT / "contracts/INexusAI.sol").read_text(encoding="utf-8")
 evm_fips_context_fixture = (ROOT / "tests/fixtures/evm_fips_context_v1.hex").read_text(encoding="utf-8").strip()
+evm_authorization_envelope_fixture = (ROOT / "tests/fixtures/evm_authorization_envelope_v1.hex").read_text(encoding="utf-8").strip()
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
 tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
@@ -1725,6 +1726,22 @@ require(
     and "expected_auxiliary_paths" in fixture_verifier
     and "unexpected/unmanifested auxiliary fixture inventory" in fixture_verifier,
     "auxiliary protocol parity fixtures must remain fully manifest-covered",
+)
+
+
+require(
+    evm_authorization_envelope_fixture
+        == "53594e455247592f50512d41555448000001000000000000000000000000000000000000000000000000000000000000210501030203040000000000000001000000000000000700000000000003e8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and "evm_authorization_envelope_fixture_matches_rust_profile_v1" in pq
+    and '"SYNERGY/PQ-AUTH"' in smart_account_sol
+    and "function authorizationEnvelopeMessage(" in smart_account_sol
+    and "bytes8(AUTHORIZATION_EPOCH)" in smart_account_sol
+    and "bytes8(txNonce)" in smart_account_sol
+    and "bytes8(validUntil)" in smart_account_sol
+    and "payloadCommitment" in smart_account_sol
+    and '"tests/fixtures/evm_authorization_envelope_v1.hex"' in fixture_manifest
+    and "tests/fixtures/evm_authorization_envelope_v1.hex" in workflow,
+    "Rust/Solidity canonical authorization envelope must remain byte-for-byte profile-v1 compatible",
 )
 
 print("M2 static guard: PASS")
