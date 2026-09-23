@@ -55,9 +55,6 @@ impl LegacyIdentityBinding {
         if self.synergy_account_id == [0u8; 32] {
             return Err(MigrationError::EmptySynergyAccount);
         }
-        if self.synergy_account_id != self.pq_identity_commitment {
-            return Err(MigrationError::InvalidPqAuthorization);
-        }
         if self.expires_at == 0 {
             return Err(MigrationError::Expired);
         }
@@ -142,6 +139,8 @@ pub fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
     }
     if binding.authorization.keyset_commitment()
         != Some(binding.binding.pq_identity_commitment)
+        || binding.authorization.primary_account_identity_commitment()
+            != Some(binding.binding.synergy_account_id)
     {
         return Err(MigrationError::InvalidPqAuthorization);
     }
@@ -228,6 +227,9 @@ mod tests {
         let pq_identity_commitment = authorization
             .keyset_commitment()
             .expect("migration PQ identity commitment");
+        let synergy_account_id = authorization
+            .primary_account_identity_commitment()
+            .expect("migration primary account identity");
 
         MigrationAuthorization {
             chain_id: [0x51; 32],
@@ -236,7 +238,7 @@ mod tests {
                 source_chain: LegacyChain::Ethereum,
                 legacy_identifier: vec![0x11; 20],
                 pq_identity_commitment,
-                synergy_account_id: pq_identity_commitment,
+                synergy_account_id,
                 nonce: 17,
                 expires_at: 2_000,
             },
@@ -362,10 +364,16 @@ mod tests {
 
         let mut changed = binding.clone();
         changed.synergy_account_id[0] ^= 1;
-        assert!(changed.payload_commitment().is_none());
+        assert_ne!(
+            base,
+            changed.payload_commitment().expect("changed account identity")
+        );
 
         let mut changed = binding;
         changed.pq_identity_commitment[0] ^= 1;
-        assert!(changed.payload_commitment().is_none());
+        assert_ne!(
+            base,
+            changed.payload_commitment().expect("changed authority keyset")
+        );
     }
 }
