@@ -37,6 +37,19 @@ impl NexusManifest {
             max_output_values: 64,
         }
     }
+
+    pub fn validate(&self) -> Result<(), NexusError> {
+        if self.model_root == [0u8; 32]
+            || self.nodes == 0
+            || self.layers == 0
+            || self.q_bits != 16
+            || self.max_input_values == 0
+            || self.max_output_values == 0
+        {
+            return Err(NexusError::InvalidManifest);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,18 +68,26 @@ pub struct NexusResponse {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NexusError {
+    InvalidManifest,
     InvalidShape,
+    UnsupportedMode,
     GasOverflow,
 }
 
 fn qmul(a: i64, b: i64) -> i64 {
-    let p = (a as i128) * (b as i128);
+    let p = i128::from(a) * i128::from(b);
     let shifted = p >> 16;
-    shifted.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    let clamped = shifted.clamp(i128::from(i64::MIN), i128::from(i64::MAX));
+    i64::try_from(clamped).expect("clamped Q16.16 product must fit i64")
 }
 
 fn avg3(a: i64, b: i64, c: i64) -> i64 {
-    ((a as i128 + b as i128 + c as i128) / 3) as i64
+    let sum = i128::from(a) + i128::from(b) + i128::from(c);
+    i64::try_from(sum / 3).expect("average of three i64 values must fit i64")
+}
+
+fn qadd_saturating(a: i64, b: i64) -> i64 {
+    a.saturating_add(b)
 }
 
 fn graph_step(x: &[i64]) -> Vec<i64> {
@@ -94,10 +115,9 @@ fn residual_mix(x: &[i64]) -> Vec<i64> {
     let w2 = 13107i64; // 0.20
     let w4 = 9830i64;  // 0.15
     x.iter().enumerate().map(|(i, &v)| {
-        qmul(v, w0)
-            .saturating_add(qmul(p1[i], w1))
-            .saturating_add(qmul(p2[i], w2))
-            .saturating_add(qmul(p4[i], w4))
+        let a = qadd_saturating(qmul(v, w0), qmul(p1[i], w1));
+        let b = qadd_saturating(a, qmul(p2[i], w2));
+        qadd_saturating(b, qmul(p4[i], w4))
     }).collect()
 }
 
@@ -110,31 +130,35 @@ pub fn infer_reference(
     gas: &PrecompileGasSchedule,
     request: &NexusRequest,
 ) -> Result<NexusResponse, NexusError> {
+    manifest.validate()?;
+    if request.mode != NexusMode::Score {
+        return Err(NexusError::UnsupportedMode);
+    }
     if request.input_q16.is_empty()
-        || request.input_q16.len() > manifest.max_input_values as usize
+        || request.input_q16.len() > usize::from(manifest.max_input_values)
         || request.max_output_values == 0
         || request.max_output_values > manifest.max_output_values
     {
         return Err(NexusError::InvalidShape);
     }
 
-    let nodes = manifest.nodes as usize;
+    let nodes = usize::from(manifest.nodes);
     let mut state = vec![0i64; nodes];
     for (i, v) in request.input_q16.iter().enumerate() {
-        state[i % nodes] = state[i % nodes].saturating_add(*v);
+        state[i % nodes] = qadd_saturating(state[i % nodes], *v);
     }
 
     for _ in 0..manifest.layers {
         state = residual_mix(&state);
     }
 
-    let output_len = usize::min(request.max_output_values as usize, state.len());
+    let output_len = usize::min(usize::from(request.max_output_values), state.len());
     let output = state[..output_len].to_vec();
     let input_bytes = request.input_q16.len() * 8;
     let output_bytes = output.len() * 8;
     let edges = nodes * 3;
     let gas_used = gas
-        .nexus_cost(input_bytes, output_bytes, nodes, edges, manifest.layers as usize)
+        .nexus_cost(input_bytes, output_bytes, nodes, edges, usize::from(manifest.layers))
         .ok_or(NexusError::GasOverflow)?;
 
     Ok(NexusResponse { output_q16: output, gas_used })
@@ -143,6 +167,44 @@ pub fn infer_reference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_zero_node_manifest_without_panicking() {
+        let mut m = NexusManifest::v18_consensus_profile([7u8; 32]);
+        m.nodes = 0;
+        let r = NexusRequest {
+            mode: NexusMode::Score,
+            input_q16: vec![Q],
+            max_output_values: 1,
+        };
+        assert_eq!(
+            infer_reference(&m, &PrecompileGasSchedule::default(), &r),
+            Err(NexusError::InvalidManifest)
+        );
+    }
+
+    #[test]
+    fn profile_v1_rejects_unimplemented_nexus_modes() {
+        let m = NexusManifest::v18_consensus_profile([7u8; 32]);
+        for mode in [NexusMode::Policy, NexusMode::ProofAssist] {
+            let r = NexusRequest {
+                mode,
+                input_q16: vec![Q],
+                max_output_values: 1,
+            };
+            assert_eq!(
+                infer_reference(&m, &PrecompileGasSchedule::default(), &r),
+                Err(NexusError::UnsupportedMode)
+            );
+        }
+    }
+
+    #[test]
+    fn q16_saturation_is_explicit_and_deterministic() {
+        assert_eq!(qadd_saturating(i64::MAX, 1), i64::MAX);
+        assert_eq!(qadd_saturating(i64::MIN, -1), i64::MIN);
+        assert_eq!(qmul(i64::MAX, i64::MAX), i64::MAX);
+    }
 
     #[test]
     fn fixed_point_inference_is_bit_exact() {
