@@ -247,6 +247,22 @@ impl AutopilotRealizedExecutionReceipt {
         }
         Ok(())
     }
+
+    pub fn commitment_against(
+        &self,
+        call: &AutopilotBudgetBoundCall,
+    ) -> Option<[u8; 32]> {
+        self.validate_against(call).ok()?;
+        const DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-REALIZED-EXECUTION/V1\0";
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(self.budget_bound_call_root);
+        hasher.update(self.reservation_root);
+        hasher.update(self.tx_hash);
+        hasher.update(self.realized_value.to_be_bytes());
+        hasher.update([u8::from(self.success)]);
+        Some(hasher.finalize().into())
+    }
 }
 
 
