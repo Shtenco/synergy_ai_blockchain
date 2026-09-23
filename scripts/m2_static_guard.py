@@ -19,6 +19,7 @@ lock_policy = (ROOT / "scripts/m2_verify_lock.py").read_text(encoding="utf-8")
 validator = (ROOT / "src/validator.rs").read_text(encoding="utf-8")
 migration = (ROOT / "src/migration.rs").read_text(encoding="utf-8")
 model_shard = (ROOT / "src/model_shard.rs").read_text(encoding="utf-8")
+inference = (ROOT / "src/inference.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -541,6 +542,16 @@ require(
     and "duplicate created shard index" in model_shard
     and "created shard parent was not consumed by transition" in model_shard,
     "model lineage upgrades must remain MAX-authorized and lineage-closed",
+)
+
+
+require(
+    "verify_envelope_authorization" in inference
+    and "AuthorizationDomain::InferenceReceipt" in inference
+    and "authorized.authorization.policy != AuthPolicy::PqOnly" in inference
+    and "expected_worker_id" in inference
+    and "authorization_commitment" in inference,
+    "inference receipts must remain state-aware PQ-only authorized",
 )
 
 print("M2 static guard: PASS")
