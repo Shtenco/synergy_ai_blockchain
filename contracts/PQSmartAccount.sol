@@ -19,9 +19,15 @@ contract PQSmartAccount {
     error InvalidKeyMaterial();
     error InvalidSignatureEncoding();
     error Unauthorized();
-    error CallFailed(bytes reason);
 
-    event Executed(uint256 indexed nonce, address indexed target, uint256 value, bytes32 callHash);
+    event Executed(
+        uint256 indexed nonce,
+        address indexed target,
+        uint256 value,
+        bytes32 callHash,
+        bool success,
+        bytes32 returnDataHash
+    );
 
     constructor(bytes memory mlDsa87PublicKey_, bytes memory slhDsaPublicKey_) {
         if (
@@ -89,7 +95,7 @@ contract PQSmartAccount {
         uint256 validUntil,
         bytes calldata mlDsaSignature,
         bytes calldata slhDsaSignature
-    ) external returns (bytes memory result) {
+    ) external returns (bool success, bytes memory result) {
         if (mlDsaSignature.length != 4627 || slhDsaSignature.length != 29792) {
             revert InvalidSignatureEncoding();
         }
@@ -111,11 +117,20 @@ contract PQSmartAccount {
             revert Unauthorized();
         }
 
+        // Authorization nonce is consumed before the downstream call. A target
+        // failure is an execution outcome, not a reason to resurrect an already
+        // authorized signed operation.
         nonce = current + 1;
-        (bool ok, bytes memory out) = target.call{value: value}(data);
-        if (!ok) revert CallFailed(out);
+        (success, result) = target.call{value: value}(data);
 
-        emit Executed(current, target, value, keccak256(data));
-        return out;
+        emit Executed(
+            current,
+            target,
+            value,
+            keccak256(data),
+            success,
+            keccak256(result)
+        );
+        return (success, result);
     }
 }
