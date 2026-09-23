@@ -15,7 +15,13 @@ pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
 pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
-pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = 40_000;
+pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =
+    SECP256K1_PUBLIC_KEY_BYTES
+    + SECP256K1_SIGNATURE_BYTES
+    + ML_DSA_87_PUBLIC_KEY_BYTES
+    + ML_DSA_87_SIGNATURE_BYTES
+    + SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
+    + SLH_DSA_SHAKE_256S_SIGNATURE_BYTES;
 
 impl AuthScheme {
     pub const fn protocol_code(self) -> u8 {
@@ -591,6 +597,27 @@ mod tests {
             public_key,
             signature,
         }
+    }
+
+    #[test]
+    fn authorization_byte_budget_matches_exact_max_policy_suite() {
+        assert_eq!(MAX_AUTHORIZATION_EVIDENCE_BYTES, 37_173);
+
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Max,
+            evidence: vec![
+                evidence(AuthScheme::Secp256k1),
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let total: usize = auth
+            .evidence
+            .iter()
+            .map(|e| e.public_key.len() + e.signature.len())
+            .sum();
+        assert_eq!(total, MAX_AUTHORIZATION_EVIDENCE_BYTES);
+        assert!(auth.validate_structure().is_ok());
     }
 
     #[test]
