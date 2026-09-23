@@ -577,15 +577,16 @@ require(
 )
 
 require(
-    "self.authorization.keyset_commitment() != Some(self.sender_account)" in tx,
-    "transaction sender account must remain bound to authorization keyset",
+    "self.authorization.primary_account_identity_commitment() != Some(self.sender_account)" in tx,
+    "transaction sender account must remain bound to stable primary PQ identity",
 )
 
 require(
     "binding.authorization.keyset_commitment()" in migration
     and "Some(binding.binding.pq_identity_commitment)" in migration
-    and "self.synergy_account_id != self.pq_identity_commitment" in migration,
-    "migration target account/PQ identity must remain keyset-bound",
+    and "binding.authorization.primary_account_identity_commitment()" in migration
+    and "Some(binding.binding.synergy_account_id)" in migration,
+    "migration must bind stable account identity separately from full PQ authority keyset",
 )
 
 require(
@@ -677,6 +678,14 @@ require(
     and '"checksums"' in spdx_generator
     and "Cargo.lock source" in spdx_generator,
     "SPDX output must remain bound to locked package checksums/sources",
+)
+
+
+require(
+    "pub fn primary_account_identity_commitment(" in pq
+    and "SYNERGY/PQ-PRIMARY-ACCOUNT/V1" in pq
+    and "primary_account_identity_is_stable_across_authorization_policies" in pq,
+    "policy-independent stable account identity primitive missing",
 )
 
 print("M2 static guard: PASS")
