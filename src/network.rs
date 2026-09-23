@@ -4,6 +4,12 @@ use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
+};
+
 pub const ML_KEM_1024_PROTOCOL_CODE: u8 = 1;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
@@ -52,6 +58,7 @@ pub trait TransportReplayGuard {
 
 pub const MAX_TRANSPORT_SESSIONS_PER_EPOCH: usize = 65_536;
 
+#[derive(Clone)]
 pub struct InMemoryTransportReplayGuard {
     network_id: [u8; 32],
     epoch: u64,
@@ -176,6 +183,26 @@ impl TransportPeerIdentity {
         Ok(())
     }
 }
+
+const TRANSPORT_HANDSHAKE_AUTH_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT/AUTH/V1\0";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransportPeerAuthorization {
+    pub role: TransportRole,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub authorization: HybridAuthorization,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransportPeerAuthorizationValidationContext {
+    pub expected_node_id: [u8; 32],
+    pub expected_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+
 
 pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);
 
@@ -378,6 +405,83 @@ impl TransportTranscript {
     }
 }
 
+
+impl TransportPeerAuthorization {
+    fn peer_for_role<'a>(
+        &self,
+        transcript: &'a TransportTranscript,
+    ) -> &'a TransportPeerIdentity {
+        match self.role {
+            TransportRole::Initiator => &transcript.initiator,
+            TransportRole::Responder => &transcript.responder,
+        }
+    }
+
+    pub fn envelope(&self, transcript: &TransportTranscript) -> Option<AuthorizationEnvelope> {
+        let transcript_commitment = transcript.commitment()?;
+        let peer = self.peer_for_role(transcript);
+
+        let mut hasher = Sha256::new();
+        hasher.update(TRANSPORT_HANDSHAKE_AUTH_DOMAIN);
+        hasher.update(transcript_commitment);
+        hasher.update([self.role.protocol_code()]);
+        hasher.update(peer.node_id);
+        let payload_commitment: [u8; 32] = hasher.finalize().into();
+
+        Some(AuthorizationEnvelope {
+            chain_id: transcript.network_id,
+            domain: AuthorizationDomain::TransportHandshake,
+            epoch: transcript.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment,
+        })
+    }
+}
+
+fn verify_transport_peer_authorization<V: ContextSignatureVerifier>(
+    verifier: &V,
+    transcript: &TransportTranscript,
+    expected_role: TransportRole,
+    authorized: &TransportPeerAuthorization,
+    validation: &TransportPeerAuthorizationValidationContext,
+) -> bool {
+    if authorized.role != expected_role
+        || authorized.authorization.policy != AuthPolicy::PqOnly
+    {
+        return false;
+    }
+
+    let peer = authorized.peer_for_role(transcript);
+    if peer.node_id != validation.expected_node_id
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_keyset_commitment)
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope(transcript) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: transcript.network_id,
+        expected_domain: AuthorizationDomain::TransportHandshake,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: transcript.epoch,
+        expected_nonce: authorized.nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
 pub struct HybridSharedSecret {
     policy: TransportPolicy,
     rekey_policy: RekeyPolicy,
@@ -448,7 +552,7 @@ impl HybridSharedSecret {
     }
 }
 
-pub fn establish_shared_secret<G: TransportReplayGuard>(
+pub(crate) fn establish_shared_secret<G: TransportReplayGuard>(
     replay_guard: &mut G,
     pq_shared: MlKemSharedSecret,
     classical_shared: Option<SecretBytes>,
@@ -474,6 +578,72 @@ pub fn establish_shared_secret<G: TransportReplayGuard>(
         return None;
     }
 
+    Some(secret)
+}
+
+pub fn establish_authenticated_shared_secret<G: TransportReplayGuard, V: ContextSignatureVerifier>(
+    replay_guard: &mut G,
+    initiator_replay: &mut AuthorizationReplayState,
+    responder_replay: &mut AuthorizationReplayState,
+    verifier: &V,
+    pq_shared: MlKemSharedSecret,
+    classical_shared: Option<SecretBytes>,
+    transcript: &TransportTranscript,
+    transport_validation: &TransportValidationContext,
+    initiator_authorization: &TransportPeerAuthorization,
+    initiator_validation: &TransportPeerAuthorizationValidationContext,
+    responder_authorization: &TransportPeerAuthorization,
+    responder_validation: &TransportPeerAuthorizationValidationContext,
+) -> Option<HybridSharedSecret> {
+    if initiator_validation.expected_node_id != transcript.initiator.node_id
+        || responder_validation.expected_node_id != transcript.responder.node_id
+        || !verify_transport_peer_authorization(
+            verifier,
+            transcript,
+            TransportRole::Initiator,
+            initiator_authorization,
+            initiator_validation,
+        )
+        || !verify_transport_peer_authorization(
+            verifier,
+            transcript,
+            TransportRole::Responder,
+            responder_authorization,
+            responder_validation,
+        )
+    {
+        return None;
+    }
+
+    let initiator_envelope = initiator_authorization.envelope(transcript)?;
+    let responder_envelope = responder_authorization.envelope(transcript)?;
+
+    // Consume peer authorization on clones first. Real replay state is committed
+    // only after the transport session itself is accepted, avoiding partial nonce burn.
+    let mut next_initiator = initiator_replay.clone();
+    let mut next_responder = responder_replay.clone();
+    if !next_initiator.consume_verified_for_subject(
+        &initiator_authorization.authorization,
+        &initiator_envelope,
+        transcript.initiator.node_id,
+    ) || !next_responder.consume_verified_for_subject(
+        &responder_authorization.authorization,
+        &responder_envelope,
+        transcript.responder.node_id,
+    ) {
+        return None;
+    }
+
+    let secret = establish_shared_secret(
+        replay_guard,
+        pq_shared,
+        classical_shared,
+        transcript,
+        transport_validation,
+    )?;
+
+    *initiator_replay = next_initiator;
+    *responder_replay = next_responder;
     Some(secret)
 }
 
