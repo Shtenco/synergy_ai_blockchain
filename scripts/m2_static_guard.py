@@ -13,6 +13,9 @@ pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
 tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
+workflow = (ROOT / ".github/workflows/pq-evm-ci.yml").read_text(encoding="utf-8")
+toolchain = (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")
+lock_policy = (ROOT / "scripts/m2_verify_lock.py").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -253,6 +256,45 @@ require(
     "context.now >= self.expires_at" in pq
     and "context.now >= self.authorization_expires_at" in tx,
     "authorization expiry must be exclusive at the expiry instant",
+)
+
+
+require(
+    'CRYPTO_PROFILE_VERSION: u16 = 1' in pq
+    and 'CRYPTO_PROFILE_VERSION.to_be_bytes()' in pq
+    and 'crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes()' in network,
+    "crypto profile version must remain bound into authorization and transport domains",
+)
+
+require(
+    'channel = "1.85.0"' in toolchain
+    and 'components = ["rustfmt", "clippy"]' in toolchain,
+    "repository Rust toolchain pin missing or changed",
+)
+
+require(
+    'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' in workflow
+    and 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' in workflow
+    and 'actions/checkout@v4' not in workflow
+    and 'actions/upload-artifact@v4' not in workflow
+    and 'timeout-minutes: 45' in workflow,
+    "GitHub Actions supply-chain pins missing or mutable",
+)
+
+require(
+    'git dependency forbidden in M2 locked graph' in lock_policy
+    and 'registry package lacks a 64-hex checksum' in lock_policy
+    and '"ml-kem": "0.3.2"' in lock_policy
+    and '"ml-dsa": "0.1.1"' in lock_policy
+    and '"slh-dsa": "0.1.0"' in lock_policy,
+    "locked supply-chain verification policy missing",
+)
+
+require(
+    "max_future_seconds" in pq
+    and "authorization expiry exceeds policy horizon" in pq
+    and "max_authorization_future_seconds" in tx,
+    "authorization lifetime horizon policy missing",
 )
 
 print("M2 static guard: PASS")
