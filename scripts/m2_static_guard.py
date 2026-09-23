@@ -1480,4 +1480,25 @@ require(
     "PQSmartAccount must serialize signed execution and reject reentrancy",
 )
 
+
+require(
+    "source_chain_id: [u8; 32]" in service_planes
+    and "source_epoch: u64" in service_planes
+    and "service finality source chain mismatch" in service_planes
+    and "service finality source epoch mismatch" in service_planes
+    and "pub fn payment_settlement(authorized: &SettlementBatchAuthorization)" in service_planes
+    and "pub fn autopilot_terminal(" in service_planes
+    and "AutopilotLeaseTerminalAuthorization" in service_planes
+    and "pub fn storage_receipt(authorized: &StorageProofAuthorization)" in service_planes
+    and "CognitiveEvidenceAuthorization" in service_planes
+    and "KvReplicaReceiptAuthorization" in service_planes
+    and "finality.chain_id != authorized.chain_id" in service_planes,
+    "service finality items must derive from authorized chain/epoch-bound domain outcomes",
+)
+
+require(
+    "finality_chain_mismatch_does_not_consume_service_authority_nonce" in service_planes,
+    "cross-chain finality rejection must occur before service-authority nonce consumption",
+)
+
 print("M2 static guard: PASS")
