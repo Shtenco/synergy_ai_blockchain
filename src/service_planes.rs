@@ -7,19 +7,17 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::autopilot_execution_lease::{
-    AutopilotLeaseTerminalAuthorization, AutopilotLeaseTerminalReceipt,
-};
+use crate::autopilot_execution_lease::AutopilotLeaseTerminalAuthorization;
 use crate::cognitive::{
-    CognitiveEvidence, CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
+    CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
 };
-use crate::kv_cache::{KvCacheLease, KvReplicaReceipt, KvReplicaReceiptAuthorization};
-use crate::payments::{SettlementBatch, SettlementBatchAuthorization};
+use crate::kv_cache::{KvCacheLease, KvReplicaReceiptAuthorization};
+use crate::payments::SettlementBatchAuthorization;
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
-use crate::storage::{ProofOfStorageReceipt, StorageProofAuthorization};
+use crate::storage::StorageProofAuthorization;
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
@@ -154,7 +152,7 @@ impl ServiceFinalityBatch {
     pub fn commitment(&self) -> Option<[u8; 32]> {
         self.validate().ok()?;
         let mut ordered = self.items.clone();
-        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.root));
+        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.source_epoch, item.root));
         let count = u64::try_from(ordered.len()).ok()?;
 
         let mut hasher = Sha256::new();
@@ -390,6 +388,10 @@ pub fn verify_service_plane_checkpoint_with_finality_and_consume<V: ContextSigna
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autopilot_execution_lease::{
+        AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalReceipt,
+    };
+    use crate::payments::SettlementBatch;
     use crate::pq::{
         AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
         ML_DSA_87_SIGNATURE_BYTES, SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
@@ -515,7 +517,7 @@ mod tests {
                 lease_root: [0x67; 32],
                 execution_receipt_root: Some([0x68; 32]),
                 reason_root: None,
-                status: crate::autopilot_execution_lease::AutopilotExecutionLeaseStatus::Settled,
+                status: AutopilotExecutionLeaseStatus::Settled,
             },
             authorization: max_authorization(),
         };
