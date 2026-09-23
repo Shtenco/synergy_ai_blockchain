@@ -2,6 +2,7 @@
 
 pub mod autopilot;
 pub mod autopilot_budget;
+pub mod autopilot_execution_lease;
 pub mod cognitive;
 pub mod cognitive_market;
 pub mod cognitive_registry;
@@ -33,6 +34,9 @@ pub use autopilot_budget::{
     verify_autopilot_execution_and_consume, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
     AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
     AutopilotRealizedExecutionReceipt,
+};
+pub use autopilot_execution_lease::{
+    AutopilotExecutionLease, AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalReceipt,
 };
 pub use cognitive::{
     verify_cognitive_evidence_and_consume, CognitiveEvidence, CognitiveEvidenceAuthorization,
