@@ -313,4 +313,25 @@ require(
     "transaction protocol calldata ceiling missing",
 )
 
+
+require(
+    "secp256k1 public key must use compressed encoding" in pq
+    and "secp256k1 signature recovery id must be canonical" in pq
+    and "authorization evidence must not be all-zero" in pq,
+    "canonical classical evidence prefilter missing",
+)
+
+require(
+    "ML_KEM_1024_PROTOCOL_CODE: u8 = 1" in network
+    and "hasher.update([ML_KEM_1024_PROTOCOL_CODE])" in network,
+    "transport ML-KEM algorithm code binding missing",
+)
+
+require(
+    "CRYPTO_PROFILE_VERSION.to_be_bytes()" in tx
+    and "AuthorizationDomain::Transaction.protocol_code()" in tx
+    and "self.authorization.policy.required_schemes()" in tx,
+    "classical transaction preimage lacks crypto profile or suite binding",
+)
+
 print("M2 static guard: PASS")
