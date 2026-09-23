@@ -951,6 +951,34 @@ mod tests {
     }
 
     #[test]
+    fn transport_transcript_and_hkdf_match_independent_known_answer() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let commitment = transcript.commitment().expect("transcript commitment");
+        assert_eq!(
+            hex::encode(commitment),
+            "7cedd002de19f032b45bdde3d99eef89eb9b12b30bbfbcf9e66740c060b297e8"
+        );
+
+        let validation = validation_for(&transcript);
+        let mut replay_guard = OneShotReplayGuard::default();
+        let secret = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("KAT PQ secret"),
+            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &transcript,
+            &validation,
+        )
+        .expect("KAT hybrid secret");
+
+        let session = derive_transport_session_key(&secret).expect("KAT session key");
+        assert_eq!(
+            hex::encode(session.as_bytes()),
+            "c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890"
+        );
+    }
+
+    #[test]
     fn transport_kdf_algorithm_code_is_nonzero_and_transcript_bound() {
         assert_ne!(TRANSPORT_KDF_PROTOCOL_CODE, 0);
 
