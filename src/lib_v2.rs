@@ -35,8 +35,9 @@ pub use autopilot_budget::{
     AutopilotRealizedExecutionReceipt,
 };
 pub use cognitive::{
-    CognitiveEvidence, CognitiveNodeManifest, CognitiveRole, CognitiveWorkReceipt,
-    CognitiveWorkRequest, EvidenceKind, WorkVerdict,
+    verify_cognitive_evidence, CognitiveEvidence, CognitiveEvidenceAuthorization,
+    CognitiveEvidenceValidationContext, CognitiveNodeManifest, CognitiveRole,
+    CognitiveWorkReceipt, CognitiveWorkRequest, EvidenceKind, WorkVerdict,
 };
 pub use cognitive_market::{
     reward_breakdown, CognitiveRewardBreakdown, CognitiveRewardPolicy,
@@ -108,8 +109,9 @@ pub use service_planes::{
     ServicePlaneRoots,
 };
 pub use storage::{
-    ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
-    ProofOfStorageReceipt, StorageBid, StorageClass,
+    verify_storage_proof, ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
+    ProofOfStorageReceipt, StorageBid, StorageClass, StorageProofAuthorization,
+    StorageProofValidationContext,
 };
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
