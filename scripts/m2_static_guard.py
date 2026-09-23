@@ -243,7 +243,7 @@ require(
     and "SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33" in network
     and "classical KEX public key length mismatch" in network
     and "PQ-only transport forbids classical KEX material" in network
-    and "MAX_CLASSICAL_SHARED_SECRET_BYTES: usize = 128" in network,
+    and "CLASSICAL_SHARED_SECRET_BYTES: usize = 32" in network,
     "explicit classical KEX registry or exact transport bounds missing",
 )
 
@@ -332,6 +332,27 @@ require(
     and "AuthorizationDomain::Transaction.protocol_code()" in tx
     and "self.authorization.policy.required_schemes()" in tx,
     "classical transaction preimage lacks crypto profile or suite binding",
+)
+
+require(
+    "[profile.release]" in cargo
+    and "overflow-checks = true" in cargo,
+    "release profile must retain overflow checks for consensus determinism",
+)
+
+require(
+    "CLASSICAL_SHARED_SECRET_BYTES: usize = 32" in network
+    and "secret.len() != CLASSICAL_SHARED_SECRET_BYTES" in network
+    and "shared.len() == CLASSICAL_SHARED_SECRET_BYTES" in network,
+    "classical shared-secret length must remain exact",
+)
+
+require(
+    "persist-credentials: false" in workflow
+    and "-D warnings -D clippy::all" in workflow
+    and "cargo test --locked --doc --features reference-pq" in workflow
+    and "cargo test --locked --release --lib --features reference-pq" in workflow,
+    "hardened executable CI gates missing",
 )
 
 print("M2 static guard: PASS")
