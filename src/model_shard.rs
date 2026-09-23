@@ -289,7 +289,11 @@ pub fn verify_model_upgrade_and_consume<V: ContextSignatureVerifier>(
         Some(envelope) => envelope,
         None => return false,
     };
-    replay.consume_verified(&upgrade.authorization, &envelope)
+    replay.consume_verified_for_subject(
+        &upgrade.authorization,
+        &envelope,
+        validation.expected_authority_keyset_commitment,
+    )
 }
 
 #[cfg(test)]
