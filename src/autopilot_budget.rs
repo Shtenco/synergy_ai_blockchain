@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const AUTOPILOT_EXECUTION_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION/V1\0";
@@ -179,7 +179,7 @@ pub struct AutopilotExecutionValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_autopilot_execution<V: ContextSignatureVerifier>(
+pub(crate) fn verify_autopilot_execution<V: ContextSignatureVerifier>(
     verifier: &V,
     reservation: &AutopilotBudgetReservation,
     authorized: &AutopilotExecutionAuthorization,
@@ -243,6 +243,24 @@ impl AutopilotRealizedExecutionReceipt {
         }
         Ok(())
     }
+}
+
+
+pub fn verify_autopilot_execution_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    reservation: &AutopilotBudgetReservation,
+    authorized: &AutopilotExecutionAuthorization,
+    validation: &AutopilotExecutionValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_autopilot_execution(verifier, reservation, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope(reservation) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
