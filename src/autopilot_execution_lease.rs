@@ -2,8 +2,13 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::autopilot_budget::{AutopilotBudgetBoundCall, AutopilotBudgetReservation};
+use crate::autopilot_budget::{
+    verify_autopilot_execution_and_consume, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
+    AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
+};
+use crate::pq::{AuthorizationReplayState, ContextSignatureVerifier};
 
+const AUTOPILOT_EXECUTION_LEASE_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION-LEASE/V1\0";
 const AUTOPILOT_LEASE_TERMINAL_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-LEASE-TERMINAL/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +28,19 @@ pub struct AutopilotExecutionLease {
 }
 
 impl AutopilotExecutionLease {
+    pub fn canonical_root(
+        reservation: &AutopilotBudgetReservation,
+        call: &AutopilotBudgetBoundCall,
+    ) -> Option<[u8; 32]> {
+        let call_root = call.authorization_commitment(reservation)?;
+        let mut hasher = Sha256::new();
+        hasher.update(AUTOPILOT_EXECUTION_LEASE_DOMAIN);
+        hasher.update(reservation.reservation_root);
+        hasher.update(call_root);
+        hasher.update(call.proposal_root);
+        Some(hasher.finalize().into())
+    }
+
     pub fn validate_new(
         &self,
         reservation: &AutopilotBudgetReservation,
@@ -30,8 +48,17 @@ impl AutopilotExecutionLease {
         now: u64,
     ) -> Result<(), &'static str> {
         call.validate_against(reservation, now)?;
-        if self.lease_root == [0; 32] || self.budget_bound_call_root == [0; 32] {
-            return Err("execution lease/call root required");
+        let call_root = call
+            .authorization_commitment(reservation)
+            .ok_or("budget-bound call commitment unavailable")?;
+        let expected_lease_root =
+            Self::canonical_root(reservation, call).ok_or("execution lease root unavailable")?;
+
+        if self.lease_root != expected_lease_root {
+            return Err("execution lease root mismatch");
+        }
+        if self.budget_bound_call_root != call_root {
+            return Err("execution lease call root mismatch");
         }
         if self.reservation_root != reservation.reservation_root {
             return Err("execution lease reservation mismatch");
@@ -44,6 +71,30 @@ impl AutopilotExecutionLease {
         }
         Ok(())
     }
+}
+
+pub fn authorize_and_lock_autopilot_execution<V: ContextSignatureVerifier>(
+    verifier: &V,
+    reservation: &AutopilotBudgetReservation,
+    authorized: &AutopilotExecutionAuthorization,
+    validation: &AutopilotExecutionValidationContext,
+    replay: &mut AuthorizationReplayState,
+    lease: &AutopilotExecutionLease,
+) -> bool {
+    if lease
+        .validate_new(reservation, &authorized.call, validation.now)
+        .is_err()
+    {
+        return false;
+    }
+
+    verify_autopilot_execution_and_consume(
+        verifier,
+        reservation,
+        authorized,
+        validation,
+        replay,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
