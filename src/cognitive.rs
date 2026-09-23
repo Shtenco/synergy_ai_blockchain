@@ -102,6 +102,9 @@ impl CognitiveNodeManifest {
         if self.bond == 0 {
             return Err("cognitive node bond required");
         }
+        if self.valid_until_epoch < self.valid_from_epoch {
+            return Err("cognitive node validity window invalid");
+        }
         if epoch < self.valid_from_epoch || epoch > self.valid_until_epoch {
             return Err("node manifest inactive");
         }
@@ -397,6 +400,14 @@ mod tests {
             valid_from_epoch: 1,
             valid_until_epoch: 100,
         }
+    }
+
+    #[test]
+    fn cognitive_manifest_rejects_inverted_validity_window() {
+        let mut n = node();
+        n.valid_from_epoch = 20;
+        n.valid_until_epoch = 10;
+        assert!(n.validate(15).is_err());
     }
 
     #[test]
