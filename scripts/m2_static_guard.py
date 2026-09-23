@@ -1680,4 +1680,15 @@ require(
     "Autopilot service finality must require an already-applied matching terminal lease",
 )
 
+
+require(
+    "subject_id: [u8; 32]" in service_planes
+    and "SERVICE_FINALITY_SUBJECT_DOMAIN" in service_planes
+    and "fn subject_hash(" in service_planes
+    and "u64::try_from(part.len()).ok()?" in service_planes
+    and "conflicting service finality subject" in service_planes
+    and "hasher.update(item.subject_id)" in service_planes,
+    "service finality must bind canonical subjects and reject conflicting roots per subject",
+)
+
 print("M2 static guard: PASS")
