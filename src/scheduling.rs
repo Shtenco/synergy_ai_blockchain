@@ -45,8 +45,22 @@ pub struct WorkRequirements {
     pub preferred_locality_domain: Option<[u8; 32]>,
 }
 
+impl WorkRequirements {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.compute_units == 0 {
+            return Err("work compute units required");
+        }
+        if matches!(self.preferred_locality_domain, Some([0u8; 32])) {
+            return Err("preferred locality domain must be nonzero");
+        }
+        Ok(())
+    }
+}
+
 pub fn can_host(node: &NodeCapacity, work: &WorkRequirements) -> bool {
-    node.memory_bytes >= work.minimum_memory_bytes
+    node.validate().is_ok()
+        && work.validate().is_ok()
+        && node.memory_bytes >= work.minimum_memory_bytes
         && node.accelerator_memory_bytes >= work.minimum_accelerator_memory_bytes
         && node.storage_bytes >= work.minimum_storage_bytes
         && node.max_input_bytes >= work.input_bytes
@@ -68,9 +82,20 @@ pub fn placement_score(node: &NodeCapacity, work: &WorkRequirements) -> Option<u
 }
 
 pub fn choose_node<'a>(nodes: &'a [NodeCapacity], work: &WorkRequirements) -> Option<&'a NodeCapacity> {
+    if work.validate().is_err() {
+        return None;
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        if node.validate().is_err()
+            || nodes[..index].iter().any(|prior| prior.node_id == node.node_id)
+        {
+            return None;
+        }
+    }
+
     nodes.iter()
         .filter_map(|node| placement_score(node, work).map(|score| (score, node)))
-        .min_by_key(|(score, _)| *score)
+        .min_by_key(|(score, node)| (*score, node.node_id))
         .map(|(_, node)| node)
 }
 
@@ -106,6 +131,63 @@ mod tests {
             preferred_locality_domain: None,
         };
         assert!(!can_host(&mobile, &work));
+    }
+
+    #[test]
+    fn scheduler_is_permutation_invariant_on_equal_scores() {
+        let a = node(1, NodeClass::Gpu, 2_000_000, 2_000_000, 1000, 7);
+        let b = node(2, NodeClass::Gpu, 2_000_000, 2_000_000, 1000, 7);
+        let work = WorkRequirements {
+            minimum_memory_bytes: 1_000_000,
+            minimum_accelerator_memory_bytes: 1_000_000,
+            minimum_storage_bytes: 1,
+            input_bytes: 1,
+            output_bytes: 1,
+            compute_units: 100,
+            preferred_locality_domain: Some([7; 32]),
+        };
+
+        let first = choose_node(&[b.clone(), a.clone()], &work)
+            .expect("node")
+            .node_id;
+        let second = choose_node(&[a.clone(), b.clone()], &work)
+            .expect("node")
+            .node_id;
+        assert_eq!(first, second);
+        assert_eq!(first, a.node_id);
+    }
+
+    #[test]
+    fn scheduler_rejects_duplicate_node_identity() {
+        let a = node(1, NodeClass::Gpu, 2_000_000, 2_000_000, 1000, 7);
+        let mut duplicate = a.clone();
+        duplicate.max_compute_units = 2_000;
+        let work = WorkRequirements {
+            minimum_memory_bytes: 1,
+            minimum_accelerator_memory_bytes: 0,
+            minimum_storage_bytes: 0,
+            input_bytes: 0,
+            output_bytes: 0,
+            compute_units: 1,
+            preferred_locality_domain: None,
+        };
+        assert!(choose_node(&[a, duplicate], &work).is_none());
+    }
+
+    #[test]
+    fn scheduler_rejects_invalid_work_or_node() {
+        let mut invalid_node = node(1, NodeClass::Gpu, 2_000_000, 2_000_000, 1000, 7);
+        invalid_node.capability_root = [0; 32];
+        let invalid_work = WorkRequirements {
+            minimum_memory_bytes: 0,
+            minimum_accelerator_memory_bytes: 0,
+            minimum_storage_bytes: 0,
+            input_bytes: 0,
+            output_bytes: 0,
+            compute_units: 0,
+            preferred_locality_domain: None,
+        };
+        assert!(choose_node(&[invalid_node], &invalid_work).is_none());
     }
 
     #[test]
