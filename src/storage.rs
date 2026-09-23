@@ -121,6 +121,11 @@ impl DedupReceipt {
         if self.logical_archive_bytes != archive.archive_bytes {
             return Err("dedup logical bytes differ from archive bytes");
         }
+        if self.newly_stored_unique_bytes > 0
+            && self.catalog_root_before == self.catalog_root_after
+        {
+            return Err("dedup catalog root must change when unique bytes are stored");
+        }
         let total = self
             .newly_stored_unique_bytes
             .checked_add(self.reused_bytes)
@@ -174,8 +179,15 @@ impl ErasurePlacementReceipt {
         u64::try_from(ceil).map_err(|_| "erasure size exceeds u64")
     }
 
-    pub fn validate_against(&self, dedup: &DedupReceipt) -> Result<(), &'static str> {
-        if self.object_id != dedup.object_id {
+    pub fn validate_against(
+        &self,
+        archive: &ArchiveReceipt,
+        dedup: &DedupReceipt,
+    ) -> Result<(), &'static str> {
+        archive.validate()?;
+        dedup.validate_against(archive)?;
+
+        if self.object_id != archive.object_id || self.object_id != dedup.object_id {
             return Err("erasure receipt object mismatch");
         }
         if self.dedup_catalog_root != dedup.catalog_root_after {
@@ -186,6 +198,9 @@ impl ErasurePlacementReceipt {
         }
         if self.unique_archive_bytes != dedup.newly_stored_unique_bytes {
             return Err("unique byte count mismatch");
+        }
+        if self.erasure_k != archive.erasure_k || self.erasure_n != archive.erasure_n {
+            return Err("erasure placement policy differs from archive metadata");
         }
         if self.physical_stored_bytes < self.minimum_physical_bytes()? {
             return Err("physical placement below erasure minimum");
@@ -576,6 +591,59 @@ mod tests {
     }
 
     #[test]
+    fn dedup_catalog_root_must_advance_when_unique_bytes_are_added() {
+        let a = archive();
+        let d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [8; 32],
+            logical_archive_bytes: a.archive_bytes,
+            newly_stored_unique_bytes: 1,
+            reused_bytes: a.archive_bytes - 1,
+        };
+        assert_eq!(
+            d.validate_against(&a),
+            Err("dedup catalog root must change when unique bytes are stored")
+        );
+    }
+
+    #[test]
+    fn erasure_placement_must_match_archive_erasure_policy() {
+        let a = archive();
+        let d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [9; 32],
+            logical_archive_bytes: a.archive_bytes,
+            newly_stored_unique_bytes: 50_000,
+            reused_bytes: a.archive_bytes - 50_000,
+        };
+        let mut p = ErasurePlacementReceipt {
+            object_id: a.object_id,
+            dedup_catalog_root: d.catalog_root_after,
+            provider_set_root: [10; 32],
+            unique_archive_bytes: 50_000,
+            erasure_k: a.erasure_k,
+            erasure_n: a.erasure_n,
+            physical_stored_bytes: 100_000,
+            availability_policy_root: [11; 32],
+        };
+        assert_eq!(p.validate_against(&a, &d), Ok(()));
+
+        p.erasure_n = p.erasure_n.checked_add(1).expect("test erasure_n");
+        assert_eq!(
+            p.validate_against(&a, &d),
+            Err("erasure placement policy differs from archive metadata")
+        );
+    }
+
+    #[test]
     fn erasure_placement_cannot_claim_fewer_than_minimum_physical_bytes() {
         let a = archive();
         let d = DedupReceipt {
@@ -600,6 +668,6 @@ mod tests {
             availability_policy_root: [11; 32],
         };
         assert_eq!(p.minimum_physical_bytes(), Ok(75_000));
-        assert!(p.validate_against(&d).is_err());
+        assert!(p.validate_against(&a, &d).is_err());
     }
 }
