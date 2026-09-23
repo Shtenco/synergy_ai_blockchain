@@ -988,6 +988,13 @@ for name, source, stateless, consuming in (
             and "replay.consume_verified" in source,
             "Autopilot raw consuming verifier must remain crate-internal behind execution lease",
         )
+    elif name == "service_planes":
+        require(
+            f"pub(crate) fn {stateless}" in source
+            and f"pub(crate) fn {consuming}" in source
+            and "replay.consume_verified" in source,
+            "raw service-plane consuming verifier must remain crate-internal behind finality batch",
+        )
     else:
         require(
             f"pub(crate) fn {stateless}" in source
@@ -1096,7 +1103,6 @@ require(
 for stateless, consuming in (
     ("verify_governance_action", "verify_governance_action_and_consume"),
     ("verify_consensus_activation", "verify_consensus_activation_and_consume"),
-    ("verify_service_plane_checkpoint", "verify_service_plane_checkpoint_and_consume"),
     ("verify_payment_intent", "verify_payment_intent_and_consume"),
     ("verify_settlement_batch", "verify_settlement_batch_and_consume"),
     ("verify_storage_proof", "verify_storage_proof_and_consume"),
@@ -1439,6 +1445,20 @@ require(
     "finalize_autopilot_lease_and_consume" in lib_v2
     and "AutopilotLeaseTerminalAuthorization" in lib_v2,
     "public crate surface must expose authenticated lease terminal transition",
+)
+
+
+require(
+    "pub struct ServiceFinalityBatch" in service_planes
+    and "MAX_SERVICE_FINALITY_ITEMS: usize = 65_536" in service_planes
+    and "duplicate service finality item" in service_planes
+    and "ordered.sort_by_key" in service_planes
+    and "service finality root mismatch" in service_planes
+    and "pub(crate) fn verify_service_plane_checkpoint_and_consume" in service_planes
+    and "pub fn verify_service_plane_checkpoint_with_finality_and_consume" in service_planes
+    and "verify_service_plane_checkpoint_with_finality_and_consume" in lib_v2
+    and "verify_service_plane_checkpoint_and_consume" not in lib_v2,
+    "service-plane checkpoint must bind canonical finality outcomes with no public bypass",
 )
 
 print("M2 static guard: PASS")
