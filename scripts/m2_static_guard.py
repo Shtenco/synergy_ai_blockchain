@@ -856,4 +856,26 @@ require(
     "model lineage vector lengths must remain architecture-safe in canonical serialization",
 )
 
+
+require(
+    "fn put_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) -> Option<()>" in network
+    and "u64::try_from(bytes.len()).ok()?" in network,
+    "transport transcript length prefixes must remain fallible and architecture-safe",
+)
+
+require(
+    "MAX_INFERENCE_STAGES: usize = 65_536" in inference
+    and "self.stages.len() > MAX_INFERENCE_STAGES" in inference
+    and "u32::try_from(i)" in inference,
+    "inference execution plans must remain bounded with checked stage indexes",
+)
+
+require(
+    "pub fn signing_preimage(&self) -> Option<Vec<u8>>" in tx
+    and "u64::try_from(field.len()).ok()?" in tx
+    and "u8::try_from(schemes.len()).ok()?" in tx
+    and "self.data.len() > MAX_TX_CALLDATA_BYTES" in tx,
+    "canonical transaction encoding must remain fallible and protocol-bounded",
+)
+
 print("M2 static guard: PASS")
