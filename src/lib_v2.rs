@@ -80,7 +80,11 @@ pub use payment_funding::{
     FundedSettlementCommitment, FundingStatus, PaymentFundingConsumptionReceipt,
     PaymentFundingReservation,
 };
-pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
+pub use payments::{
+    verify_payment_intent, verify_settlement_batch, PaymentIntent, PaymentIntentAuthorization,
+    PaymentIntentValidationContext, PaymentLaneKey, PaymentRail, SettlementBatch,
+    SettlementBatchAuthorization, SettlementBatchValidationContext, SettlementState,
+};
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
     verify_envelope_authorization,
