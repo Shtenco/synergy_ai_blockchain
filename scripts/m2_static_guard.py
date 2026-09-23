@@ -33,6 +33,7 @@ payments = (ROOT / "src/payments.rs").read_text(encoding="utf-8")
 payment_funding = (ROOT / "src/payment_funding.rs").read_text(encoding="utf-8")
 storage = (ROOT / "src/storage.rs").read_text(encoding="utf-8")
 cognitive = (ROOT / "src/cognitive.rs").read_text(encoding="utf-8")
+cognitive_registry = (ROOT / "src/cognitive_registry.rs").read_text(encoding="utf-8")
 nexus = (ROOT / "src/nexus.rs").read_text(encoding="utf-8")
 kv_cache = (ROOT / "src/kv_cache.rs").read_text(encoding="utf-8")
 
@@ -1048,6 +1049,27 @@ require(
     and "expected_worker_keyset_commitment" in kv_cache
     and "replay.consume_verified" in kv_cache,
     "KV-cache replica evidence must remain PQ-authorized, bounded and replay-consuming",
+)
+
+
+require(
+    "pub(crate) fn independent_prefix_count" in cognitive_registry
+    and "pub fn independent_registered_count" in cognitive_registry
+    and "ordered.sort_by_key(|(node, _)| node.node_id)" in cognitive_registry
+    and "duplicate cognitive node id" in cognitive_registry,
+    "economic cognitive quorum must validate registry state and canonicalize ordering",
+)
+
+require(
+    "cognitive node validity window invalid" in cognitive
+    and "self.valid_until_epoch < self.valid_from_epoch" in cognitive,
+    "CognitiveNode manifest validity window must remain explicit and fail closed",
+)
+
+require(
+    "kv lease expiry required" in kv_cache
+    and "self.expires_at == 0" in kv_cache,
+    "KV-cache leases must require nonzero expiry",
 )
 
 print("M2 static guard: PASS")
