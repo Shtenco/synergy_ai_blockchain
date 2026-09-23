@@ -90,25 +90,25 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Core compile gate
-        run: cargo check --locked --all-targets
+        run: cargo check --frozen --all-targets
 
       - name: Reference PQ compile gate
-        run: cargo check --locked --all-targets --features reference-pq
+        run: cargo check --frozen --all-targets --features reference-pq
 
       - name: Reference PQ clippy gate
-        run: cargo clippy --locked --all-targets --features reference-pq -- -D warnings -D clippy::all
+        run: cargo clippy --frozen --all-targets --features reference-pq -- -D warnings -D clippy::all
 
       - name: Core unit tests
-        run: cargo test --locked --all-targets
+        run: cargo test --frozen --all-targets
 
       - name: Real PQ reference provider tests
-        run: cargo test --locked --all-targets --features reference-pq
+        run: cargo test --frozen --all-targets --features reference-pq
 
       - name: Reference PQ doctests
-        run: cargo test --locked --doc --features reference-pq
+        run: cargo test --frozen --doc --features reference-pq
 
       - name: Release-mode PQ library tests
-        run: cargo test --locked --release --lib --features reference-pq
+        run: cargo test --frozen --release --lib --features reference-pq
 
       - name: Upload M2 reproducibility evidence
         if: always()
