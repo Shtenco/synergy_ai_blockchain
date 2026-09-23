@@ -32,12 +32,16 @@ use ml_kem::{
 ///
 /// The bytes are intentionally private: protocol code can hold and return the
 /// capability but cannot reinterpret it as arbitrary network/consensus bytes.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MlKemSecretHandle([u8; 32]);
 
 impl MlKemSecretHandle {
     fn from_random_bytes(bytes: [u8; 32]) -> Option<Self> {
         (bytes != [0u8; 32]).then_some(Self(bytes))
+    }
+
+    fn as_id_bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 
     #[cfg(test)]
@@ -60,7 +64,7 @@ impl Drop for MlKemSecretHandle {
 /// its private components on drop. Callers receive only an opaque handle.
 #[derive(Default)]
 pub struct ReferenceMlKem1024Provider {
-    secrets: BTreeMap<MlKemSecretHandle, MlKem1024DecapsulationKey>,
+    secrets: BTreeMap<[u8; 32], MlKem1024DecapsulationKey>,
 }
 
 impl ReferenceMlKem1024Provider {
@@ -83,7 +87,7 @@ impl ReferenceMlKem1024Provider {
             let mut candidate = [0u8; 32];
             rng.try_fill_bytes(&mut candidate).ok()?;
             if let Some(candidate) = MlKemSecretHandle::from_random_bytes(candidate) {
-                if !self.secrets.contains_key(&candidate) {
+                if !self.secrets.contains_key(candidate.as_id_bytes()) {
                     selected = Some(candidate);
                     break;
                 }
@@ -91,7 +95,7 @@ impl ReferenceMlKem1024Provider {
         }
         let handle = selected?;
 
-        if self.secrets.insert(handle.clone(), dk).is_some() {
+        if self.secrets.insert(*handle.as_id_bytes(), dk).is_some() {
             return None;
         }
 
@@ -99,11 +103,11 @@ impl ReferenceMlKem1024Provider {
     }
 
     pub fn remove_key(&mut self, handle: &MlKemSecretHandle) -> bool {
-        self.secrets.remove(handle).is_some()
+        self.secrets.remove(handle.as_id_bytes()).is_some()
     }
 
     pub fn contains_key(&self, handle: &MlKemSecretHandle) -> bool {
-        self.secrets.contains_key(handle)
+        self.secrets.contains_key(handle.as_id_bytes())
     }
 }
 
@@ -143,7 +147,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
         if ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
             return None;
         }
-        let dk = self.secrets.get(secret_key_handle)?;
+        let dk = self.secrets.get(secret_key_handle.as_id_bytes())?;
         let ciphertext = MlKem1024Ciphertext::try_from(ciphertext).ok()?;
         let mut shared = dk.decapsulate(&ciphertext);
         let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref());
@@ -161,7 +165,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
 /// backend (or HSM/keystore integration) is selected.
 #[derive(Default)]
 pub struct ReferencePqSigner {
-    ml_dsa_keys: BTreeMap<PqSigningKeyHandle, ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
+    ml_dsa_keys: BTreeMap<[u8; 32], ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
 }
 
 impl ReferencePqSigner {
@@ -170,7 +174,7 @@ impl ReferencePqSigner {
     }
 
     pub fn contains_key(&self, handle: &PqSigningKeyHandle) -> bool {
-        self.ml_dsa_keys.contains_key(handle)
+        self.ml_dsa_keys.contains_key(handle.as_id_bytes())
     }
 
     fn try_allocate_handle(&self) -> Option<PqSigningKeyHandle> {
@@ -181,7 +185,7 @@ impl ReferencePqSigner {
             let mut handle_bytes = [0u8; 32];
             rng.try_fill_bytes(&mut handle_bytes).ok()?;
             if let Some(handle) = PqSigningKeyHandle::from_random_bytes(handle_bytes) {
-                if !self.ml_dsa_keys.contains_key(&handle) {
+                if !self.ml_dsa_keys.contains_key(handle.as_id_bytes()) {
                     return Some(handle);
                 }
             }
@@ -205,7 +209,10 @@ impl ContextSignatureSigner for ReferencePqSigner {
         let public_key = signing_key.verifying_key().encode().to_vec();
         let handle = self.try_allocate_handle()?;
 
-        if self.ml_dsa_keys.insert(handle.clone(), signing_key).is_some() {
+        if self
+            .ml_dsa_keys
+            .insert(*handle.as_id_bytes(), signing_key)
+            .is_some() {
             return None;
         }
 
@@ -222,7 +229,7 @@ impl ContextSignatureSigner for ReferencePqSigner {
         if scheme != AuthScheme::MlDsa87 {
             return None;
         }
-        let signing_key = self.ml_dsa_keys.get(secret_key_handle)?;
+        let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
         Some(signing_key.verifying_key().encode().to_vec())
     }
 
@@ -239,7 +246,7 @@ impl ContextSignatureSigner for ReferencePqSigner {
             return None;
         }
 
-        let signing_key = self.ml_dsa_keys.get(secret_key_handle)?;
+        let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
         signing_key
             .expanded_key()
             .sign_deterministic(message, context)
@@ -255,7 +262,9 @@ impl ContextSignatureSigner for ReferencePqSigner {
         if scheme != AuthScheme::MlDsa87 {
             return false;
         }
-        self.ml_dsa_keys.remove(secret_key_handle).is_some()
+        self.ml_dsa_keys
+            .remove(secret_key_handle.as_id_bytes())
+            .is_some()
     }
 }
 
