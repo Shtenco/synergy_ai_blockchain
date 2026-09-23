@@ -171,3 +171,31 @@ Closed in this pass:
 - ML-KEM/classical transport secrets are nominal zeroizing non-Clone wrappers.
 
 These changes reduce the remaining M2 uncertainty primarily to executable dependency resolution, compilation and runtime tests.
+
+
+## Latest cross-plane hardening pass
+
+Additional source-level invariants closed before executable Cargo/Solidity runners are available:
+
+- payment finality now commits a funded-settlement root, not a bare settlement-batch root;
+- funded settlement binds the exact authorized batch root, funding-consumption root, item count and funding-receipt count;
+- transport record nonce issuance enforces both message-count and time-based rekey limits;
+- transport replay-state commitment stores the exact transcript hash for every consumed session ID;
+- storage dedup catalog roots must advance whenever new unique bytes are introduced;
+- erasure placement must match the source archive's erasure policy;
+- storage provider bid duration may not exceed the remaining archive lifetime;
+- compression savings fail closed when archival transformation expands data;
+- cognitive reward arithmetic rejects over-cap totals rather than silently clipping them;
+- Solidity PQ verifier ABI is context-aware and size-strict;
+- the native PQ smart account is strict dual-PQ with expiry/epoch binding and no deployment-time single-PQ downgrade;
+- NEXUS Solidity profile v1 exposes only the implemented Score mode;
+- CI now contains a separate Solidity compilation job pinned to solc 0.8.26
+  (`commit.8a97fa7a`) with SHA-256
+  `d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef`.
+
+Latest checked GitHub Actions run #1096 (run id 35908721491) parsed both
+`rust-core` and `solidity-core`, but both jobs failed before their first step
+with `steps=null` and `logs_url=null`. This is still runner provisioning
+failure, not repository execution evidence.
+
+M2 remains YELLOW.
