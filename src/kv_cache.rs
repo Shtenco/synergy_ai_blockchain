@@ -44,6 +44,9 @@ impl KvCacheLease {
         if self.token_end_exclusive <= self.token_start {
             return Err("empty kv token range");
         }
+        if self.expires_at == 0 {
+            return Err("kv lease expiry required");
+        }
         if self.replica_workers.len() > MAX_KV_REPLICAS {
             return Err("too many kv replica workers");
         }
@@ -280,6 +283,13 @@ mod tests {
             kv_root: [9; 32],
             expires_at: 50,
         }
+    }
+
+    #[test]
+    fn kv_lease_requires_nonzero_expiry() {
+        let mut l = lease();
+        l.expires_at = 0;
+        assert!(l.validate().is_err());
     }
 
     #[test]
