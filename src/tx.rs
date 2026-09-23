@@ -1,5 +1,5 @@
 use crate::pq::{
-    verify_authorization_with_context, AuthScheme, AuthorizationDomain, ContextSignatureSigner,
+    verify_authorization_with_context, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState, ContextSignatureSigner,
     ContextSignatureVerifier, HybridAuthorization, PqSigningKeyHandle, SignatureEvidence,
 };
 
