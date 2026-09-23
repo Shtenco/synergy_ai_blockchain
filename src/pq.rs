@@ -17,6 +17,42 @@ pub const ML_DSA_87_PUBLIC_KEY_BYTES: usize = 2592;
 pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
+const SECP256K1_ORDER: [u8; 32] = [
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+    0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+];
+const SECP256K1_HALF_ORDER: [u8; 32] = [
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+    0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+];
+
+fn scalar_is_nonzero_and_below(value: &[u8], upper_exclusive: &[u8; 32]) -> bool {
+    value.len() == 32
+        && value.iter().any(|byte| *byte != 0)
+        && value < upper_exclusive.as_slice()
+}
+
+fn scalar_is_nonzero_and_at_most(value: &[u8], upper_inclusive: &[u8; 32]) -> bool {
+    value.len() == 32
+        && value.iter().any(|byte| *byte != 0)
+        && value <= upper_inclusive.as_slice()
+}
+
+fn is_canonical_secp256k1_signature(signature: &[u8]) -> bool {
+    if signature.len() != SECP256K1_SIGNATURE_BYTES {
+        return false;
+    }
+    let (compact, recovery) = signature.split_at(64);
+    let (r, s) = compact.split_at(32);
+    scalar_is_nonzero_and_below(r, &SECP256K1_ORDER)
+        && scalar_is_nonzero_and_at_most(s, &SECP256K1_HALF_ORDER)
+        && matches!(recovery, [0] | [1])
+}
+
 pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =
     SECP256K1_PUBLIC_KEY_BYTES
     + SECP256K1_SIGNATURE_BYTES
@@ -345,8 +381,8 @@ impl HybridAuthorization {
                 if !matches!(evidence.public_key.first(), Some(0x02 | 0x03)) {
                     return Err("secp256k1 public key must use compressed encoding");
                 }
-                if !matches!(evidence.signature.last(), Some(0 | 1)) {
-                    return Err("secp256k1 signature recovery id must be canonical");
+                if !is_canonical_secp256k1_signature(&evidence.signature) {
+                    return Err("secp256k1 signature must use canonical low-S encoding");
                 }
             }
 
@@ -647,8 +683,10 @@ mod tests {
         let mut signature = vec![2; scheme.expected_signature_bytes().unwrap_or(1)];
         if scheme == AuthScheme::Secp256k1 {
             public_key[0] = 0x02;
-            let last = signature.len() - 1;
-            signature[last] = 0;
+            signature.fill(0);
+            signature[31] = 1;
+            signature[63] = 1;
+            signature[64] = 0;
         }
         SignatureEvidence {
             scheme,
@@ -846,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn secp256k1_encoding_prefix_and_recovery_id_are_canonical() {
+    fn secp256k1_encoding_prefix_recovery_and_low_s_are_canonical() {
         let mut bad_key = evidence(AuthScheme::Secp256k1);
         bad_key.public_key[0] = 0x04;
         let auth = HybridAuthorization {
@@ -861,6 +899,15 @@ mod tests {
         let auth = HybridAuthorization {
             policy: AuthPolicy::Online,
             evidence: vec![bad_recovery, evidence(AuthScheme::MlDsa87)],
+        };
+        assert!(auth.validate_structure().is_err());
+
+        let mut high_s = evidence(AuthScheme::Secp256k1);
+        high_s.signature[32..64].copy_from_slice(&SECP256K1_ORDER);
+        high_s.signature[63] -= 1;
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![high_s, evidence(AuthScheme::MlDsa87)],
         };
         assert!(auth.validate_structure().is_err());
     }
