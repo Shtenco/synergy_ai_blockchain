@@ -188,7 +188,11 @@ pub fn verify_binding_and_consume<L: LegacyProofVerifier, P: ContextSignatureVer
     let envelope = binding
         .envelope()
         .ok_or(MigrationError::InvalidPqAuthorization)?;
-    if !replay.consume_verified(&binding.authorization, &envelope) {
+    if !replay.consume_verified_for_subject(
+        &binding.authorization,
+        &envelope,
+        binding.binding.pq_identity_commitment,
+    ) {
         return Err(MigrationError::InvalidPqAuthorization);
     }
     Ok(())
