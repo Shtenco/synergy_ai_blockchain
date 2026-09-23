@@ -1671,4 +1671,13 @@ require(
     "stable replay IDs must remain separately bound to current registered keysets",
 )
 
+
+require(
+    "lease: &AutopilotExecutionLease" in service_planes
+    and "lease.lease_root != authorized.terminal.lease_root" in service_planes
+    and "lease.status != authorized.terminal.status" in service_planes
+    and "AutopilotExecutionLeaseStatus::ExecutionLocked" in service_planes,
+    "Autopilot service finality must require an already-applied matching terminal lease",
+)
+
 print("M2 static guard: PASS")
