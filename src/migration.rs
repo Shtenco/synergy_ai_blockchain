@@ -69,7 +69,9 @@ impl LegacyIdentityBinding {
         );
         encoded.extend_from_slice(MIGRATION_BINDING_DOMAIN);
         self.source_chain.append_canonical(&mut encoded);
-        encoded.extend_from_slice(&(self.legacy_identifier.len() as u64).to_be_bytes());
+        let legacy_identifier_len =
+            u64::try_from(self.legacy_identifier.len()).ok()?;
+        encoded.extend_from_slice(&legacy_identifier_len.to_be_bytes());
         encoded.extend_from_slice(&self.legacy_identifier);
         encoded.extend_from_slice(&self.pq_identity_commitment);
         encoded.extend_from_slice(&self.synergy_account_id);
