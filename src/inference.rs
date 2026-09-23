@@ -10,6 +10,8 @@ use crate::pq::{
     AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
+pub const MAX_INFERENCE_STAGES: usize = 65_536;
+
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,9 +120,14 @@ impl InferenceExecutionPlan {
         if self.stages.is_empty() {
             return Err("execution plan requires stages");
         }
+        if self.stages.len() > MAX_INFERENCE_STAGES {
+            return Err("execution plan exceeds protocol stage limit");
+        }
         for (i, stage) in self.stages.iter().enumerate() {
             stage.validate_against(job)?;
-            if stage.stage_index != i as u32 {
+            let expected_index =
+                u32::try_from(i).map_err(|_| "execution stage index exceeds u32")?;
+            if stage.stage_index != expected_index {
                 return Err("stage indices must be contiguous and ordered");
             }
         }
@@ -395,6 +402,23 @@ mod tests {
             stages: vec![stage(0), stage(2)],
         };
         assert!(bad.validate_against(&j).is_err());
+    }
+
+    #[test]
+    fn plan_rejects_protocol_stage_count_overflow() {
+        let j = job();
+        let mut stages = Vec::with_capacity(MAX_INFERENCE_STAGES + 1);
+        for i in 0..=MAX_INFERENCE_STAGES {
+            let mut assignment = stage(0);
+            assignment.stage_index = u32::try_from(i).expect("bounded test index");
+            stages.push(assignment);
+        }
+        let plan = InferenceExecutionPlan {
+            job_id: j.job_id,
+            plan_root: j.execution_plan_root,
+            stages,
+        };
+        assert!(plan.validate_against(&j).is_err());
     }
 
     #[test]
