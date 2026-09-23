@@ -91,6 +91,7 @@ jobs:
             m2-spdx-reference-pq.json \
             m2-build-environment.txt \
             tests/vectors/M2_FIXTURE_MANIFEST.json \
+            tests/fixtures/evm_fips_context_v1.hex \
             > m2-evidence-sha256.txt
 
       - name: Committed Cargo.lock gate
@@ -141,6 +142,7 @@ jobs:
             m2-build-environment.txt
             m2-evidence-sha256.txt
             tests/vectors/M2_FIXTURE_MANIFEST.json
+            tests/fixtures/evm_fips_context_v1.hex
           if-no-files-found: warn
           retention-days: 30
 
