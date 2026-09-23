@@ -27,6 +27,7 @@ governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
 verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
 consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
 service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
+autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
 
 # Reproducibility / MSRV invariants.
 require('rust-version = "1.85"' in cargo, "crate rust-version must stay pinned to 1.85")
@@ -729,6 +730,22 @@ require(
     and "checked_add(1)" in service_planes
     and "validation.expected_service_plane_epoch != next_epoch" in service_planes,
     "service-plane checkpoint epochs must remain strictly monotonic",
+)
+
+
+require(
+    "AuthorizationDomain::AutopilotExecution" in autopilot_budget
+    and "authorized.authorization.policy != AuthPolicy::Max" in autopilot_budget
+    and "expected_owner_account" in autopilot_budget
+    and "expected_reservation_root" in autopilot_budget
+    and "expected_policy_root" in autopilot_budget
+    and "now >= self.expires_at" in autopilot_budget,
+    "Autopilot value-bearing execution must remain MAX-authorized and expiry-bound",
+)
+
+require(
+    "Self::AutopilotExecution => 10" in pq,
+    "Autopilot authorization domain code missing or changed",
 )
 
 print("M2 static guard: PASS")
