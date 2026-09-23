@@ -7,10 +7,15 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::autopilot_execution_lease::AutopilotLeaseTerminalReceipt;
+use crate::cognitive::{CognitiveEvidence, CognitiveNodeManifest, CognitiveWorkRequest};
+use crate::kv_cache::{KvCacheLease, KvReplicaReceipt};
+use crate::payments::SettlementBatch;
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
+use crate::storage::ProofOfStorageReceipt;
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
 const SERVICE_FINALITY_BATCH_DOMAIN: &[u8] = b"SYNERGY/SERVICE-FINALITY-BATCH/V1\0";
@@ -39,8 +44,61 @@ impl ServiceFinalityKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceFinalityItem {
-    pub kind: ServiceFinalityKind,
-    pub root: [u8; 32],
+    kind: ServiceFinalityKind,
+    root: [u8; 32],
+}
+
+impl ServiceFinalityItem {
+    pub fn payment_settlement(batch: &SettlementBatch) -> Option<Self> {
+        Some(Self {
+            kind: ServiceFinalityKind::PaymentSettlement,
+            root: batch.authorization_commitment()?,
+        })
+    }
+
+    pub fn autopilot_terminal(receipt: &AutopilotLeaseTerminalReceipt) -> Option<Self> {
+        Some(Self {
+            kind: ServiceFinalityKind::AutopilotTerminal,
+            root: receipt.commitment()?,
+        })
+    }
+
+    pub fn storage_receipt(receipt: &ProofOfStorageReceipt) -> Option<Self> {
+        Some(Self {
+            kind: ServiceFinalityKind::StorageReceipt,
+            root: receipt.authorization_commitment()?,
+        })
+    }
+
+    pub fn cognitive_receipt(
+        evidence: &CognitiveEvidence,
+        request: &CognitiveWorkRequest,
+        node: &CognitiveNodeManifest,
+        epoch: u64,
+    ) -> Option<Self> {
+        Some(Self {
+            kind: ServiceFinalityKind::CognitiveReceipt,
+            root: evidence.authorization_commitment(request, node, epoch)?,
+        })
+    }
+
+    pub fn kv_replica_receipt(
+        receipt: &KvReplicaReceipt,
+        lease: &KvCacheLease,
+    ) -> Option<Self> {
+        Some(Self {
+            kind: ServiceFinalityKind::KvReplicaReceipt,
+            root: receipt.authorization_commitment(lease)?,
+        })
+    }
+
+    pub const fn kind(&self) -> ServiceFinalityKind {
+        self.kind
+    }
+
+    pub const fn root(&self) -> [u8; 32] {
+        self.root
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -388,6 +446,39 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn service_finality_items_are_derived_from_canonical_domain_commitments() {
+        let settlement = SettlementBatch {
+            lane_id: [0x61; 16],
+            sequence: 1,
+            intents_root: [0x62; 32],
+            accounting_root: [0x63; 32],
+            availability_root: [0x64; 32],
+            item_count: 1,
+            gross_amount: 100,
+            total_fees: 1,
+            finality_proof_commitment: [0x65; 32],
+        };
+        let item = ServiceFinalityItem::payment_settlement(&settlement)
+            .expect("payment finality item");
+        assert_eq!(item.kind(), ServiceFinalityKind::PaymentSettlement);
+        assert_eq!(
+            item.root(),
+            settlement.authorization_commitment().expect("settlement root")
+        );
+
+        let terminal = AutopilotLeaseTerminalReceipt {
+            lease_root: [0x66; 32],
+            execution_receipt_root: Some([0x67; 32]),
+            reason_root: None,
+            status: crate::autopilot_execution_lease::AutopilotExecutionLeaseStatus::Settled,
+        };
+        let item = ServiceFinalityItem::autopilot_terminal(&terminal)
+            .expect("Autopilot terminal finality item");
+        assert_eq!(item.kind(), ServiceFinalityKind::AutopilotTerminal);
+        assert_eq!(item.root(), terminal.commitment().expect("terminal root"));
+    }
 
     #[test]
     fn service_finality_batch_is_order_independent_and_duplicate_closed() {
