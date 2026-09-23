@@ -41,8 +41,28 @@ def main() -> int:
     packages = data.get("packages", [])
     resolve = data.get("resolve") or {}
     nodes = resolve.get("nodes", [])
+    root = resolve.get("root")
+    if not root:
+        raise SystemExit("SPDX generation failed: cargo metadata has no resolved root")
 
-    package_by_id = {pkg["id"]: pkg for pkg in packages}
+    all_packages_by_id = {pkg["id"]: pkg for pkg in packages}
+    resolved_ids = {node.get("id") for node in nodes if node.get("id")}
+    resolved_ids.add(root)
+    for node in nodes:
+        for dep in node.get("deps", []):
+            if dep.get("pkg"):
+                resolved_ids.add(dep["pkg"])
+
+    missing_resolved = sorted(resolved_ids - set(all_packages_by_id))
+    if missing_resolved:
+        raise SystemExit(
+            f"SPDX generation failed: resolved package IDs absent from metadata packages: {missing_resolved}"
+        )
+
+    package_by_id = {
+        pkg_id: all_packages_by_id[pkg_id]
+        for pkg_id in resolved_ids
+    }
 
     canonical_packages = sorted(
         (pkg["name"], pkg["version"], pkg.get("source") or "LOCAL")
@@ -162,7 +182,6 @@ def main() -> int:
                 "relatedSpdxElement": dst,
             })
 
-    root = resolve.get("root")
     if root in spdx_by_id:
         doc["relationships"].append({
             "spdxElementId": "SPDXRef-DOCUMENT",
@@ -172,6 +191,8 @@ def main() -> int:
 
     if len(doc["packages"]) != len(package_by_id):
         raise SystemExit("SPDX generation failed: package coverage mismatch")
+    if set(package_by_id) != resolved_ids:
+        raise SystemExit("SPDX generation failed: unresolved/disabled package leaked into SBOM")
 
     relationship_keys = {
         (
