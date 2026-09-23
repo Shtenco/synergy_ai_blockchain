@@ -3,6 +3,15 @@
 //! The chain commits identities and lineage. Model bytes remain in the storage
 //! plane and are referenced by content/storage commitments.
 
+use sha2::{Digest, Sha256};
+
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+};
+
+const MODEL_UPGRADE_DOMAIN: &[u8] = b"SYNERGY/MODEL-UPGRADE/V1\0";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelManifestCommitment {
     pub model_root: [u8; 32],
@@ -98,6 +107,47 @@ pub struct ModelLineageTransition {
 }
 
 impl ModelLineageTransition {
+    pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(MODEL_UPGRADE_DOMAIN);
+        hasher.update(self.transition_commitment);
+        hasher.update(self.target_model_root);
+        hasher.update(self.generation.to_be_bytes());
+        hasher.update(self.activation_epoch.to_be_bytes());
+
+        hasher.update((self.consumed_shards.len() as u64).to_be_bytes());
+        for consumed in &self.consumed_shards {
+            hasher.update(consumed);
+        }
+
+        hasher.update((self.created_shards.len() as u64).to_be_bytes());
+        for shard in &self.created_shards {
+            hasher.update(shard.shard_commitment);
+            hasher.update(shard.model_root);
+            hasher.update(shard.generation.to_be_bytes());
+            hasher.update(shard.shard_index.to_be_bytes());
+            hasher.update(shard.shard_count.to_be_bytes());
+            match shard.parent_shard_commitment {
+                Some(parent) => {
+                    hasher.update([1]);
+                    hasher.update(parent);
+                }
+                None => hasher.update([0]),
+            }
+            hasher.update(shard.tensor_manifest_root);
+            hasher.update(shard.content_hash);
+            hasher.update(shard.storage_object_id);
+            hasher.update(shard.codec_version_commitment);
+            hasher.update(shard.logical_bytes.to_be_bytes());
+            hasher.update(shard.stored_bytes.to_be_bytes());
+            hasher.update(shard.availability_root);
+        }
+
+        Some(hasher.finalize().into())
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.transition_commitment == [0; 32] || self.target_model_root == [0; 32] {
             return Err("lineage transition commitments required");
@@ -139,6 +189,68 @@ impl ModelLineageTransition {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelUpgradeAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub transition: ModelLineageTransition,
+    pub authorization: HybridAuthorization,
+}
+
+impl ModelUpgradeAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::ModelUpgrade,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.transition.authorization_commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModelUpgradeValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_model_upgrade<V: ContextSignatureVerifier>(
+    verifier: &V,
+    upgrade: &ModelUpgradeAuthorization,
+    validation: &ModelUpgradeValidationContext,
+) -> bool {
+    if upgrade.authorization.policy != AuthPolicy::Max {
+        return false;
+    }
+    let envelope = match upgrade.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::ModelUpgrade,
+        expected_policy: AuthPolicy::Max,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &upgrade.authorization,
+        &envelope,
+        &auth_validation,
+    )
 }
 
 #[cfg(test)]
@@ -202,4 +314,127 @@ mod tests {
         };
         assert_eq!(t.validate(), Ok(()));
     }
+
+    #[derive(Clone)]
+    struct ExpectedUpgradeVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl crate::pq::ContextSignatureVerifier for ExpectedUpgradeVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: crate::pq::AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn max_authorization() -> crate::pq::HybridAuthorization {
+        use crate::pq::{
+            AuthScheme, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+            ML_DSA_87_SIGNATURE_BYTES, SECP256K1_PUBLIC_KEY_BYTES,
+            SECP256K1_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+            SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        };
+        let mut secp_key = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
+        secp_key[0] = 0x02;
+        let mut secp_sig = vec![2u8; SECP256K1_SIGNATURE_BYTES];
+        secp_sig[SECP256K1_SIGNATURE_BYTES - 1] = 0;
+
+        crate::pq::HybridAuthorization {
+            policy: crate::pq::AuthPolicy::Max,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: secp_key,
+                    signature: secp_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![3u8; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![4u8; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![5u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![6u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn model_upgrade_requires_max_state_aware_authorization() {
+        let transition = ModelLineageTransition {
+            transition_commitment: [7; 32],
+            target_model_root: [1; 32],
+            generation: 1,
+            consumed_shards: vec![[8; 32], [9; 32]],
+            created_shards: vec![
+                shard(1, 0, Some([8; 32])),
+                shard(1, 1, Some([9; 32])),
+            ],
+            activation_epoch: 10,
+        };
+        let upgrade = ModelUpgradeAuthorization {
+            chain_id: [0x71; 32],
+            epoch: 10,
+            nonce: 11,
+            expires_at: 1_100,
+            transition,
+            authorization: max_authorization(),
+        };
+        let envelope = upgrade.envelope().expect("upgrade envelope");
+        let verifier = ExpectedUpgradeVerifier {
+            message: envelope
+                .canonical_message(crate::pq::AuthPolicy::Max)
+                .expect("upgrade message"),
+            context: envelope
+                .fips_signature_context(crate::pq::AuthPolicy::Max)
+                .expect("upgrade context"),
+        };
+        let validation = ModelUpgradeValidationContext {
+            expected_chain_id: [0x71; 32],
+            expected_epoch: 10,
+            expected_nonce: 11,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_model_upgrade(&verifier, &upgrade, &validation));
+
+        let mut downgraded = upgrade.clone();
+        downgraded.authorization.policy = crate::pq::AuthPolicy::Online;
+        assert!(!verify_model_upgrade(&verifier, &downgraded, &validation));
+    }
+
+    #[test]
+    fn model_upgrade_commitment_binds_lineage_and_activation_epoch() {
+        let base = ModelLineageTransition {
+            transition_commitment: [7; 32],
+            target_model_root: [1; 32],
+            generation: 1,
+            consumed_shards: vec![[8; 32], [9; 32]],
+            created_shards: vec![
+                shard(1, 0, Some([8; 32])),
+                shard(1, 1, Some([9; 32])),
+            ],
+            activation_epoch: 10,
+        };
+        let commitment = base.authorization_commitment().expect("commitment");
+
+        let mut changed = base.clone();
+        changed.activation_epoch += 1;
+        assert_ne!(commitment, changed.authorization_commitment().expect("changed commitment"));
+
+        let mut changed = base;
+        changed.created_shards[0].content_hash[0] ^= 1;
+        assert_ne!(commitment, changed.authorization_commitment().expect("changed content"));
+    }
+
 }
