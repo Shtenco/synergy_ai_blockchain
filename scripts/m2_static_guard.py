@@ -565,4 +565,51 @@ require(
     "governance actions must remain state-root-bound MAX-authorized transitions",
 )
 
+
+require(
+    "pub fn keyset_commitment(&self) -> Option<[u8; 32]>" in pq
+    and "SYNERGY/PQ-AUTH-KEYSET/V1" in pq,
+    "canonical authorization keyset identity commitment missing",
+)
+
+require(
+    "self.authorization.keyset_commitment() != Some(self.sender_account)" in tx,
+    "transaction sender account must remain bound to authorization keyset",
+)
+
+require(
+    "binding.authorization.keyset_commitment()" in migration
+    and "Some(binding.binding.pq_identity_commitment)" in migration
+    and "self.synergy_account_id != self.pq_identity_commitment" in migration,
+    "migration target account/PQ identity must remain keyset-bound",
+)
+
+require(
+    "expected_worker_keyset_commitment" in inference
+    and "authorized.authorization.keyset_commitment()" in inference,
+    "inference worker identity must remain bound to registered keyset",
+)
+
+require(
+    "expected_authority_keyset_commitment" in governance
+    and "authorized.authorization.keyset_commitment()" in governance
+    and "expected_activation_epoch" in governance,
+    "governance authority/activation state binding missing",
+)
+
+require(
+    "expected_authority_keyset_commitment" in model_shard
+    and "upgrade.authorization.keyset_commitment()" in model_shard
+    and "expected_activation_epoch" in model_shard
+    and "created shard parent was not consumed by transition" in model_shard,
+    "model upgrade authority/activation/lineage binding missing",
+)
+
+require(
+    "pub fn pq_identity_commitment(&self) -> Option<[u8; 32]>" in validator
+    and "validator id does not match PQ identity commitment" in validator
+    and "PQ-only validator forbids legacy public key material" in validator,
+    "validator ID must remain stable PQ-key identity commitment",
+)
+
 print("M2 static guard: PASS")
