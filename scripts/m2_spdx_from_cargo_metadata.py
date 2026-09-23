@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import sys
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,12 +14,22 @@ def spdx_id(text: str) -> str:
     return "SPDXRef-" + "".join(safe)
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: m2_spdx_from_cargo_metadata.py <cargo-metadata.json> <out.spdx.json>", file=sys.stderr)
+    if len(sys.argv) != 4:
+        print(
+            "usage: m2_spdx_from_cargo_metadata.py <Cargo.lock> <cargo-metadata.json> <out.spdx.json>",
+            file=sys.stderr,
+        )
         return 2
 
-    metadata_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2])
+    lock_path = Path(sys.argv[1])
+    metadata_path = Path(sys.argv[2])
+    output_path = Path(sys.argv[3])
+
+    lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    locked_packages = {
+        (pkg.get("name"), pkg.get("version")): pkg
+        for pkg in lock.get("package", [])
+    }
 
     metadata_bytes = metadata_path.read_bytes()
     data = json.loads(metadata_bytes.decode("utf-8"))
@@ -56,6 +67,33 @@ def main() -> int:
         pkg = package_by_id[pkg_id]
         source = pkg.get("source")
         license_expr = pkg.get("license") or "NOASSERTION"
+        locked = locked_packages.get((pkg["name"], pkg["version"]), {})
+        checksum = locked.get("checksum")
+        lock_source = locked.get("source")
+
+        external_refs = [
+            {
+                "referenceCategory": "PACKAGE-MANAGER",
+                "referenceType": "purl",
+                "referenceLocator": f'pkg:cargo/{pkg["name"]}@{pkg["version"]}',
+            }
+        ]
+        if checksum:
+            external_refs.append({
+                "referenceCategory": "SECURITY",
+                "referenceType": "cpe23Type",
+                "referenceLocator": f"cargo-checksum-sha256:{checksum}",
+            })
+
+        annotations = []
+        if lock_source:
+            annotations.append({
+                "annotationDate": created,
+                "annotationType": "OTHER",
+                "annotator": "Tool: scripts/m2_spdx_from_cargo_metadata.py",
+                "comment": f"Cargo.lock source: {lock_source}",
+            })
+
         doc["packages"].append({
             "name": pkg["name"],
             "SPDXID": spdx_by_id[pkg_id],
@@ -65,13 +103,13 @@ def main() -> int:
             "licenseConcluded": "NOASSERTION",
             "licenseDeclared": license_expr,
             "copyrightText": "NOASSERTION",
-            "externalRefs": [
-                {
-                    "referenceCategory": "PACKAGE-MANAGER",
-                    "referenceType": "purl",
-                    "referenceLocator": f'pkg:cargo/{pkg["name"]}@{pkg["version"]}',
-                }
-            ],
+            "checksums": (
+                [{"algorithm": "SHA256", "checksumValue": checksum}]
+                if checksum
+                else []
+            ),
+            "externalRefs": external_refs,
+            "annotations": annotations,
         })
 
     for node in sorted(nodes, key=lambda n: n["id"]):
