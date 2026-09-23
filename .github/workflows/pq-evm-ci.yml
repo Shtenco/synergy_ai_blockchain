@@ -143,3 +143,63 @@ jobs:
             tests/vectors/M2_FIXTURE_MANIFEST.json
           if-no-files-found: warn
           retention-days: 30
+
+
+  solidity-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify static M2 security policy
+        run: python3 scripts/m2_static_guard.py
+
+      - name: Install pinned solc 0.8.26
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOLC_PATH="solc-linux-amd64-v0.8.26+commit.8a97fa7a"
+          SOLC_SHA256="d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef"
+          curl --fail --silent --show-error --location \
+            "https://binaries.soliditylang.org/linux-amd64/$SOLC_PATH" \
+            --output /tmp/solc
+          echo "$SOLC_SHA256  /tmp/solc" | sha256sum --check --strict
+          chmod 0555 /tmp/solc
+          /tmp/solc --version
+
+      - name: Compile strict PQ-EVM Solidity boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf m2-solc-out
+          mkdir -p m2-solc-out
+          /tmp/solc \
+            --base-path . \
+            --include-path . \
+            --bin \
+            --abi \
+            --metadata-hash none \
+            --overwrite \
+            --output-dir m2-solc-out \
+            contracts/IPQVerifier.sol \
+            contracts/PQSmartAccount.sol \
+            contracts/INexusAI.sol
+          find m2-solc-out -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > m2-solidity-evidence-sha256.txt
+          test -s m2-solidity-evidence-sha256.txt
+
+      - name: Upload Solidity M2 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m2-solidity-${{ github.run_id }}
+          path: |
+            m2-solc-out
+            m2-solidity-evidence-sha256.txt
+          if-no-files-found: warn
+          retention-days: 30
