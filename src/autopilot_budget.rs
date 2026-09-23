@@ -250,7 +250,7 @@ impl AutopilotRealizedExecutionReceipt {
 }
 
 
-pub fn verify_autopilot_execution_and_consume<V: ContextSignatureVerifier>(
+pub(crate) fn verify_autopilot_execution_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     reservation: &AutopilotBudgetReservation,
     authorized: &AutopilotExecutionAuthorization,
