@@ -1461,4 +1461,23 @@ require(
     "service-plane checkpoint must bind canonical finality outcomes with no public bypass",
 )
 
+
+require(
+    "error CallFailed" not in smart_account_sol
+    and "returns (bool success, bytes memory result)" in smart_account_sol
+    and "nonce = current + 1;" in smart_account_sol
+    and "(success, result) = target.call" in smart_account_sol
+    and "keccak256(result)" in smart_account_sol,
+    "PQSmartAccount must consume authorization nonce even when downstream execution fails",
+)
+
+require(
+    "bool private executing;" in smart_account_sol
+    and "error ReentrantExecution();" in smart_account_sol
+    and "if (executing) revert ReentrantExecution();" in smart_account_sol
+    and "executing = true;" in smart_account_sol
+    and "executing = false;" in smart_account_sol,
+    "PQSmartAccount must serialize signed execution and reject reentrancy",
+)
+
 print("M2 static guard: PASS")
