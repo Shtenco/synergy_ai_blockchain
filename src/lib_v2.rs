@@ -100,7 +100,7 @@ pub use nexus::{
 };
 pub use payment_funding::{
     FundedSettlementCommitment, FundingStatus, PaymentFundingConsumptionReceipt,
-    PaymentFundingReservation,
+    PaymentFundingReleaseReceipt, PaymentFundingReservation,
 };
 pub use payments::{
     verify_payment_intent_and_consume, verify_settlement_batch_and_consume, PaymentIntent, PaymentIntentAuthorization,
