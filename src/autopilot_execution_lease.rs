@@ -189,6 +189,188 @@ impl AutopilotExecutionLease {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autopilot_budget::{
+        AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
+    };
+    use crate::pq::{
+        AuthPolicy, AuthScheme, AuthorizationDomain, ContextSignatureVerifier,
+        HybridAuthorization, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
+        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn max_authorization() -> HybridAuthorization {
+        let mut secp_key = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
+        secp_key[0] = 0x02;
+        let mut secp_sig = vec![2u8; SECP256K1_SIGNATURE_BYTES];
+        secp_sig[SECP256K1_SIGNATURE_BYTES - 1] = 0;
+
+        HybridAuthorization {
+            policy: AuthPolicy::Max,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::Secp256k1,
+                    public_key: secp_key,
+                    signature: secp_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![3u8; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![4u8; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![5u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![6u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
+
+    fn reservation_and_call() -> (AutopilotBudgetReservation, AutopilotBudgetBoundCall) {
+        let authorization = max_authorization();
+        let owner_account = authorization
+            .primary_account_identity_commitment()
+            .expect("owner account");
+        let reservation = AutopilotBudgetReservation {
+            reservation_id: [11; 32],
+            owner_account,
+            reservation_root: [12; 32],
+            policy_root: [13; 32],
+            grant_root: [14; 32],
+            company_budget_root: Some([15; 32]),
+            company_graph_root: Some([16; 32]),
+            epoch: 7,
+            reserved_value: 1_000,
+            expires_at: 200,
+        };
+        let call = AutopilotBudgetBoundCall {
+            reservation_root: reservation.reservation_root,
+            policy_root: reservation.policy_root,
+            proposal_root: [17; 32],
+            company_graph_root: reservation.company_graph_root,
+            target: [18; 20],
+            value: 500,
+            calldata_hash: [19; 32],
+            expires_at: 180,
+        };
+        (reservation, call)
+    }
+
+
+    #[test]
+    fn canonical_lease_root_binds_exact_signed_call() {
+        let (reservation, call) = reservation_and_call();
+        let root = AutopilotExecutionLease::canonical_root(&reservation, &call)
+            .expect("canonical lease root");
+
+        let mut changed_call = call.clone();
+        changed_call.value += 1;
+        assert_ne!(
+            root,
+            AutopilotExecutionLease::canonical_root(&reservation, &changed_call)
+                .expect("changed lease root")
+        );
+
+        let call_root = call
+            .authorization_commitment(&reservation)
+            .expect("call root");
+        let lease = AutopilotExecutionLease {
+            lease_root: root,
+            reservation_root: reservation.reservation_root,
+            budget_bound_call_root: call_root,
+            proposal_root: call.proposal_root,
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+        assert_eq!(lease.validate_new(&reservation, &call, 100), Ok(()));
+    }
+
+    #[test]
+    fn tampered_lease_does_not_consume_authorization_nonce() {
+        let (reservation, call) = reservation_and_call();
+        let authorization = max_authorization();
+        let keyset = authorization
+            .keyset_commitment()
+            .expect("owner keyset commitment");
+        let authorized = AutopilotExecutionAuthorization {
+            chain_id: [0xB1; 32],
+            nonce: 9,
+            authorization_expires_at: 170,
+            call: call.clone(),
+            authorization,
+        };
+        let envelope = authorized
+            .envelope(&reservation)
+            .expect("autopilot envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
+        };
+        let validation = AutopilotExecutionValidationContext {
+            expected_chain_id: [0xB1; 32],
+            expected_nonce: 9,
+            expected_owner_account: reservation.owner_account,
+            expected_owner_keyset_commitment: keyset,
+            expected_reservation_root: reservation.reservation_root,
+            expected_policy_root: reservation.policy_root,
+            now: 100,
+            max_future_seconds: 100,
+        };
+        let mut replay = AuthorizationReplayState::new_for_subject(
+            [0xB1; 32],
+            AuthorizationDomain::AutopilotExecution,
+            AuthPolicy::Max,
+            reservation.owner_account,
+            reservation.epoch,
+            9,
+        )
+        .expect("replay state");
+
+        let mut lease = AutopilotExecutionLease {
+            lease_root: AutopilotExecutionLease::canonical_root(&reservation, &call)
+                .expect("lease root"),
+            reservation_root: reservation.reservation_root,
+            budget_bound_call_root: call
+                .authorization_commitment(&reservation)
+                .expect("call root"),
+            proposal_root: call.proposal_root,
+            status: AutopilotExecutionLeaseStatus::ExecutionLocked,
+        };
+        lease.budget_bound_call_root[0] ^= 1;
+
+        assert!(!authorize_and_lock_autopilot_execution(
+            &verifier,
+            &reservation,
+            &authorized,
+            &validation,
+            &mut replay,
+            &lease,
+        ));
+        assert_eq!(replay.next_nonce(), 9);
+    }
 
     #[test]
     fn execution_lease_finalizes_exactly_once() {
