@@ -252,6 +252,30 @@ impl AuthorizationReplayState {
         true
     }
 
+    pub fn consume_verified(
+        &mut self,
+        authorization: &HybridAuthorization,
+        envelope: &AuthorizationEnvelope,
+    ) -> bool {
+        let advanced_nonce = match self.next_nonce.checked_add(1) {
+            Some(nonce) => nonce,
+            None => return false,
+        };
+
+        if envelope.chain_id != self.chain_id
+            || envelope.domain != self.domain
+            || authorization.policy != self.policy
+            || envelope.epoch != self.epoch
+            || envelope.nonce != self.next_nonce
+            || envelope.validate().is_err()
+        {
+            return false;
+        }
+
+        self.next_nonce = advanced_nonce;
+        true
+    }
+
     pub fn verify_and_consume<V: ContextSignatureVerifier>(
         &mut self,
         verifier: &V,
@@ -1586,6 +1610,53 @@ mod tests {
         assert!(replay.rotate_epoch(13, 0));
         assert_eq!(replay.epoch(), 13);
         assert_eq!(replay.next_nonce(), 0);
+    }
+
+    #[test]
+    fn consume_verified_rejects_wrong_domain_policy_or_nonce() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0xB1; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 9,
+            nonce: 3,
+            expires_at: 100,
+            payload_commitment: [0xB2; 32],
+        };
+        let auth = HybridAuthorization {
+            policy: AuthPolicy::Max,
+            evidence: vec![
+                evidence(AuthScheme::Secp256k1),
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let mut replay = AuthorizationReplayState::new(
+            envelope.chain_id,
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            9,
+            3,
+        )
+        .expect("replay state");
+
+        let mut wrong = envelope.clone();
+        wrong.domain = AuthorizationDomain::ModelUpgrade;
+        assert!(!replay.consume_verified(&auth, &wrong));
+        assert_eq!(replay.next_nonce(), 3);
+
+        let mut wrong_auth = auth.clone();
+        wrong_auth.policy = AuthPolicy::PqOnly;
+        assert!(!replay.consume_verified(&wrong_auth, &envelope));
+        assert_eq!(replay.next_nonce(), 3);
+
+        let mut wrong = envelope.clone();
+        wrong.nonce = 4;
+        assert!(!replay.consume_verified(&auth, &wrong));
+        assert_eq!(replay.next_nonce(), 3);
+
+        assert!(replay.consume_verified(&auth, &envelope));
+        assert_eq!(replay.next_nonce(), 4);
+        assert!(!replay.consume_verified(&auth, &envelope));
     }
 
     #[test]
