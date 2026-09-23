@@ -19,6 +19,8 @@ domain currently present in `AuthorizationDomain`.
 | `AutopilotExecution` | execute a value-bearing AI-prepared call | `Max` | owner account equals authorization keyset commitment | chain, reservation epoch, nonce, expiry, reservation root, policy root, proposal/call commitment |
 | `PaymentIntent` | authorize payer payment intent | caller/account-required policy | payer account equals authorization keyset commitment | chain, epoch, nonce, expiry, amount, fee, rails, corridor, compliance commitment |
 | `SettlementBatch` | authorize execution-lane settlement batch | `PqOnly` | expected lane authority keyset commitment | chain, epoch, nonce, expiry, lane ID, sequence, accounting/availability/finality commitments |
+| `StorageProof` | storage provider proof receipt | `PqOnly` | expected provider ID + expected provider keyset commitment | chain, storage epoch, nonce, expiry, object/challenge/proof/served-byte commitment |
+| `CognitiveEvidence` | CognitiveNode AI/symbolic evidence | `PqOnly` | node manifest PQ identity equals authorization keyset commitment | chain, epoch, nonce, expiry, request/node/model/input/output/proof/price/policy bindings |
 
 ## Keyset identity primitive
 
