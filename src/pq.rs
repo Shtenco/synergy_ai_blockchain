@@ -807,6 +807,34 @@ mod tests {
     }
 
     #[test]
+    fn authorization_wire_format_matches_independent_known_answer() {
+        use sha2::{Digest, Sha256};
+
+        let envelope = AuthorizationEnvelope {
+            chain_id: [1u8; 32],
+            domain: AuthorizationDomain::Transaction,
+            epoch: 5,
+            nonce: 9,
+            expires_at: 100,
+            payload_commitment: [2u8; 32],
+        };
+
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+
+        assert_eq!(message.len(), 111);
+        assert_eq!(context.len(), 63);
+        assert_eq!(
+            hex::encode(Sha256::digest(&message)),
+            "f1a8e0660f99db442f1e56becc05a1ae6e4dd18d14ede6233eefce9e5009ba16"
+        );
+        assert_eq!(
+            hex::encode(Sha256::digest(&context)),
+            "fb28450c0d70acfa64a0c5c04e963eb6bcf20661105431f6d244691162c0f8d5"
+        );
+    }
+
+    #[test]
     fn policy_algorithm_suite_is_bound_into_message_and_context() {
         let envelope = AuthorizationEnvelope {
             chain_id: [0x21; 32],
