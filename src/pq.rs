@@ -139,6 +139,7 @@ pub enum AuthorizationDomain {
     ConsensusActivation,
     ServicePlaneCheckpoint,
     AutopilotExecution,
+    PaymentIntent,
 }
 
 impl AuthorizationDomain {
@@ -154,6 +155,7 @@ impl AuthorizationDomain {
             Self::ConsensusActivation => 8,
             Self::ServicePlaneCheckpoint => 9,
             Self::AutopilotExecution => 10,
+            Self::PaymentIntent => 11,
         }
     }
 }
@@ -1039,6 +1041,7 @@ mod tests {
             AuthorizationDomain::ConsensusActivation.protocol_code(),
             AuthorizationDomain::ServicePlaneCheckpoint.protocol_code(),
             AuthorizationDomain::AutopilotExecution.protocol_code(),
+            AuthorizationDomain::PaymentIntent.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
