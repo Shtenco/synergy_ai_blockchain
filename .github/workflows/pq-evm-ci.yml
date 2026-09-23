@@ -22,6 +22,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Verify pinned local PQ fixtures
+        run: python3 scripts/m2_verify_fixture_manifest.py
+
       - name: M2 static security guard
         run: python3 scripts/m2_static_guard.py
 
@@ -86,6 +89,7 @@ jobs:
             m2-spdx-core.json \
             m2-spdx-reference-pq.json \
             m2-build-environment.txt \
+            tests/vectors/M2_FIXTURE_MANIFEST.json \
             > m2-evidence-sha256.txt
 
       - name: Formatting gate
@@ -128,5 +132,6 @@ jobs:
             m2-spdx-reference-pq.json
             m2-build-environment.txt
             m2-evidence-sha256.txt
+            tests/vectors/M2_FIXTURE_MANIFEST.json
           if-no-files-found: warn
           retention-days: 30
