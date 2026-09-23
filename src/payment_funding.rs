@@ -94,7 +94,7 @@ impl PaymentFundingConsumptionReceipt {
         self.validate_against(reservation)
     }
 
-    pub fn validate_against(
+    pub(crate) fn validate_against(
         &self,
         reservation: &PaymentFundingReservation,
     ) -> Result<(), &'static str> {
