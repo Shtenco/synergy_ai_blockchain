@@ -1,3 +1,9 @@
+//! Content-addressed archival storage primitives.
+//!
+//! Compression ratios are evidence, never protocol constants. The chain records
+//! exact raw/archive byte counts, scoped dedup evidence and erasure placement
+//! commitments so storage savings can be derived rather than advertised.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -7,11 +13,6 @@ use crate::pq::{
 
 const STORAGE_PROOF_DOMAIN: &[u8] = b"SYNERGY/STORAGE-PROOF/V1\0";
 
-//! Content-addressed archival storage primitives.
-//!
-//! Compression ratios are evidence, never protocol constants. The chain records
-//! exact raw/archive byte counts, scoped dedup evidence and erasure placement
-//! commitments so storage savings can be derived rather than advertised.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageClass {
