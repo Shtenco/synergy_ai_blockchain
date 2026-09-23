@@ -158,10 +158,10 @@ impl ErasurePlacementReceipt {
         if self.erasure_k == 0 || self.erasure_n < self.erasure_k {
             return Err("invalid erasure parameters");
         }
-        let numerator = (self.unique_archive_bytes as u128)
-            .checked_mul(self.erasure_n as u128)
+        let numerator = u128::from(self.unique_archive_bytes)
+            .checked_mul(u128::from(self.erasure_n))
             .ok_or("erasure size overflow")?;
-        let k = self.erasure_k as u128;
+        let k = u128::from(self.erasure_k);
         let ceil = numerator
             .checked_add(k - 1)
             .ok_or("erasure rounding overflow")?
