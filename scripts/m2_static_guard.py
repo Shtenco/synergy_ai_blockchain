@@ -1316,4 +1316,13 @@ require(
     "transport handshake role and replay atomicity regressions missing",
 )
 
+
+require(
+    "pub(crate) fn verify_authorization" in pq
+    and "pub(crate) fn verify_authorization_with_context" in pq
+    and "pub(crate) fn verify_envelope_authorization" in pq
+    and "verify_envelope_authorization," not in lib_v2,
+    "stateless low-level authorization verification must remain crate-internal",
+)
+
 print("M2 static guard: PASS")
