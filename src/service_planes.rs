@@ -91,6 +91,7 @@ pub struct ServicePlaneCheckpointValidationContext {
     pub expected_chain_id: [u8; 32],
     pub expected_authorization_epoch: u64,
     pub expected_nonce: u64,
+    pub current_service_plane_epoch: u64,
     pub expected_service_plane_epoch: u64,
     pub expected_authority_keyset_commitment: [u8; 32],
     pub now: u64,
@@ -102,7 +103,13 @@ pub fn verify_service_plane_checkpoint<V: ContextSignatureVerifier>(
     authorized: &ServicePlaneCheckpointAuthorization,
     validation: &ServicePlaneCheckpointValidationContext,
 ) -> bool {
+    let next_epoch = match validation.current_service_plane_epoch.checked_add(1) {
+        Some(epoch) => epoch,
+        None => return false,
+    };
+
     if authorized.authorization.policy != AuthPolicy::Max
+        || validation.expected_service_plane_epoch != next_epoch
         || authorized.roots.epoch != validation.expected_service_plane_epoch
         || authorized.authorization.keyset_commitment()
             != Some(validation.expected_authority_keyset_commitment)
@@ -257,6 +264,7 @@ mod tests {
             expected_chain_id: [0xA1; 32],
             expected_authorization_epoch: 8,
             expected_nonce: 9,
+            current_service_plane_epoch: 6,
             expected_service_plane_epoch: 7,
             expected_authority_keyset_commitment: authorized
                 .authorization
@@ -278,6 +286,50 @@ mod tests {
             &verifier,
             &authorized,
             &stale,
+        ));
+    }
+
+    #[test]
+    fn service_plane_checkpoint_requires_exact_next_epoch() {
+        let authorized = ServicePlaneCheckpointAuthorization {
+            chain_id: [0xA1; 32],
+            authorization_epoch: 8,
+            nonce: 9,
+            expires_at: 1_100,
+            roots: roots(),
+            authorization: max_authorization(),
+        };
+        let envelope = authorized.envelope().expect("service checkpoint envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
+            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+        };
+        let mut validation = ServicePlaneCheckpointValidationContext {
+            expected_chain_id: [0xA1; 32],
+            expected_authorization_epoch: 8,
+            expected_nonce: 9,
+            current_service_plane_epoch: 5,
+            expected_service_plane_epoch: 7,
+            expected_authority_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("authority keyset"),
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+
+        assert!(!verify_service_plane_checkpoint(
+            &verifier,
+            &authorized,
+            &validation,
+        ));
+
+        validation.current_service_plane_epoch = 7;
+        validation.expected_service_plane_epoch = 7;
+        assert!(!verify_service_plane_checkpoint(
+            &verifier,
+            &authorized,
+            &validation,
         ));
     }
 
