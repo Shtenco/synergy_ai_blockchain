@@ -1316,6 +1316,34 @@ mod tests {
     }
 
     #[test]
+    fn evm_authorization_envelope_fixture_matches_rust_profile_v1() {
+        let mut chain_id = [0u8; 32];
+        chain_id[30..].copy_from_slice(&8453u16.to_be_bytes());
+
+        let envelope = AuthorizationEnvelope {
+            chain_id,
+            domain: AuthorizationDomain::Transaction,
+            epoch: 1,
+            nonce: 7,
+            expires_at: 1_000,
+            payload_commitment: [0xaa; 32],
+        };
+        let message = envelope
+            .canonical_message(AuthPolicy::PqOnly)
+            .expect("canonical authorization message");
+        let actual_hex = message
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("");
+        let expected_hex =
+            include_str!("../tests/fixtures/evm_authorization_envelope_v1.hex").trim();
+
+        assert_eq!(actual_hex, expected_hex);
+        assert_eq!(message.len(), 111);
+    }
+
+    #[test]
     fn evm_fips_context_fixture_matches_rust_profile_v1() {
         let mut chain_id = [0u8; 32];
         chain_id[30..].copy_from_slice(&8453u16.to_be_bytes());
