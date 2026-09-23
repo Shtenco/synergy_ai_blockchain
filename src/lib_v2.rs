@@ -77,11 +77,12 @@ pub use model_shard::{
     ModelShardOutput, ModelUpgradeAuthorization, ModelUpgradeValidationContext,
 };
 pub use network::{
-    derive_transport_session_key, establish_shared_secret, validate_shared_secret,
+    derive_transport_session_key, establish_authenticated_shared_secret, validate_shared_secret,
     ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard, MlKem1024Provider,
-    MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerIdentity, TransportPolicy,
-    TransportReplayGuard, TransportRole,
-    TransportSessionKey, TransportTranscript, TransportValidationContext,
+    MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerAuthorization,
+    TransportPeerAuthorizationValidationContext, TransportPeerIdentity, TransportPolicy,
+    TransportReplayGuard, TransportRole, TransportSessionKey, TransportTranscript,
+    TransportValidationContext,
     CLASSICAL_SHARED_SECRET_BYTES,
     MAX_REKEY_MESSAGES,
     MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
