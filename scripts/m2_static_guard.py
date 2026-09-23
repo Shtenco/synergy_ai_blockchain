@@ -10,6 +10,7 @@ def require(condition: bool, message: str) -> None:
 
 cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
 pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
+lib_v2 = (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8")
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
 tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
@@ -1071,5 +1072,36 @@ require(
     and "self.expires_at == 0" in kv_cache,
     "KV-cache leases must require nonzero expiry",
 )
+
+
+require(
+    "pub fn commitment(&self) -> [u8; 32]" in pq
+    and 'SYNERGY/PQ-REPLAY-STATE/V1\\0' in pq
+    and "hasher.update(self.next_nonce.to_be_bytes())" in pq,
+    "replay state must expose a canonical rollback-detectable commitment",
+)
+
+for stateless, consuming in (
+    ("verify_governance_action", "verify_governance_action_and_consume"),
+    ("verify_consensus_activation", "verify_consensus_activation_and_consume"),
+    ("verify_service_plane_checkpoint", "verify_service_plane_checkpoint_and_consume"),
+    ("verify_autopilot_execution", "verify_autopilot_execution_and_consume"),
+    ("verify_payment_intent", "verify_payment_intent_and_consume"),
+    ("verify_settlement_batch", "verify_settlement_batch_and_consume"),
+    ("verify_storage_proof", "verify_storage_proof_and_consume"),
+    ("verify_cognitive_evidence", "verify_cognitive_evidence_and_consume"),
+    ("verify_inference_receipt", "verify_inference_receipt_and_consume"),
+    ("verify_verifier_receipt", "verify_verifier_receipt_and_consume"),
+    ("verify_model_upgrade", "verify_model_upgrade_and_consume"),
+    ("verify_binding", "verify_binding_and_consume"),
+    ("verify_validator_vote", "verify_validator_vote_and_consume"),
+    ("verify_kv_replica_receipt", "verify_kv_replica_receipt_and_consume"),
+):
+    require(
+        consuming in lib_v2
+        and f"pub use {stateless}" not in lib_v2
+        and f" {stateless}," not in lib_v2,
+        f"public crate surface must export consuming API only for {stateless}",
+    )
 
 print("M2 static guard: PASS")
