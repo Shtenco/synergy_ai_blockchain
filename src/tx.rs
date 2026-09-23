@@ -163,7 +163,7 @@ impl PqEvmTransaction {
         if self.authorization.policy != context.required_policy {
             return Err(TxError::PolicyMismatch);
         }
-        if self.authorization.keyset_commitment() != Some(self.sender_account) {
+        if self.authorization.primary_account_identity_commitment() != Some(self.sender_account) {
             return Err(TxError::AuthorizationFailed);
         }
         if self.gas_limit == 0 {
@@ -236,8 +236,8 @@ mod tests {
             ],
         };
         let sender_account = authorization
-            .keyset_commitment()
-            .expect("sender keyset commitment");
+            .primary_account_identity_commitment()
+            .expect("sender primary account identity");
 
         PqEvmTransaction {
             chain_id: 8453,
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_rejects_authorization_keyset_not_bound_to_sender_account() {
+    fn transaction_rejects_primary_key_not_bound_to_sender_account() {
         let mut tx = test_tx();
         tx.authorization.evidence[0].public_key[0] ^= 1;
 
