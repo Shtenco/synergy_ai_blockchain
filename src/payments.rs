@@ -142,6 +142,7 @@ pub struct PaymentIntentValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_payer: [u8; 32],
+    pub expected_payer_keyset_commitment: [u8; 32],
     pub required_policy: AuthPolicy,
     pub now: u64,
     pub max_future_seconds: u64,
@@ -155,7 +156,10 @@ pub(crate) fn verify_payment_intent<V: ContextSignatureVerifier>(
     if authorized.intent.payer != validation.expected_payer
         || authorized.intent.validate(validation.now).is_err()
         || authorized.authorization.policy != validation.required_policy
-        || authorized.authorization.keyset_commitment() != Some(authorized.intent.payer)
+        || authorized.authorization.primary_account_identity_commitment()
+            != Some(authorized.intent.payer)
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_payer_keyset_commitment)
     {
         return false;
     }
@@ -458,6 +462,9 @@ mod tests {
     fn payment_intent_requires_registered_payer_keyset() {
         let authorization = pq_only_authorization();
         let payer = authorization
+            .primary_account_identity_commitment()
+            .expect("payer account identity");
+        let payer_keyset = authorization
             .keyset_commitment()
             .expect("payer keyset commitment");
         let authorized = PaymentIntentAuthorization {
@@ -481,6 +488,7 @@ mod tests {
             expected_epoch: 7,
             expected_nonce: 8,
             expected_payer: payer,
+            expected_payer_keyset_commitment: payer_keyset,
             required_policy: AuthPolicy::PqOnly,
             now: 50,
             max_future_seconds: 60,
@@ -494,11 +502,31 @@ mod tests {
     }
 
     #[test]
+    fn payer_account_identity_is_stable_across_secondary_key_rotation() {
+        let auth = pq_only_authorization();
+        let account = auth
+            .primary_account_identity_commitment()
+            .expect("payer account identity");
+
+        let mut rotated = auth.clone();
+        rotated.evidence[1].public_key[0] ^= 1;
+
+        assert_eq!(
+            rotated.primary_account_identity_commitment(),
+            Some(account)
+        );
+        assert_ne!(
+            auth.keyset_commitment(),
+            rotated.keyset_commitment()
+        );
+    }
+
+    #[test]
     fn payment_intent_commitment_binds_amount_rails_and_compliance() {
         let authorization = pq_only_authorization();
         let payer = authorization
-            .keyset_commitment()
-            .expect("payer keyset commitment");
+            .primary_account_identity_commitment()
+            .expect("payer account identity");
         let base = intent_for(payer);
         let commitment = base.authorization_commitment().expect("commitment");
 
