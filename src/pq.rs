@@ -292,6 +292,25 @@ pub struct HybridAuthorization {
     pub evidence: Vec<SignatureEvidence>,
 }
 
+pub fn primary_account_identity_commitment(
+    ml_dsa87_public_key: &[u8],
+) -> Option<[u8; 32]> {
+    if ml_dsa87_public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
+        || ml_dsa87_public_key.iter().all(|byte| *byte == 0)
+    {
+        return None;
+    }
+
+    const DOMAIN: &[u8] = b"SYNERGY/PQ-PRIMARY-ACCOUNT/V1\0";
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
+    hasher.update(CRYPTO_PROFILE_VERSION.to_be_bytes());
+    hasher.update([AuthScheme::MlDsa87.protocol_code()]);
+    hasher.update((ml_dsa87_public_key.len() as u64).to_be_bytes());
+    hasher.update(ml_dsa87_public_key);
+    Some(hasher.finalize().into())
+}
+
 pub fn authorization_keyset_commitment<'a, I>(
     policy: AuthPolicy,
     keys: I,
@@ -424,6 +443,15 @@ impl HybridAuthorization {
                 .iter()
                 .map(|evidence| (evidence.scheme, evidence.public_key.as_slice())),
         )
+    }
+
+    pub fn primary_account_identity_commitment(&self) -> Option<[u8; 32]> {
+        self.validate_structure().ok()?;
+        let ml_dsa = self
+            .evidence
+            .iter()
+            .find(|evidence| evidence.scheme == AuthScheme::MlDsa87)?;
+        primary_account_identity_commitment(&ml_dsa.public_key)
     }
 
     pub fn structurally_complete(&self) -> bool {
@@ -781,6 +809,52 @@ mod tests {
             ],
         };
         assert_eq!(direct, auth.keyset_commitment().expect("authorization keyset"));
+    }
+
+    #[test]
+    fn primary_account_identity_is_stable_across_authorization_policies() {
+        let online = HybridAuthorization {
+            policy: AuthPolicy::Online,
+            evidence: vec![
+                evidence(AuthScheme::Secp256k1),
+                evidence(AuthScheme::MlDsa87),
+            ],
+        };
+        let pq_only = HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+        let max = HybridAuthorization {
+            policy: AuthPolicy::Max,
+            evidence: vec![
+                evidence(AuthScheme::Secp256k1),
+                evidence(AuthScheme::MlDsa87),
+                evidence(AuthScheme::SlhDsaShake256s),
+            ],
+        };
+
+        let identity = online
+            .primary_account_identity_commitment()
+            .expect("online primary identity");
+        assert_eq!(
+            identity,
+            pq_only
+                .primary_account_identity_commitment()
+                .expect("PQ-only primary identity")
+        );
+        assert_eq!(
+            identity,
+            max.primary_account_identity_commitment()
+                .expect("MAX primary identity")
+        );
+
+        assert_ne!(
+            online.keyset_commitment().expect("online keyset"),
+            pq_only.keyset_commitment().expect("PQ-only keyset"),
+        );
     }
 
     #[test]
