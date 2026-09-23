@@ -93,7 +93,7 @@ impl Drop for SecretBytes {
     }
 }
 
-pub const TRANSPORT_TRANSCRIPT_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT/V1\0";
+pub const TRANSPORT_TRANSCRIPT_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT\0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportTranscript {
@@ -145,6 +145,7 @@ impl TransportTranscript {
 
         let mut hasher = Sha256::new();
         hasher.update(TRANSPORT_TRANSCRIPT_DOMAIN);
+        hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
         hasher.update([match self.policy {
             TransportPolicy::Hybrid => 1,
             TransportPolicy::PqOnly => 2,
