@@ -98,6 +98,7 @@ pub enum AuthorizationDomain {
     ModelUpgrade,
     InferenceReceipt,
     Governance,
+    VerificationReceipt,
 }
 
 impl AuthorizationDomain {
@@ -109,6 +110,7 @@ impl AuthorizationDomain {
             Self::ModelUpgrade => 4,
             Self::InferenceReceipt => 5,
             Self::Governance => 6,
+            Self::VerificationReceipt => 7,
         }
     }
 }
@@ -905,6 +907,7 @@ mod tests {
             AuthorizationDomain::ModelUpgrade.protocol_code(),
             AuthorizationDomain::InferenceReceipt.protocol_code(),
             AuthorizationDomain::Governance.protocol_code(),
+            AuthorizationDomain::VerificationReceipt.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
