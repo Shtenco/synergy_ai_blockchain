@@ -1,3 +1,9 @@
+//! Consensus-neutral canonical commitments for Autopilot budget lifecycle.
+//!
+//! AI planning is never signing authority. A value-bearing execution may be
+//! authorized only after a budget reservation has already occupied both the
+//! delegated grant and (when present) company-wide epoch envelope.
+
 use sha2::{Digest, Sha256};
 
 use crate::pq::{
@@ -7,11 +13,6 @@ use crate::pq::{
 
 const AUTOPILOT_EXECUTION_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION/V1\0";
 
-//! Consensus-neutral canonical commitments for Autopilot budget lifecycle.
-//!
-//! AI planning is never signing authority. A value-bearing execution may be
-//! authorized only after a budget reservation has already occupied both the
-//! delegated grant and (when present) company-wide epoch envelope.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutopilotBudgetReservation {
