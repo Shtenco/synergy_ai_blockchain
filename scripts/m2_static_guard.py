@@ -957,4 +957,27 @@ require(
     "authorization lifetime must remain bounded by protocol, not caller policy",
 )
 
+
+for name, source, stateless, consuming in (
+    ("governance", governance, "verify_governance_action", "verify_governance_action_and_consume"),
+    ("consensus", consensus, "verify_consensus_activation", "verify_consensus_activation_and_consume"),
+    ("service_planes", service_planes, "verify_service_plane_checkpoint", "verify_service_plane_checkpoint_and_consume"),
+    ("autopilot_budget", autopilot_budget, "verify_autopilot_execution", "verify_autopilot_execution_and_consume"),
+    ("payments-intent", payments, "verify_payment_intent", "verify_payment_intent_and_consume"),
+    ("payments-settlement", payments, "verify_settlement_batch", "verify_settlement_batch_and_consume"),
+    ("storage", storage, "verify_storage_proof", "verify_storage_proof_and_consume"),
+    ("cognitive", cognitive, "verify_cognitive_evidence", "verify_cognitive_evidence_and_consume"),
+    ("inference", inference, "verify_inference_receipt", "verify_inference_receipt_and_consume"),
+    ("verification", verification, "verify_verifier_receipt", "verify_verifier_receipt_and_consume"),
+    ("model_shard", model_shard, "verify_model_upgrade", "verify_model_upgrade_and_consume"),
+    ("migration", migration, "verify_binding", "verify_binding_and_consume"),
+    ("validator", validator, "verify_validator_vote", "verify_validator_vote_and_consume"),
+):
+    require(
+        f"pub(crate) fn {stateless}" in source
+        and f"pub fn {consuming}" in source
+        and "replay.consume_verified" in source,
+        f"{name} privileged API must expose replay-consuming verification only",
+    )
+
 print("M2 static guard: PASS")
