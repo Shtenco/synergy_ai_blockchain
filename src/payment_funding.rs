@@ -1,10 +1,11 @@
-use crate::payments::PaymentIntent;
-
 //! Canonical funding commitments for horizontally sharded Meta Pay.
 //!
 //! Settlement lanes are partitioned by corridor, but spend authority is not.
 //! A source `(payer, asset)` balance must be reserved exactly once before any
 //! destination lane can consume it, preventing cross-lane double spending.
+
+use crate::payments::PaymentIntent;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FundingStatus {
