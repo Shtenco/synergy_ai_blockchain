@@ -347,7 +347,7 @@ pub fn verify_verifier_receipt_and_consume<V: ContextSignatureVerifier>(
     replay.consume_verified_for_subject(
         &authorized.authorization,
         &envelope,
-        validation.expected_verifier_keyset_commitment,
+        validation.expected_verifier_id,
     )
 }
 
