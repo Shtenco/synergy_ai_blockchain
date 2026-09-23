@@ -6,10 +6,11 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::payments::PaymentIntent;
+use crate::payments::{PaymentIntent, SettlementBatchAuthorization};
 
 const FUNDING_CONSUMPTION_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-CONSUMPTION/V1\0";
 const FUNDING_RELEASE_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-RELEASE/V1\0";
+const FUNDED_SETTLEMENT_DOMAIN: &[u8] = b"SYNERGY/FUNDED-SETTLEMENT/V1\0";
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +235,41 @@ impl FundedSettlementCommitment {
         }
         Ok(())
     }
+
+    pub fn validate_against_batch(
+        &self,
+        authorized: &SettlementBatchAuthorization,
+    ) -> Result<(), &'static str> {
+        self.validate()?;
+        let expected_batch_root = authorized
+            .batch
+            .authorization_commitment()
+            .ok_or("settlement batch commitment unavailable")?;
+        if self.settlement_batch_root != expected_batch_root {
+            return Err("funded settlement batch root mismatch");
+        }
+        if self.settlement_item_count != u64::from(authorized.batch.item_count) {
+            return Err("funded settlement item count mismatch");
+        }
+        Ok(())
+    }
+
+    pub fn canonical_root(
+        &self,
+        authorized: &SettlementBatchAuthorization,
+    ) -> Option<[u8; 32]> {
+        self.validate_against_batch(authorized).ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(FUNDED_SETTLEMENT_DOMAIN);
+        hasher.update(authorized.chain_id);
+        hasher.update(authorized.epoch.to_be_bytes());
+        hasher.update(self.settlement_batch_root);
+        hasher.update(self.funding_consumption_root);
+        hasher.update(self.settlement_item_count.to_be_bytes());
+        hasher.update(self.funding_receipt_count.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +414,65 @@ mod tests {
         assert!(reservation.release_once(&receipt).is_ok());
         assert_eq!(reservation.status, FundingStatus::Released);
         assert!(reservation.release_once(&receipt).is_err());
+    }
+
+    #[test]
+    fn funded_settlement_root_binds_exact_authorized_batch_and_funding() {
+        use crate::pq::{AuthPolicy, AuthScheme, HybridAuthorization, SignatureEvidence,
+            ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+            SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES};
+
+        let batch = SettlementBatchAuthorization {
+            chain_id: [0xA1; 32],
+            epoch: 7,
+            nonce: 3,
+            expires_at: 100,
+            batch: crate::payments::SettlementBatch {
+                lane_id: [0xA2; 16],
+                sequence: 1,
+                intents_root: [0xA3; 32],
+                accounting_root: [0xA4; 32],
+                availability_root: [0xA5; 32],
+                item_count: 2,
+                gross_amount: 200,
+                total_fees: 2,
+                finality_proof_commitment: [0xA6; 32],
+            },
+            authorization: HybridAuthorization {
+                policy: AuthPolicy::PqOnly,
+                evidence: vec![
+                    SignatureEvidence {
+                        scheme: AuthScheme::MlDsa87,
+                        public_key: vec![1; ML_DSA_87_PUBLIC_KEY_BYTES],
+                        signature: vec![2; ML_DSA_87_SIGNATURE_BYTES],
+                    },
+                    SignatureEvidence {
+                        scheme: AuthScheme::SlhDsaShake256s,
+                        public_key: vec![3; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                        signature: vec![4; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                    },
+                ],
+            },
+        };
+        let batch_root = batch.batch.authorization_commitment().expect("batch root");
+        let funded = FundedSettlementCommitment {
+            settlement_batch_root: batch_root,
+            funding_consumption_root: [0xA7; 32],
+            settlement_item_count: 2,
+            funding_receipt_count: 2,
+        };
+        let root = funded.canonical_root(&batch).expect("funded settlement root");
+
+        let mut changed = funded.clone();
+        changed.funding_consumption_root[0] ^= 1;
+        assert_ne!(
+            root,
+            changed.canonical_root(&batch).expect("changed funded root")
+        );
+
+        let mut wrong = funded.clone();
+        wrong.settlement_batch_root[0] ^= 1;
+        assert!(wrong.canonical_root(&batch).is_none());
     }
 
     #[test]
