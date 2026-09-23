@@ -74,10 +74,14 @@ pub fn structural_independence(
 }
 
 /// Count only structurally independent provenance entries toward an economic
-/// diversity quorum. The caller must provide a deterministic order.
+/// diversity quorum. Ordering is canonicalized internally by node_id so callers
+/// cannot change quorum membership by permuting otherwise identical evidence.
 pub fn independent_prefix_count(entries: &[CognitiveNodeProvenance]) -> usize {
+    let mut ordered: Vec<&CognitiveNodeProvenance> = entries.iter().collect();
+    ordered.sort_by_key(|entry| entry.node_id);
+
     let mut accepted: Vec<&CognitiveNodeProvenance> = Vec::new();
-    'candidate: for candidate in entries {
+    'candidate: for candidate in ordered {
         for old in &accepted {
             if structural_independence(candidate, old) != IndependenceVerdict::Independent {
                 continue 'candidate;
@@ -136,6 +140,21 @@ mod tests {
         let b = provenance(2, 5, 9, 10);
         assert_eq!(structural_independence(&a, &b), IndependenceVerdict::DuplicateModel);
         assert_eq!(independent_prefix_count(&[a, b]), 1);
+    }
+
+    #[test]
+    fn independence_quorum_is_permutation_invariant() {
+        let a = provenance(1, 5, 7, 8);
+        let b = provenance(2, 5, 9, 10);
+        let c = provenance(3, 6, 11, 12);
+
+        let first = independent_prefix_count(&[a.clone(), b.clone(), c.clone()]);
+        let second = independent_prefix_count(&[c.clone(), b.clone(), a.clone()]);
+        let third = independent_prefix_count(&[b, a, c]);
+
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+        assert_eq!(first, 2);
     }
 
     #[test]
