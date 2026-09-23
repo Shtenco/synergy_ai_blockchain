@@ -25,6 +25,11 @@
       "path": "tests/fixtures/evm_fips_context_v1.hex",
       "git_blob_sha1": "194a3ae08eca936f89701b4c5eadf08c8f714d9a",
       "sha256": "6fb451f77be80a61010a6d686fa383139e58b387b2d16afecfdac2ca018fed95"
+    },
+    {
+      "path": "tests/fixtures/evm_authorization_envelope_v1.hex",
+      "git_blob_sha1": "d86a50c7b7d3d82c04fb9c22eabc8b293d79b0a5",
+      "sha256": "0505fd868b3100e29b6126860b733740a3bc78b4367981265571546071d9cbd0"
     }
   ]
 }
