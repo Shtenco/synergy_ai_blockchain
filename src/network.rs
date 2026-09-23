@@ -597,6 +597,10 @@ pub fn establish_authenticated_shared_secret<G: TransportReplayGuard, V: Context
 ) -> Option<HybridSharedSecret> {
     if initiator_validation.expected_node_id != transcript.initiator.node_id
         || responder_validation.expected_node_id != transcript.responder.node_id
+        || initiator_validation.expected_keyset_commitment == [0u8; 32]
+        || responder_validation.expected_keyset_commitment == [0u8; 32]
+        || initiator_validation.expected_keyset_commitment
+            == responder_validation.expected_keyset_commitment
         || !verify_transport_peer_authorization(
             verifier,
             transcript,
@@ -1151,6 +1155,58 @@ mod tests {
         .is_none());
         assert_eq!(initiator_replay.next_nonce(), 12);
         assert_eq!(responder_replay.next_nonce(), 13);
+    }
+
+    #[test]
+    fn transport_handshake_rejects_shared_authentication_keyset_between_peers() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transport_validation = validation_for(&transcript);
+        let (initiator_auth, initiator_validation) =
+            peer_authorization(&transcript, TransportRole::Initiator, 11, 0x21);
+        let (responder_auth, mut responder_validation) =
+            peer_authorization(&transcript, TransportRole::Responder, 12, 0x31);
+        responder_validation.expected_keyset_commitment =
+            initiator_validation.expected_keyset_commitment;
+        let verifier = handshake_verifier(&transcript, &initiator_auth, &responder_auth);
+
+        let mut initiator_replay = AuthorizationReplayState::new_for_subject(
+            transcript.network_id,
+            AuthorizationDomain::TransportHandshake,
+            AuthPolicy::PqOnly,
+            transcript.initiator.node_id,
+            transcript.epoch,
+            11,
+        )
+        .expect("initiator replay");
+        let mut responder_replay = AuthorizationReplayState::new_for_subject(
+            transcript.network_id,
+            AuthorizationDomain::TransportHandshake,
+            AuthPolicy::PqOnly,
+            transcript.responder.node_id,
+            transcript.epoch,
+            12,
+        )
+        .expect("responder replay");
+        let mut session_replay = OneShotReplayGuard::default();
+
+        assert!(establish_authenticated_shared_secret(
+            &mut session_replay,
+            &mut initiator_replay,
+            &mut responder_replay,
+            &verifier,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("PQ secret"),
+            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &transcript,
+            &transport_validation,
+            &initiator_auth,
+            &initiator_validation,
+            &responder_auth,
+            &responder_validation,
+        )
+        .is_none());
+        assert_eq!(initiator_replay.next_nonce(), 11);
+        assert_eq!(responder_replay.next_nonce(), 12);
     }
 
     #[test]
