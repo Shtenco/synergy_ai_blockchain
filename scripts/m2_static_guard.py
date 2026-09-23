@@ -31,6 +31,8 @@ governance = (ROOT / "src/governance.rs").read_text(encoding="utf-8")
 verification = (ROOT / "src/verification.rs").read_text(encoding="utf-8")
 consensus = (ROOT / "src/consensus.rs").read_text(encoding="utf-8")
 service_planes = (ROOT / "src/service_planes.rs").read_text(encoding="utf-8")
+scheduling = (ROOT / "src/scheduling.rs").read_text(encoding="utf-8")
+cognitive_market = (ROOT / "src/cognitive_market.rs").read_text(encoding="utf-8")
 autopilot = (ROOT / "src/autopilot.rs").read_text(encoding="utf-8")
 autopilot_budget = (ROOT / "src/autopilot_budget.rs").read_text(encoding="utf-8")
 autopilot_execution_lease = (ROOT / "src/autopilot_execution_lease.rs").read_text(encoding="utf-8")
@@ -1499,6 +1501,34 @@ require(
 require(
     "finality_chain_mismatch_does_not_consume_service_authority_nonce" in service_planes,
     "cross-chain finality rejection must occur before service-authority nonce consumption",
+)
+
+
+require(
+    "pub fn consume_once(" in payment_funding
+    and "pub fn release_once(" in payment_funding
+    and "FUNDING_CONSUMPTION_DOMAIN" in payment_funding
+    and "FUNDING_RELEASE_DOMAIN" in payment_funding
+    and "funding consumption root mismatch" in payment_funding
+    and "pub(crate) fn validate_against_intent(" in payment_funding,
+    "payment funding reservation must remain one-shot with canonical consume/release roots",
+)
+
+require(
+    "pub fn validate(&self) -> Result<(), &'static str>" in scheduling
+    and "nodes[..index].iter().any(|prior| prior.node_id == node.node_id)" in scheduling
+    and ".min_by_key(|(score, node)| (*score, node.node_id))" in scheduling,
+    "scheduler must reject duplicate identities and remain permutation-invariant",
+)
+
+require(
+    "pub fn validate(&self) -> Result<(), &'static str>" in cognitive
+    and "accepted cognitive work cannot be slashed" in cognitive
+    and "non-final cognitive verdict cannot settle value" in cognitive
+    and "receipt.validate()?" in cognitive_market
+    and "base reward exceeds policy maximum" in cognitive_market
+    and "let base = receipt.paid_amount;" in cognitive_market,
+    "cognitive reward path must reject invalid or silently clipped settlement receipts",
 )
 
 print("M2 static guard: PASS")
