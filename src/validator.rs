@@ -51,7 +51,12 @@ impl ValidatorIdentity {
         }
 
         match policy {
-            ValidatorPolicy::PqOnly => Ok(()),
+            ValidatorPolicy::PqOnly => {
+                if !self.legacy_public_key.is_empty() {
+                    return Err("PQ-only validator forbids legacy public key material");
+                }
+                Ok(())
+            }
             ValidatorPolicy::HybridTransition => {
                 if self.legacy_public_key.len() != SECP256K1_PUBLIC_KEY_BYTES {
                     return Err("validator Secp256k1 public key length mismatch");
@@ -182,12 +187,16 @@ mod tests {
         }
     }
 
-    fn identity() -> ValidatorIdentity {
+    fn identity_for(policy: ValidatorPolicy) -> ValidatorIdentity {
         let mut secp = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
         secp[0] = 0x02;
         ValidatorIdentity {
             validator_id: [0x11; 32],
-            legacy_public_key: secp,
+            legacy_public_key: if matches!(policy, ValidatorPolicy::HybridTransition) {
+                secp
+            } else {
+                Vec::new()
+            },
             ml_dsa87_public_key: vec![0x22; ML_DSA_87_PUBLIC_KEY_BYTES],
             slh_dsa_shake256s_public_key: vec![0x33; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
         }
@@ -215,7 +224,7 @@ mod tests {
     }
 
     fn vote(policy: ValidatorPolicy) -> ValidatorVoteAuthorization {
-        let identity = identity();
+        let identity = identity_for(policy);
         let evidence = match policy {
             ValidatorPolicy::HybridTransition => vec![
                 evidence(AuthScheme::Secp256k1, identity.legacy_public_key.clone()),
@@ -259,8 +268,19 @@ mod tests {
     }
 
     #[test]
+    fn pq_only_validator_identity_rejects_legacy_key_material() {
+        let mut identity = identity_for(ValidatorPolicy::PqOnly);
+        assert_eq!(identity.validate_for_policy(ValidatorPolicy::PqOnly), Ok(()));
+
+        let mut legacy = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
+        legacy[0] = 0x02;
+        identity.legacy_public_key = legacy;
+        assert!(identity.validate_for_policy(ValidatorPolicy::PqOnly).is_err());
+    }
+
+    #[test]
     fn pq_only_vote_uses_state_aware_fips_authorization() {
-        let identity = identity();
+        let identity = identity_for(ValidatorPolicy::PqOnly);
         let vote = vote(ValidatorPolicy::PqOnly);
         let envelope = vote.envelope();
         let verifier = ExpectedVerifier {
@@ -282,7 +302,7 @@ mod tests {
 
     #[test]
     fn validator_vote_rejects_policy_downgrade_and_key_substitution() {
-        let identity = identity();
+        let identity = identity_for(ValidatorPolicy::HybridTransition);
         let mut vote = vote(ValidatorPolicy::HybridTransition);
         let envelope = vote.envelope();
         let verifier = ExpectedVerifier {
@@ -324,7 +344,7 @@ mod tests {
 
     #[test]
     fn validator_vote_rejects_chain_epoch_nonce_and_expiry_replay() {
-        let identity = identity();
+        let identity = identity_for(ValidatorPolicy::PqOnly);
         let vote = vote(ValidatorPolicy::PqOnly);
         let envelope = vote.envelope();
         let verifier = ExpectedVerifier {
