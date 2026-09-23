@@ -35,7 +35,7 @@ pub use autopilot_budget::{
     AutopilotRealizedExecutionReceipt,
 };
 pub use cognitive::{
-    verify_cognitive_evidence, CognitiveEvidence, CognitiveEvidenceAuthorization,
+    verify_cognitive_evidence_and_consume, CognitiveEvidence, CognitiveEvidenceAuthorization,
     CognitiveEvidenceValidationContext, CognitiveNodeManifest, CognitiveRole,
     CognitiveWorkReceipt, CognitiveWorkRequest, EvidenceKind, WorkVerdict,
 };
@@ -52,7 +52,7 @@ pub use consensus::{
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
 pub use inference::{
-    verify_inference_receipt, InferenceExecutionPlan, InferenceJob, InferenceJobState,
+    verify_inference_receipt_and_consume, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
 };
@@ -82,7 +82,7 @@ pub use payment_funding::{
     PaymentFundingReservation,
 };
 pub use payments::{
-    verify_payment_intent, verify_settlement_batch, PaymentIntent, PaymentIntentAuthorization,
+    verify_payment_intent_and_consume, verify_settlement_batch_and_consume, PaymentIntent, PaymentIntentAuthorization,
     PaymentIntentValidationContext, PaymentLaneKey, PaymentRail, SettlementBatch,
     SettlementBatchAuthorization, SettlementBatchValidationContext, SettlementState,
 };
@@ -110,14 +110,14 @@ pub use service_planes::{
     ServicePlaneRoots,
 };
 pub use storage::{
-    verify_storage_proof, ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
+    verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope, ErasurePlacementReceipt,
     ProofOfStorageReceipt, StorageBid, StorageClass, StorageProofAuthorization,
     StorageProofValidationContext,
 };
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{ValidatorIdentity, ValidatorPolicy};
 pub use verification::{
-    verify_verifier_receipt, VerificationAggregate, VerificationChallenge, VerificationVerdict,
+    verify_verifier_receipt_and_consume, VerificationAggregate, VerificationChallenge, VerificationVerdict,
     VerifierReceipt, VerifierReceiptAuthorization, VerifierReceiptValidationContext,
 };
 
