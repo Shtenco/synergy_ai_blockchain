@@ -33,7 +33,7 @@ def main() -> int:
 
     metadata_bytes = metadata_path.read_bytes()
     data = json.loads(metadata_bytes.decode("utf-8"))
-    metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()
+    lock_bytes = lock_path.read_bytes()
 
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
     created = datetime.fromtimestamp(epoch, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -43,18 +43,54 @@ def main() -> int:
     nodes = resolve.get("nodes", [])
 
     package_by_id = {pkg["id"]: pkg for pkg in packages}
-    spdx_by_id = {
-        pkg_id: spdx_id(f'{pkg["name"]}-{pkg["version"]}-{idx}')
-        for idx, pkg_id in enumerate(sorted(package_by_id))
-        for pkg in [package_by_id[pkg_id]]
-    }
+
+    canonical_packages = sorted(
+        (pkg["name"], pkg["version"], pkg.get("source") or "LOCAL")
+        for pkg in packages
+    )
+    canonical_edges = sorted(
+        (
+            package_by_id[node["id"]]["name"],
+            package_by_id[node["id"]]["version"],
+            package_by_id[dep["pkg"]]["name"],
+            package_by_id[dep["pkg"]]["version"],
+        )
+        for node in nodes
+        if node.get("id") in package_by_id
+        for dep in node.get("deps", [])
+        if dep.get("pkg") in package_by_id
+    )
+    canonical_graph = json.dumps(
+        {"packages": canonical_packages, "edges": canonical_edges},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    graph_sha256 = hashlib.sha256(lock_bytes + b"\0" + canonical_graph).hexdigest()
+
+    seen_spdx_ids = set()
+    spdx_by_id = {}
+    for pkg_id, pkg in package_by_id.items():
+        candidate = spdx_id(f'{pkg["name"]}-{pkg["version"]}')
+        if candidate in seen_spdx_ids:
+            source_fingerprint = hashlib.sha256(
+                (pkg.get("source") or "LOCAL").encode("utf-8")
+            ).hexdigest()[:12]
+            candidate = spdx_id(
+                f'{pkg["name"]}-{pkg["version"]}-{source_fingerprint}'
+            )
+        if candidate in seen_spdx_ids:
+            raise SystemExit(
+                f"SPDX generation failed: non-unique package identity for {pkg['name']} {pkg['version']}"
+            )
+        seen_spdx_ids.add(candidate)
+        spdx_by_id[pkg_id] = candidate
 
     doc = {
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "SYNERGY M2 locked Cargo dependency SBOM",
-        "documentNamespace": f"https://synergy.local/spdx/m2/cargo-metadata-{metadata_sha256}",
+        "documentNamespace": f"https://synergy.local/spdx/m2/locked-graph-{graph_sha256}",
         "creationInfo": {
             "created": created,
             "creators": ["Tool: scripts/m2_spdx_from_cargo_metadata.py"],
@@ -87,11 +123,18 @@ def main() -> int:
                 "comment": f"Cargo.lock source: {lock_source}",
             })
 
+        if isinstance(source, str) and source.startswith("registry+"):
+            download_location = (
+                f"https://crates.io/api/v1/crates/{pkg['name']}/{pkg['version']}/download"
+            )
+        else:
+            download_location = "NOASSERTION"
+
         doc["packages"].append({
             "name": pkg["name"],
             "SPDXID": spdx_by_id[pkg_id],
             "versionInfo": pkg["version"],
-            "downloadLocation": source if source else "NOASSERTION",
+            "downloadLocation": download_location,
             "filesAnalyzed": False,
             "licenseConcluded": "NOASSERTION",
             "licenseDeclared": license_expr,
@@ -126,6 +169,23 @@ def main() -> int:
             "relationshipType": "DESCRIBES",
             "relatedSpdxElement": spdx_by_id[root],
         })
+
+    if len(doc["packages"]) != len(package_by_id):
+        raise SystemExit("SPDX generation failed: package coverage mismatch")
+
+    relationship_keys = {
+        (
+            rel["spdxElementId"],
+            rel["relationshipType"],
+            rel["relatedSpdxElement"],
+        )
+        for rel in doc["relationships"]
+    }
+    if len(relationship_keys) != len(doc["relationships"]):
+        raise SystemExit("SPDX generation failed: duplicate relationships")
+
+    if root not in spdx_by_id:
+        raise SystemExit("SPDX generation failed: resolved root missing from SPDX map")
 
     output_path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
