@@ -213,12 +213,35 @@ pub struct AuthorizationReplayState {
     chain_id: [u8; 32],
     domain: AuthorizationDomain,
     policy: AuthPolicy,
+    subject_commitment: [u8; 32],
     epoch: u64,
     next_nonce: u64,
 }
 
 impl AuthorizationReplayState {
-    pub fn new(
+    pub fn new_for_subject(
+        chain_id: [u8; 32],
+        domain: AuthorizationDomain,
+        policy: AuthPolicy,
+        subject_commitment: [u8; 32],
+        epoch: u64,
+        next_nonce: u64,
+    ) -> Option<Self> {
+        if chain_id == [0u8; 32] || subject_commitment == [0u8; 32] || epoch == 0 {
+            return None;
+        }
+        Some(Self {
+            chain_id,
+            domain,
+            policy,
+            subject_commitment,
+            epoch,
+            next_nonce,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new(
         chain_id: [u8; 32],
         domain: AuthorizationDomain,
         policy: AuthPolicy,
@@ -232,6 +255,7 @@ impl AuthorizationReplayState {
             chain_id,
             domain,
             policy,
+            subject_commitment: [0u8; 32],
             epoch,
             next_nonce,
         })
@@ -254,6 +278,7 @@ impl AuthorizationReplayState {
         hasher.update(self.chain_id);
         hasher.update([self.domain.protocol_code()]);
         hasher.update([self.policy.protocol_code()]);
+        hasher.update(self.subject_commitment);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(self.next_nonce.to_be_bytes());
         hasher.finalize().into()
@@ -268,7 +293,35 @@ impl AuthorizationReplayState {
         true
     }
 
-    pub fn consume_verified(
+    pub fn consume_verified_for_subject(
+        &mut self,
+        authorization: &HybridAuthorization,
+        envelope: &AuthorizationEnvelope,
+        expected_subject_commitment: [u8; 32],
+    ) -> bool {
+        let advanced_nonce = match self.next_nonce.checked_add(1) {
+            Some(nonce) => nonce,
+            None => return false,
+        };
+
+        if expected_subject_commitment == [0u8; 32]
+            || self.subject_commitment != expected_subject_commitment
+            || envelope.chain_id != self.chain_id
+            || envelope.domain != self.domain
+            || authorization.policy != self.policy
+            || envelope.epoch != self.epoch
+            || envelope.nonce != self.next_nonce
+            || envelope.validate().is_err()
+        {
+            return false;
+        }
+
+        self.next_nonce = advanced_nonce;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn consume_verified(
         &mut self,
         authorization: &HybridAuthorization,
         envelope: &AuthorizationEnvelope,
@@ -292,7 +345,49 @@ impl AuthorizationReplayState {
         true
     }
 
-    pub fn verify_and_consume<V: ContextSignatureVerifier>(
+    pub fn verify_and_consume_for_subject<V: ContextSignatureVerifier>(
+        &mut self,
+        verifier: &V,
+        authorization: &HybridAuthorization,
+        envelope: &AuthorizationEnvelope,
+        expected_subject_commitment: [u8; 32],
+        now: u64,
+        max_future_seconds: u64,
+    ) -> bool {
+        if self.subject_commitment != expected_subject_commitment
+            || expected_subject_commitment == [0u8; 32]
+        {
+            return false;
+        }
+
+        let validation = AuthorizationValidationContext {
+            expected_chain_id: self.chain_id,
+            expected_domain: self.domain,
+            expected_policy: self.policy,
+            expected_epoch: self.epoch,
+            expected_nonce: self.next_nonce,
+            now,
+            max_future_seconds,
+        };
+
+        if !verify_envelope_authorization(
+            verifier,
+            authorization,
+            envelope,
+            &validation,
+        ) {
+            return false;
+        }
+
+        self.consume_verified_for_subject(
+            authorization,
+            envelope,
+            expected_subject_commitment,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn verify_and_consume<V: ContextSignatureVerifier>(
         &mut self,
         verifier: &V,
         authorization: &HybridAuthorization,
@@ -1627,6 +1722,29 @@ mod tests {
         assert!(replay.rotate_epoch(13, 0));
         assert_eq!(replay.epoch(), 13);
         assert_eq!(replay.next_nonce(), 0);
+    }
+
+    #[test]
+    fn production_replay_state_is_subject_bound() {
+        let a = AuthorizationReplayState::new_for_subject(
+            [0xD1; 32],
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            [0xD2; 32],
+            7,
+            9,
+        )
+        .expect("subject replay state");
+        let b = AuthorizationReplayState::new_for_subject(
+            [0xD1; 32],
+            AuthorizationDomain::Governance,
+            AuthPolicy::Max,
+            [0xD3; 32],
+            7,
+            9,
+        )
+        .expect("subject replay state");
+        assert_ne!(a.commitment(), b.commitment());
     }
 
     #[test]
