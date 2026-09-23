@@ -71,6 +71,7 @@ pub struct GovernanceValidationContext {
     pub expected_nonce: u64,
     pub expected_proposal_id: [u8; 32],
     pub expected_governance_state_root: [u8; 32],
+    pub expected_authority_keyset_commitment: [u8; 32],
     pub now: u64,
     pub max_future_seconds: u64,
 }
@@ -84,6 +85,8 @@ pub fn verify_governance_action<V: ContextSignatureVerifier>(
         || authorized.action.validate().is_err()
         || authorized.action.proposal_id != validation.expected_proposal_id
         || authorized.action.governance_state_root != validation.expected_governance_state_root
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_authority_keyset_commitment)
     {
         return false;
     }
@@ -190,6 +193,9 @@ mod tests {
             expected_nonce: 13,
             expected_proposal_id: [0x82; 32],
             expected_governance_state_root: [0x84; 32],
+            expected_authority_keyset_commitment: max_authorization()
+                .keyset_commitment()
+                .expect("governance authority keyset"),
             now: 1_000,
             max_future_seconds: 200,
         }
@@ -220,6 +226,28 @@ mod tests {
             &verifier,
             &downgraded,
             &validation(),
+        ));
+    }
+
+    #[test]
+    fn governance_rejects_unregistered_authority_keyset() {
+        let authorized = authorized();
+        let envelope = authorized.envelope().expect("governance envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("governance message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("governance context"),
+        };
+
+        let mut validation = validation();
+        validation.expected_authority_keyset_commitment[0] ^= 1;
+        assert!(!verify_governance_action(
+            &verifier,
+            &authorized,
+            &validation,
         ));
     }
 
