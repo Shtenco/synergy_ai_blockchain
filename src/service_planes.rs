@@ -47,6 +47,7 @@ impl ServiceFinalityKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceFinalityItem {
     kind: ServiceFinalityKind,
+    source_chain_id: [u8; 32],
     source_epoch: u64,
     root: [u8; 32],
 }
@@ -55,6 +56,7 @@ impl ServiceFinalityItem {
     pub fn payment_settlement(authorized: &SettlementBatchAuthorization) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::PaymentSettlement,
+            source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized.batch.authorization_commitment()?,
         })
@@ -65,6 +67,7 @@ impl ServiceFinalityItem {
     ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
+            source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized.terminal.commitment()?,
         })
@@ -73,6 +76,7 @@ impl ServiceFinalityItem {
     pub fn storage_receipt(authorized: &StorageProofAuthorization) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
+            source_chain_id: authorized.chain_id,
             source_epoch: authorized.receipt.epoch,
             root: authorized.receipt.authorization_commitment()?,
         })
@@ -85,6 +89,7 @@ impl ServiceFinalityItem {
     ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::CognitiveReceipt,
+            source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized
                 .evidence
@@ -98,6 +103,7 @@ impl ServiceFinalityItem {
     ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::KvReplicaReceipt,
+            source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
             root: authorized.receipt.authorization_commitment(lease)?,
         })
@@ -105,6 +111,10 @@ impl ServiceFinalityItem {
 
     pub const fn kind(&self) -> ServiceFinalityKind {
         self.kind
+    }
+
+    pub const fn source_chain_id(&self) -> [u8; 32] {
+        self.source_chain_id
     }
 
     pub const fn source_epoch(&self) -> u64 {
@@ -118,12 +128,16 @@ impl ServiceFinalityItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceFinalityBatch {
+    pub chain_id: [u8; 32],
     pub epoch: u64,
     pub items: Vec<ServiceFinalityItem>,
 }
 
 impl ServiceFinalityBatch {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.chain_id == [0u8; 32] {
+            return Err("service finality chain id required");
+        }
         if self.epoch == 0 {
             return Err("service finality epoch required");
         }
@@ -136,13 +150,27 @@ impl ServiceFinalityBatch {
         if self
             .items
             .iter()
+            .any(|item| item.source_chain_id != self.chain_id)
+        {
+            return Err("service finality source chain mismatch");
+        }
+        if self
+            .items
+            .iter()
             .any(|item| item.source_epoch != self.epoch)
         {
             return Err("service finality source epoch mismatch");
         }
 
         let mut ordered = self.items.clone();
-        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.source_epoch, item.root));
+        ordered.sort_by_key(|item| {
+            (
+                item.kind.protocol_code(),
+                item.source_chain_id,
+                item.source_epoch,
+                item.root,
+            )
+        });
         if ordered.windows(2).any(|pair| pair[0] == pair[1]) {
             return Err("duplicate service finality item");
         }
@@ -152,15 +180,24 @@ impl ServiceFinalityBatch {
     pub fn commitment(&self) -> Option<[u8; 32]> {
         self.validate().ok()?;
         let mut ordered = self.items.clone();
-        ordered.sort_by_key(|item| (item.kind.protocol_code(), item.source_epoch, item.root));
+        ordered.sort_by_key(|item| {
+            (
+                item.kind.protocol_code(),
+                item.source_chain_id,
+                item.source_epoch,
+                item.root,
+            )
+        });
         let count = u64::try_from(ordered.len()).ok()?;
 
         let mut hasher = Sha256::new();
         hasher.update(SERVICE_FINALITY_BATCH_DOMAIN);
+        hasher.update(self.chain_id);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(count.to_be_bytes());
         for item in ordered {
             hasher.update([item.kind.protocol_code()]);
+            hasher.update(item.source_chain_id);
             hasher.update(item.source_epoch.to_be_bytes());
             hasher.update(item.root);
         }
@@ -374,7 +411,9 @@ pub fn verify_service_plane_checkpoint_with_finality_and_consume<V: ContextSigna
     validation: &ServicePlaneCheckpointValidationContext,
     replay: &mut AuthorizationReplayState,
 ) -> bool {
-    if authorized.roots.validate_against_finality(finality).is_err() {
+    if finality.chain_id != authorized.chain_id
+        || authorized.roots.validate_against_finality(finality).is_err()
+    {
         return false;
     }
     verify_service_plane_checkpoint_and_consume(
@@ -446,15 +485,18 @@ mod tests {
 
     fn finality() -> ServiceFinalityBatch {
         ServiceFinalityBatch {
+            chain_id: [0xA1; 32],
             epoch: 7,
             items: vec![
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::PaymentSettlement,
+                    source_chain_id: [0xA1; 32],
                     source_epoch: 7,
                     root: [0x71; 32],
                 },
                 ServiceFinalityItem {
                     kind: ServiceFinalityKind::AutopilotTerminal,
+                    source_chain_id: [0xA1; 32],
                     source_epoch: 7,
                     root: [0x72; 32],
                 },
@@ -499,6 +541,7 @@ mod tests {
         let item = ServiceFinalityItem::payment_settlement(&settlement)
             .expect("payment finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::PaymentSettlement);
+        assert_eq!(item.source_chain_id(), [0x60; 32]);
         assert_eq!(item.source_epoch(), 7);
         assert_eq!(
             item.root(),
@@ -524,11 +567,19 @@ mod tests {
         let item = ServiceFinalityItem::autopilot_terminal(&terminal)
             .expect("Autopilot terminal finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::AutopilotTerminal);
+        assert_eq!(item.source_chain_id(), [0x66; 32]);
         assert_eq!(item.source_epoch(), 7);
         assert_eq!(
             item.root(),
             terminal.terminal.commitment().expect("terminal root")
         );
+    }
+
+    #[test]
+    fn service_finality_batch_rejects_cross_chain_receipt_replay() {
+        let mut batch = finality();
+        batch.items[0].source_chain_id = [0xFF; 32];
+        assert!(batch.commitment().is_none());
     }
 
     #[test]
