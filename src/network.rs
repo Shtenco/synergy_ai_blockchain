@@ -279,6 +279,21 @@ pub const TRANSPORT_KDF_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT/KDF\0";
 pub const TRANSPORT_KDF_PROTOCOL_CODE: u8 = 1; // HKDF-SHA256
 pub const TRANSPORT_SESSION_KEY_BYTES: usize = 32;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransportDirection {
+    InitiatorToResponder,
+    ResponderToInitiator,
+}
+
+impl TransportDirection {
+    const fn protocol_code(self) -> u8 {
+        match self {
+            Self::InitiatorToResponder => 1,
+            Self::ResponderToInitiator => 2,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportTranscript {
     pub network_id: [u8; 32],
@@ -688,7 +703,8 @@ impl Drop for TransportSessionKey {
     }
 }
 
-pub fn derive_transport_session_key(
+#[cfg(test)]
+fn derive_transport_session_key(
     secret: &HybridSharedSecret,
 ) -> Option<TransportSessionKey> {
     if !validate_shared_secret(secret.policy(), secret) {
@@ -740,6 +756,93 @@ pub fn derive_transport_session_key(
     info.zeroize();
 
     Some(TransportSessionKey(output))
+}
+
+
+fn derive_transport_direction_key(
+    secret: &HybridSharedSecret,
+    direction: TransportDirection,
+) -> Option<TransportSessionKey> {
+    if !validate_shared_secret(secret.policy(), secret) {
+        return None;
+    }
+
+    let mut ikm = Vec::with_capacity(
+        2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES,
+    );
+    ikm.push(1);
+    ikm.extend_from_slice(secret.pq_shared().as_bytes());
+    match secret.classical_shared() {
+        Some(classical) => {
+            ikm.push(1);
+            ikm.extend_from_slice(classical.as_bytes());
+        }
+        None => ikm.push(0),
+    }
+
+    let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
+    ikm.zeroize();
+
+    let mut info = Vec::with_capacity(
+        TRANSPORT_KDF_DOMAIN.len() + 2 + 4 + 32,
+    );
+    info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
+    info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+    info.push(match secret.policy() {
+        TransportPolicy::Hybrid => 1,
+        TransportPolicy::PqOnly => 2,
+    });
+    info.push(ML_KEM_1024_PROTOCOL_CODE);
+    info.push(TRANSPORT_KDF_PROTOCOL_CODE);
+    info.push(direction.protocol_code());
+    info.extend_from_slice(secret.transcript_hash());
+
+    let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
+    let expand_result = hkdf.expand(&info, &mut output);
+    drop(hkdf);
+
+    if expand_result.is_err() {
+        info.zeroize();
+        output.zeroize();
+        return None;
+    }
+    info.zeroize();
+    Some(TransportSessionKey(output))
+}
+
+pub struct TransportSessionKeys {
+    initiator_to_responder: TransportSessionKey,
+    responder_to_initiator: TransportSessionKey,
+}
+
+impl TransportSessionKeys {
+    pub fn initiator_to_responder(&self) -> &TransportSessionKey {
+        &self.initiator_to_responder
+    }
+
+    pub fn responder_to_initiator(&self) -> &TransportSessionKey {
+        &self.responder_to_initiator
+    }
+}
+
+impl fmt::Debug for TransportSessionKeys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TransportSessionKeys(<redacted>)")
+    }
+}
+
+pub fn derive_directional_transport_session_keys(
+    secret: &HybridSharedSecret,
+) -> Option<TransportSessionKeys> {
+    let initiator_to_responder =
+        derive_transport_direction_key(secret, TransportDirection::InitiatorToResponder)?;
+    let responder_to_initiator =
+        derive_transport_direction_key(secret, TransportDirection::ResponderToInitiator)?;
+
+    Some(TransportSessionKeys {
+        initiator_to_responder,
+        responder_to_initiator,
+    })
 }
 
 impl fmt::Debug for HybridSharedSecret {
@@ -1637,6 +1740,41 @@ mod tests {
         let changed_prefix: [u8; 32] = hasher.finalize().into();
 
         assert_ne!(commitment, changed_prefix);
+    }
+
+    #[test]
+    fn transport_directional_keys_are_distinct_and_transcript_bound() {
+        let secret = valid_secret();
+        let keys = derive_directional_transport_session_keys(&secret)
+            .expect("directional transport keys");
+        assert_ne!(
+            keys.initiator_to_responder().as_bytes(),
+            keys.responder_to_initiator().as_bytes()
+        );
+
+        let other_transcript = {
+            let mut transcript = valid_transcript(TransportPolicy::Hybrid);
+            transcript.session_id[0] ^= 1;
+            transcript
+        };
+        let validation = validation_for(&other_transcript);
+        let mut replay_guard = OneShotReplayGuard::default();
+        let other_secret = establish_shared_secret(
+            &mut replay_guard,
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
+                .expect("PQ secret"),
+            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
+            &other_transcript,
+            &validation,
+        )
+        .expect("other secret");
+        let other = derive_directional_transport_session_keys(&other_secret)
+            .expect("other directional keys");
+
+        assert_ne!(
+            keys.initiator_to_responder().as_bytes(),
+            other.initiator_to_responder().as_bytes()
+        );
     }
 
     #[test]
