@@ -40,9 +40,37 @@ pub struct AutopilotPolicy {
 }
 
 impl AutopilotPolicy {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.policy_id == [0u8; 32]
+            || self.owner_account == [0u8; 32]
+            || self.policy_root == [0u8; 32]
+        {
+            return Err("Autopilot policy commitments required");
+        }
+        if self.valid_until <= self.valid_from {
+            return Err("Autopilot policy validity window invalid");
+        }
+        if self.max_value_per_action == 0 || self.max_value_per_epoch == 0 {
+            return Err("Autopilot policy value limits required");
+        }
+        if self.max_value_per_action > self.max_value_per_epoch {
+            return Err("Autopilot per-action limit exceeds epoch limit");
+        }
+        if self.allowed_capabilities.is_empty() {
+            return Err("Autopilot policy requires at least one capability");
+        }
+        for (index, capability) in self.allowed_capabilities.iter().enumerate() {
+            if self.allowed_capabilities[..index].contains(capability) {
+                return Err("Autopilot policy contains duplicate capability");
+            }
+        }
+        Ok(())
+    }
+
     pub fn allows(&self, capability: AutopilotCapability, value: u128, now: u64) -> bool {
-        now >= self.valid_from
-            && now <= self.valid_until
+        self.validate().is_ok()
+            && now >= self.valid_from
+            && now < self.valid_until
             && value <= self.max_value_per_action
             && self.allowed_capabilities.contains(&capability)
     }
@@ -83,6 +111,9 @@ impl AutopilotProposal {
         if self.expires_at <= now || self.created_at > now {
             return Err("proposal outside time window");
         }
+        if self.expires_at > policy.valid_until {
+            return Err("proposal outlives Autopilot policy");
+        }
         if !policy.allows(capability, self.value, now) {
             return Err("capability or budget denied");
         }
@@ -107,6 +138,50 @@ pub struct AutopilotExecutionReceipt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn policy_rejects_invalid_window_duplicate_capability_and_zero_commitments() {
+        let mut p = AutopilotPolicy {
+            policy_id: [1; 32],
+            owner_account: [2; 32],
+            policy_root: [3; 32],
+            max_value_per_action: 100,
+            max_value_per_epoch: 1_000,
+            valid_from: 1,
+            valid_until: 100,
+            approval_mode: ApprovalMode::PolicyBoundBudget,
+            allowed_capabilities: vec![AutopilotCapability::PreparePayment],
+        };
+        assert_eq!(p.validate(), Ok(()));
+
+        p.valid_until = p.valid_from;
+        assert!(p.validate().is_err());
+
+        p.valid_until = 100;
+        p.allowed_capabilities.push(AutopilotCapability::PreparePayment);
+        assert!(p.validate().is_err());
+
+        p.allowed_capabilities.pop();
+        p.owner_account = [0; 32];
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn policy_expiry_is_exclusive() {
+        let p = AutopilotPolicy {
+            policy_id: [1; 32],
+            owner_account: [2; 32],
+            policy_root: [3; 32],
+            max_value_per_action: 100,
+            max_value_per_epoch: 1_000,
+            valid_from: 1,
+            valid_until: 100,
+            approval_mode: ApprovalMode::PolicyBoundBudget,
+            allowed_capabilities: vec![AutopilotCapability::PreparePayment],
+        };
+        assert!(p.allows(AutopilotCapability::PreparePayment, 1, 99));
+        assert!(!p.allows(AutopilotCapability::PreparePayment, 1, 100));
+    }
 
     #[test]
     fn policy_blocks_overspend() {
