@@ -288,3 +288,12 @@ c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890
 ```
 
 These vectors bind the canonical byte layout and KDF output, pending executable Cargo confirmation.
+
+
+## SLH-DSA signing custody policy
+
+As of the current upstream tag set, the newest stable RustCrypto SLH-DSA tag remains `slh-dsa/v0.1.0`. The `0.2.0` line is still release-candidate only (through `v0.2.0-rc.5`).
+
+M2 therefore keeps `slh-dsa = =0.1.0` pinned with only the explicit `alloc` feature and does **not** introduce local SLH signing-key custody. The production section of `ReferencePqSigner` creates and stores only `ml_dsa::SigningKey<MlDsa87>`; no `SigningKey<Shake256s>` or SLH key-generation path exists.
+
+SLH-DSA remains fully available for verification/FIPS-205 evidence. Production SLH signing must be supplied by a separate provider implementing the opaque `ContextSignatureSigner` interface (for example HSM/OS keystore/remote signer) until a reviewed stable zeroizing backend can be tested with executable Cargo.
