@@ -15,6 +15,10 @@ EXPECTED_CRYPTO = {
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+ALLOWED_REGISTRIES = {
+    "registry+https://github.com/rust-lang/crates.io-index",
+    "registry+https://index.crates.io/",
+}
 
 def fail(message: str) -> None:
     raise SystemExit(f"M2 lock policy failed: {message}")
@@ -64,6 +68,8 @@ def main() -> int:
             if source.startswith("git+"):
                 fail(f"git dependency forbidden in M2 locked graph: {name} {version}")
             if source.startswith("registry+"):
+                if source not in ALLOWED_REGISTRIES:
+                    fail(f"non-crates.io registry forbidden in M2 graph: {source}")
                 if not isinstance(checksum, str) or not HEX64.fullmatch(checksum):
                     fail(f"registry package lacks a 64-hex checksum: {name} {version}")
 
@@ -137,6 +143,10 @@ def main() -> int:
         version = pkg.get("version", "<unknown>")
         if isinstance(source, str) and source.startswith("git+"):
             fail(f"git source forbidden by metadata policy: {name} {version}")
+        if isinstance(source, str) and source.startswith("registry+") and source not in ALLOWED_REGISTRIES:
+            fail(f"non-crates.io metadata registry forbidden: {source}")
+        if source is None and name != "synergy-pq-evm-core":
+            fail(f"unexpected local/path package in locked graph: {name} {version}")
 
     lock_pairs = {(p.get("name"), p.get("version")) for p in packages}
     for pkg in meta_packages:
