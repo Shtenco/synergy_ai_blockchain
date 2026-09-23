@@ -8,11 +8,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: m2-pq-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   rust-core:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: M2 static security guard
         run: python3 scripts/m2_static_guard.py
@@ -67,7 +72,7 @@ jobs:
 
       - name: Upload M2 reproducibility evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: m2-cargo-reproducibility-${{ github.run_id }}
           path: |
