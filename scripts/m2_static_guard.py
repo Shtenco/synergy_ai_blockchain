@@ -1492,14 +1492,14 @@ require(
     and "source_epoch: u64" in service_planes
     and "service finality source chain mismatch" in service_planes
     and "service finality source epoch mismatch" in service_planes
-    and "pub fn payment_settlement(authorized: &SettlementBatchAuthorization)" in service_planes
-    and "pub fn autopilot_terminal(" in service_planes
+    and "funded: &FundedSettlementCommitment" in service_planes
+    and "lease: &AutopilotExecutionLease" in service_planes
+    and "archive: &ArchiveReceipt" in service_planes
     and "AutopilotLeaseTerminalAuthorization" in service_planes
-    and "pub fn storage_receipt(authorized: &StorageProofAuthorization)" in service_planes
     and "CognitiveEvidenceAuthorization" in service_planes
     and "KvReplicaReceiptAuthorization" in service_planes
     and "finality.chain_id != authorized.chain_id" in service_planes,
-    "service finality items must derive from authorized chain/epoch-bound domain outcomes",
+    "service finality items must derive from funded/terminal/archive-aware chain-bound outcomes",
 )
 
 require(
