@@ -333,7 +333,11 @@ pub fn verify_cognitive_evidence_and_consume<V: ContextSignatureVerifier>(
         Some(envelope) => envelope,
         None => return false,
     };
-    replay.consume_verified(&authorized.authorization, &envelope)
+    replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &envelope,
+        node.pq_identity_commitment,
+    )
 }
 
 #[cfg(test)]
