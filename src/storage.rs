@@ -1,3 +1,12 @@
+use sha2::{Digest, Sha256};
+
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+};
+
+const STORAGE_PROOF_DOMAIN: &[u8] = b"SYNERGY/STORAGE-PROOF/V1\0";
+
 //! Content-addressed archival storage primitives.
 //!
 //! Compression ratios are evidence, never protocol constants. The chain records
@@ -191,9 +200,154 @@ pub struct ProofOfStorageReceipt {
     pub served_bytes: u64,
 }
 
+
+impl ProofOfStorageReceipt {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.object_id == [0u8; 32]
+            || self.provider_id == [0u8; 32]
+            || self.challenge_commitment == [0u8; 32]
+            || self.proof_commitment == [0u8; 32]
+        {
+            return Err("storage proof commitments required");
+        }
+        if self.epoch == 0 || self.served_bytes == 0 {
+            return Err("storage proof epoch/served bytes required");
+        }
+        Ok(())
+    }
+
+    pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        let mut hasher = Sha256::new();
+        hasher.update(STORAGE_PROOF_DOMAIN);
+        hasher.update(self.object_id);
+        hasher.update(self.provider_id);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(self.challenge_commitment);
+        hasher.update(self.proof_commitment);
+        hasher.update(self.served_bytes.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageProofAuthorization {
+    pub chain_id: [u8; 32],
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub receipt: ProofOfStorageReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl StorageProofAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::StorageProof,
+            epoch: self.receipt.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.receipt.authorization_commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StorageProofValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_nonce: u64,
+    pub expected_epoch: u64,
+    pub expected_object_id: [u8; 32],
+    pub expected_provider_id: [u8; 32],
+    pub expected_provider_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_storage_proof<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &StorageProofAuthorization,
+    validation: &StorageProofValidationContext,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.object_id != validation.expected_object_id
+        || authorized.receipt.provider_id != validation.expected_provider_id
+        || authorized.receipt.epoch != validation.expected_epoch
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_provider_keyset_commitment)
+        || authorized.receipt.validate().is_err()
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::StorageProof,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{
+        AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn pq_only_authorization() -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x31; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x32; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x33; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x34; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
 
     fn archive() -> ArchiveReceipt {
         ArchiveReceipt {
@@ -212,6 +366,61 @@ mod tests {
             random_access_amplification_milli: 1200,
             expires_at_epoch: 100,
         }
+    }
+
+    #[test]
+    fn storage_proof_requires_registered_provider_keyset() {
+        let authorization = pq_only_authorization();
+        let provider_keyset = authorization
+            .keyset_commitment()
+            .expect("provider keyset");
+        let authorized = StorageProofAuthorization {
+            chain_id: [0xE1; 32],
+            nonce: 9,
+            expires_at: 200,
+            receipt: ProofOfStorageReceipt {
+                object_id: [0x41; 32],
+                provider_id: [0x42; 32],
+                epoch: 7,
+                challenge_commitment: [0x43; 32],
+                proof_commitment: [0x44; 32],
+                served_bytes: 4096,
+            },
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("storage envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let validation = StorageProofValidationContext {
+            expected_chain_id: [0xE1; 32],
+            expected_nonce: 9,
+            expected_epoch: 7,
+            expected_object_id: [0x41; 32],
+            expected_provider_id: [0x42; 32],
+            expected_provider_keyset_commitment: provider_keyset,
+            now: 100,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_storage_proof(
+            &verifier,
+            &authorized,
+            &validation,
+        ));
+
+        let mut wrong = validation;
+        wrong.expected_provider_keyset_commitment[0] ^= 1;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &authorized,
+            &wrong,
+        ));
     }
 
     #[test]
