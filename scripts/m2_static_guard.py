@@ -1735,9 +1735,9 @@ require(
     and "evm_authorization_envelope_fixture_matches_rust_profile_v1" in pq
     and '"SYNERGY/PQ-AUTH"' in smart_account_sol
     and "function authorizationEnvelopeMessage(" in smart_account_sol
-    and "bytes8(AUTHORIZATION_EPOCH)" in smart_account_sol
-    and "bytes8(txNonce)" in smart_account_sol
-    and "bytes8(validUntil)" in smart_account_sol
+    and "uint64 public constant AUTHORIZATION_EPOCH = 1" in smart_account_sol
+    and "uint64 txNonce" in smart_account_sol
+    and "uint64 validUntil" in smart_account_sol
     and "payloadCommitment" in smart_account_sol
     and '"tests/fixtures/evm_authorization_envelope_v1.hex"' in fixture_manifest
     and "tests/fixtures/evm_authorization_envelope_v1.hex" in workflow,
