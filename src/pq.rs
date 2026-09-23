@@ -103,6 +103,7 @@ pub struct AuthorizationValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub now: u64,
+    pub max_future_seconds: u64,
 }
 
 impl AuthorizationEnvelope {
@@ -135,6 +136,16 @@ impl AuthorizationEnvelope {
         }
         if context.now >= self.expires_at {
             return Err("authorization expired");
+        }
+        if context.max_future_seconds == 0 {
+            return Err("authorization lifetime policy required");
+        }
+        let remaining = self
+            .expires_at
+            .checked_sub(context.now)
+            .ok_or("authorization expired")?;
+        if remaining > context.max_future_seconds {
+            return Err("authorization expiry exceeds policy horizon");
         }
         Ok(())
     }
@@ -880,6 +891,7 @@ mod tests {
             expected_epoch: envelope.epoch,
             expected_nonce: envelope.nonce,
             now: envelope.expires_at - 1,
+            max_future_seconds: 60,
         };
         assert!(verify_envelope_authorization(
             &verifier,
@@ -916,6 +928,7 @@ mod tests {
             expected_epoch: 12,
             expected_nonce: 44,
             now: 999,
+            max_future_seconds: 60,
         };
         assert!(envelope.validate_in_context(&ok).is_ok());
 
@@ -938,6 +951,32 @@ mod tests {
         let mut bad = ok;
         bad.now = 1_000;
         assert!(envelope.validate_in_context(&bad).is_err());
+    }
+
+    #[test]
+    fn authorization_rejects_expiry_beyond_domain_policy_horizon() {
+        let envelope = AuthorizationEnvelope {
+            chain_id: [0xA1; 32],
+            domain: AuthorizationDomain::Governance,
+            epoch: 1,
+            nonce: 2,
+            expires_at: 10_000,
+            payload_commitment: [0xA2; 32],
+        };
+        let context = AuthorizationValidationContext {
+            expected_chain_id: envelope.chain_id,
+            expected_domain: envelope.domain,
+            expected_policy: AuthPolicy::PqOnly,
+            expected_epoch: envelope.epoch,
+            expected_nonce: envelope.nonce,
+            now: 9_000,
+            max_future_seconds: 900,
+        };
+        assert!(envelope.validate_in_context(&context).is_err());
+
+        let mut allowed = context;
+        allowed.max_future_seconds = 1_000;
+        assert!(envelope.validate_in_context(&allowed).is_ok());
     }
 
     #[derive(Clone, Copy)]
