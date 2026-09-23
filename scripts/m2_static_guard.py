@@ -780,4 +780,12 @@ require(
     "payment authorization domain codes missing or changed",
 )
 
+
+require(
+    "pub fn validate_against_intent(" in payment_funding
+    and "reservation.validate_against_intent(intent, now)?" in payment_funding
+    and "self.validate_against(reservation)" in payment_funding,
+    "funding consumption must recheck canonical payment intent and expiry",
+)
+
 print("M2 static guard: PASS")
