@@ -1405,4 +1405,34 @@ require(
     "transaction authorization must bind stable account identity and registered current keyset",
 )
 
+
+require(
+    "Self::AutopilotLeaseTerminal => 17" in pq
+    and "AuthorizationDomain::AutopilotLeaseTerminal.protocol_code()" in pq,
+    "Autopilot lease terminal authorization domain missing from append-only registry",
+)
+
+require(
+    "pub(crate) fn finalize_once(" in autopilot_execution_lease
+    and "pub fn finalize_autopilot_lease_and_consume" in autopilot_execution_lease
+    and "AuthorizationDomain::AutopilotLeaseTerminal" in autopilot_execution_lease
+    and "authorized.authorization.policy != AuthPolicy::Max" in autopilot_execution_lease
+    and "receipt.success" in autopilot_execution_lease
+    and "let mut next_lease = lease.clone()" in autopilot_execution_lease
+    and "let mut next_replay = replay.clone()" in autopilot_execution_lease,
+    "Autopilot lease terminal transition must remain MAX-authorized and atomic",
+)
+
+require(
+    "pub fn commitment_against(" in autopilot_budget
+    and 'SYNERGY/AUTOPILOT-REALIZED-EXECUTION/V1\\0' in autopilot_budget,
+    "Autopilot realized execution receipts must remain canonically committed",
+)
+
+require(
+    "finalize_autopilot_lease_and_consume" in lib_v2
+    and "AutopilotLeaseTerminalAuthorization" in lib_v2,
+    "public crate surface must expose authenticated lease terminal transition",
+)
+
 print("M2 static guard: PASS")
