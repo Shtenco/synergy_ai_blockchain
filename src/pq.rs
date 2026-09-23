@@ -50,7 +50,8 @@ fn is_canonical_secp256k1_signature(signature: &[u8]) -> bool {
     let (r, s) = compact.split_at(32);
     scalar_is_nonzero_and_below(r, &SECP256K1_ORDER)
         && scalar_is_nonzero_and_at_most(s, &SECP256K1_HALF_ORDER)
-        && matches!(recovery, [0] | [1])
+        && recovery.len() == 1
+        && (recovery[0] == 0 || recovery[0] == 1)
 }
 
 pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =
