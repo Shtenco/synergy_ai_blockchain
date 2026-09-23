@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const SERVICE_PLANE_CHECKPOINT_DOMAIN: &[u8] = b"SYNERGY/SERVICE-PLANE-CHECKPOINT/V1\0";
@@ -99,7 +99,7 @@ pub struct ServicePlaneCheckpointValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_service_plane_checkpoint<V: ContextSignatureVerifier>(
+pub(crate) fn verify_service_plane_checkpoint<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &ServicePlaneCheckpointAuthorization,
     validation: &ServicePlaneCheckpointValidationContext,
@@ -174,6 +174,23 @@ impl ServicePlaneCapacityEnvelope {
         let value = numerator.checked_div(self.logical_storage_bytes)?;
         u64::try_from(value).ok()
     }
+}
+
+
+pub fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &ServicePlaneCheckpointAuthorization,
+    validation: &ServicePlaneCheckpointValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_service_plane_checkpoint(verifier, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
