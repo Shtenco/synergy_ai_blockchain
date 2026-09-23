@@ -12,6 +12,15 @@ use crate::pq::{
 };
 
 const PAYMENT_INTENT_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-INTENT/V1\0";
+const SETTLEMENT_LANE_REPLAY_SUBJECT_DOMAIN: &[u8] =
+    b"SYNERGY/SETTLEMENT-LANE-REPLAY-SUBJECT/V1\0";
+
+fn settlement_lane_replay_subject(lane_id: [u8; 16]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SETTLEMENT_LANE_REPLAY_SUBJECT_DOMAIN);
+    hasher.update(lane_id);
+    hasher.finalize().into()
+}
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -377,7 +386,7 @@ pub fn verify_settlement_batch_and_consume<V: ContextSignatureVerifier>(
     replay.consume_verified_for_subject(
         &authorized.authorization,
         &envelope,
-        validation.expected_lane_authority_keyset_commitment,
+        settlement_lane_replay_subject(validation.expected_lane_id),
     )
 }
 
@@ -609,6 +618,17 @@ mod tests {
             &authorized,
             &wrong,
         ));
+    }
+
+    #[test]
+    fn settlement_lane_replay_subject_is_stable_across_key_rotation() {
+        let lane_id = [0x44; 16];
+        let subject = settlement_lane_replay_subject(lane_id);
+        assert_ne!(subject, [0u8; 32]);
+
+        let mut other_lane = lane_id;
+        other_lane[0] ^= 1;
+        assert_ne!(subject, settlement_lane_replay_subject(other_lane));
     }
 
     #[test]
