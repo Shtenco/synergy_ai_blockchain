@@ -31,12 +31,13 @@ pub use autopilot::{
     AutopilotProposal,
 };
 pub use autopilot_budget::{
-    verify_autopilot_execution_and_consume, AutopilotBudgetBoundCall, AutopilotBudgetReservation,
+    AutopilotBudgetBoundCall, AutopilotBudgetReservation,
     AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
     AutopilotRealizedExecutionReceipt,
 };
 pub use autopilot_execution_lease::{
-    AutopilotExecutionLease, AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalReceipt,
+    authorize_and_lock_autopilot_execution, AutopilotExecutionLease,
+    AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalReceipt,
 };
 pub use cognitive::{
     verify_cognitive_evidence_and_consume, CognitiveEvidence, CognitiveEvidenceAuthorization,
