@@ -1316,6 +1316,27 @@ mod tests {
     }
 
     #[test]
+    fn evm_fips_context_fixture_matches_rust_profile_v1() {
+        let mut chain_id = [0u8; 32];
+        chain_id[30..].copy_from_slice(&8453u16.to_be_bytes());
+
+        let context = fips_signature_context(
+            &chain_id,
+            AuthorizationDomain::Transaction,
+            AuthPolicy::PqOnly,
+        );
+        let actual_hex: String = context
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let expected_hex =
+            include_str!("../tests/fixtures/evm_fips_context_v1.hex").trim();
+
+        assert_eq!(actual_hex, expected_hex);
+        assert_eq!(context.len(), 63);
+    }
+
+    #[test]
     fn crypto_profile_v1_keeps_ed25519_reserved_but_inactive() {
         assert!(!AuthScheme::Ed25519.active_in_crypto_profile_v1());
         assert_eq!(AuthScheme::Ed25519.protocol_code(), 2);
