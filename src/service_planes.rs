@@ -8,7 +8,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::autopilot_execution_lease::{
-    AutopilotExecutionLease, AutopilotExecutionLeaseStatus, AutopilotLeaseTerminalAuthorization,
+    AutopilotExecutionLease, AutopilotLeaseTerminalAuthorization,
 };
 use crate::cognitive::{
     CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
@@ -73,7 +73,8 @@ impl ServiceFinalityItem {
         authorized: &AutopilotLeaseTerminalAuthorization,
     ) -> Option<Self> {
         if lease.lease_root != authorized.terminal.lease_root
-            || lease.status == AutopilotExecutionLeaseStatus::ExecutionLocked
+            || lease.status
+                == crate::autopilot_execution_lease::AutopilotExecutionLeaseStatus::ExecutionLocked
             || lease.status != authorized.terminal.status
         {
             return None;
