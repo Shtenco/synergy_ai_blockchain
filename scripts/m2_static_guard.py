@@ -11,6 +11,9 @@ def require(condition: bool, message: str) -> None:
 cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
 pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
 lib_v2 = (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8")
+pq_sol = (ROOT / "contracts/IPQVerifier.sol").read_text(encoding="utf-8")
+smart_account_sol = (ROOT / "contracts/PQSmartAccount.sol").read_text(encoding="utf-8")
+nexus_sol = (ROOT / "contracts/INexusAI.sol").read_text(encoding="utf-8")
 pq_ref = (ROOT / "src/pq_reference.rs").read_text(encoding="utf-8")
 network = (ROOT / "src/network.rs").read_text(encoding="utf-8")
 tx = (ROOT / "src/tx.rs").read_text(encoding="utf-8")
@@ -1241,6 +1244,44 @@ require(
     and "AUTOPILOT_LEASE_TERMINAL_DOMAIN" in autopilot_execution_lease
     and "pub fn commitment(&self) -> Option<[u8; 32]>" in autopilot_execution_lease,
     "Autopilot execution lease must remain one-shot with canonical terminal commitment",
+)
+
+
+require(
+    "bytes memory message" in pq_sol
+    and "bytes memory context" in pq_sol
+    and "ML_DSA_87_PUBLIC_KEY_BYTES = 2592" in pq_sol
+    and "ML_DSA_87_SIGNATURE_BYTES = 4627" in pq_sol
+    and "SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES = 64" in pq_sol
+    and "SLH_DSA_SHAKE_256S_SIGNATURE_BYTES = 29792" in pq_sol
+    and "MAX_FIPS_CONTEXT_BYTES = 255" in pq_sol
+    and "abi.encode(publicKey, message, context, signature)" in pq_sol,
+    "Solidity PQ precompile boundary must remain context-aware and size-strict",
+)
+
+require(
+    "requireDualPQ" not in smart_account_sol
+    and "AUTH_POLICY_PQ_ONLY = 3" in smart_account_sol
+    and "AUTHORIZATION_EPOCH = 1" in smart_account_sol
+    and "MAX_AUTHORIZATION_LIFETIME_SECONDS = 86_400" in smart_account_sol
+    and "_hasNonZeroByte(mlDsa87PublicKey_)" in smart_account_sol
+    and "_hasNonZeroByte(slhDsaPublicKey_)" in smart_account_sol
+    and "mlDsaSignature.length != 4627" in smart_account_sol
+    and "slhDsaSignature.length != 29792" in smart_account_sol
+    and "block.timestamp >= validUntil" in smart_account_sol
+    and "validUntil - block.timestamp > MAX_AUTHORIZATION_LIFETIME_SECONDS" in smart_account_sol
+    and "PQVerify.mlDsa87" in smart_account_sol
+    and "PQVerify.slhDsa256s" in smart_account_sol,
+    "PQSmartAccount must remain strict dual-PQ, size-bound and expiry-bound",
+)
+
+require(
+    "function inferScore(" in nexus_sol
+    and "enum Mode" not in nexus_sol
+    and "Policy" not in nexus_sol
+    and "ProofAssist" not in nexus_sol
+    and "abi.encode(modelRoot, uint8(0), inputQ16, maxOutputs)" in nexus_sol,
+    "Solidity NEXUS v1 facade must expose Score-only consensus mode",
 )
 
 print("M2 static guard: PASS")
