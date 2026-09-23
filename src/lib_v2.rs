@@ -77,7 +77,8 @@ pub use payment_funding::{
 };
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{
-    authorization_keyset_commitment, sign_envelope_evidence, verify_envelope_authorization,
+    authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
+    verify_envelope_authorization,
     AuthPolicy, AuthScheme,
     AuthorizationDomain, AuthorizationEnvelope, AuthorizationValidationContext,
     ContextSignatureSigner, ContextSignatureVerifier, HybridAuthorization, PqSigningKeyHandle,
