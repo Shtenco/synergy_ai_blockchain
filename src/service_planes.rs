@@ -58,16 +58,19 @@ pub struct ServiceFinalityItem {
 }
 
 impl ServiceFinalityItem {
-    fn subject_hash(kind: ServiceFinalityKind, parts: &[&[u8]]) -> [u8; 32] {
+    fn subject_hash(
+        kind: ServiceFinalityKind,
+        parts: &[&[u8]],
+    ) -> Option<[u8; 32]> {
         let mut hasher = Sha256::new();
         hasher.update(SERVICE_FINALITY_SUBJECT_DOMAIN);
         hasher.update([kind.protocol_code()]);
         for part in parts {
-            let len = u64::try_from(part.len()).unwrap_or(u64::MAX);
+            let len = u64::try_from(part.len()).ok()?;
             hasher.update(len.to_be_bytes());
             hasher.update(part);
         }
-        hasher.finalize().into()
+        Some(hasher.finalize().into())
     }
 
     pub fn payment_settlement(
@@ -78,7 +81,7 @@ impl ServiceFinalityItem {
         let subject_id = Self::subject_hash(
             ServiceFinalityKind::PaymentSettlement,
             &[&authorized.batch.lane_id, &sequence],
-        );
+        )?;
         Some(Self {
             kind: ServiceFinalityKind::PaymentSettlement,
             subject_id,
@@ -103,7 +106,7 @@ impl ServiceFinalityItem {
         let subject_id = Self::subject_hash(
             ServiceFinalityKind::AutopilotTerminal,
             &[&lease.lease_root],
-        );
+        )?;
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
             subject_id,
@@ -128,7 +131,7 @@ impl ServiceFinalityItem {
         let subject_id = Self::subject_hash(
             ServiceFinalityKind::StorageReceipt,
             &[&authorized.receipt.object_id, &authorized.receipt.provider_id],
-        );
+        )?;
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
             subject_id,
@@ -151,7 +154,7 @@ impl ServiceFinalityItem {
                 &authorized.evidence.node_id,
                 &evidence_kind,
             ],
-        );
+        )?;
         Some(Self {
             kind: ServiceFinalityKind::CognitiveReceipt,
             subject_id,
@@ -170,7 +173,7 @@ impl ServiceFinalityItem {
         let subject_id = Self::subject_hash(
             ServiceFinalityKind::KvReplicaReceipt,
             &[&authorized.receipt.lease_id, &authorized.receipt.worker_id],
-        );
+        )?;
         Some(Self {
             kind: ServiceFinalityKind::KvReplicaReceipt,
             subject_id,
