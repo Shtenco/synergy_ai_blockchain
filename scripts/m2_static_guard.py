@@ -1108,8 +1108,8 @@ for stateless, consuming in (
 require(
     "subject_commitment: [u8; 32]" in pq
     and "pub fn new_for_subject(" in pq
-    and "pub fn consume_verified_for_subject(" in pq
-    and "pub fn verify_and_consume_for_subject<" in pq
+    and "pub(crate) fn consume_verified_for_subject(" in pq
+    and "pub(crate) fn verify_and_consume_for_subject<" in pq
     and "hasher.update(self.subject_commitment)" in pq,
     "production replay state must remain authority-subject-bound",
 )
@@ -1148,5 +1148,21 @@ require(
     and "self.sender_account" in tx,
     "transaction public validation must consume subject-bound replay state",
 )
+
+
+require(
+    "pub fn consume_verified_for_subject(" not in pq
+    and "pub fn verify_and_consume_for_subject<" not in pq,
+    "generic replay consume/verify helpers must not be public",
+)
+
+for name, source in (
+    ("validator", validator),
+    ("transaction", tx),
+):
+    require(
+        "AuthorizationReplayState" in source,
+        f"{name} replay type import missing",
+    )
 
 print("M2 static guard: PASS")
