@@ -71,14 +71,11 @@ contract PQSmartAccount {
         );
     }
 
-    function authorizationMessage(
-        address target,
-        uint256 value,
-        bytes calldata data,
+    function authorizationEnvelopeMessage(
+        bytes32 payloadCommitment,
         uint64 txNonce,
         uint64 validUntil
     ) public view returns (bytes memory) {
-        bytes32 payloadCommitment = callPayloadCommitment(target, value, data);
         return abi.encodePacked(
             "SYNERGY/PQ-AUTH",
             bytes1(0),
@@ -93,6 +90,20 @@ contract PQSmartAccount {
             bytes8(txNonce),
             bytes8(validUntil),
             payloadCommitment
+        );
+    }
+
+    function authorizationMessage(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint64 txNonce,
+        uint64 validUntil
+    ) public view returns (bytes memory) {
+        return authorizationEnvelopeMessage(
+            callPayloadCommitment(target, value, data),
+            txNonce,
+            validUntil
         );
     }
 
