@@ -12,6 +12,7 @@ use crate::cognitive::{
     CognitiveEvidenceAuthorization, CognitiveNodeManifest, CognitiveWorkRequest,
 };
 use crate::kv_cache::{KvCacheLease, KvReplicaReceiptAuthorization};
+use crate::payment_funding::FundedSettlementCommitment;
 use crate::payments::SettlementBatchAuthorization;
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
@@ -53,12 +54,15 @@ pub struct ServiceFinalityItem {
 }
 
 impl ServiceFinalityItem {
-    pub fn payment_settlement(authorized: &SettlementBatchAuthorization) -> Option<Self> {
+    pub fn payment_settlement(
+        authorized: &SettlementBatchAuthorization,
+        funded: &FundedSettlementCommitment,
+    ) -> Option<Self> {
         Some(Self {
             kind: ServiceFinalityKind::PaymentSettlement,
             source_chain_id: authorized.chain_id,
             source_epoch: authorized.epoch,
-            root: authorized.batch.authorization_commitment()?,
+            root: funded.canonical_root(authorized)?,
         })
     }
 
@@ -538,17 +542,23 @@ mod tests {
             },
             authorization: max_authorization(),
         };
-        let item = ServiceFinalityItem::payment_settlement(&settlement)
+        let funded = FundedSettlementCommitment {
+            settlement_batch_root: settlement
+                .batch
+                .authorization_commitment()
+                .expect("settlement root"),
+            funding_consumption_root: [0x69; 32],
+            settlement_item_count: u64::from(settlement.batch.item_count),
+            funding_receipt_count: u64::from(settlement.batch.item_count),
+        };
+        let item = ServiceFinalityItem::payment_settlement(&settlement, &funded)
             .expect("payment finality item");
         assert_eq!(item.kind(), ServiceFinalityKind::PaymentSettlement);
         assert_eq!(item.source_chain_id(), [0x60; 32]);
         assert_eq!(item.source_epoch(), 7);
         assert_eq!(
             item.root(),
-            settlement
-                .batch
-                .authorization_commitment()
-                .expect("settlement root")
+            funded.canonical_root(&settlement).expect("funded settlement root")
         );
 
         let terminal = AutopilotLeaseTerminalAuthorization {
