@@ -656,3 +656,19 @@ These are source/test-definition controls only; executable Cargo evidence remain
 The four pinned M2 ACVP/Wycheproof fixture files are now committed in the local fixture manifest with both their Git blob SHA-1 identifiers and independent SHA-256 digests. The verifier checks both and rejects any extra unmanifested JSON file under `tests/vectors`.
 
 A separate ML-KEM-1024 regression test no longer relies on malformed-length negative vectors: it starts from a valid 1568-byte encapsulation key and forces the first 12-bit coefficient to 4095 (> q=3329) while preserving exact key length. The reference provider must reject that key. This specifically exercises canonical modulus decoding rather than the earlier length prefilter.
+
+
+## Authenticated post-quantum transport handshake
+
+M2 transport now separates key agreement from peer authentication explicitly.
+
+- `AuthorizationDomain::TransportHandshake` is append-only protocol code 16.
+- each initiator/responder authorization is `PqOnly` and signs a role-bound payload derived from the exact canonical transport transcript commitment and peer node ID;
+- validation requires the expected registered peer keyset commitment and expected node ID;
+- initiator and responder authentication keysets must be distinct and nonzero;
+- the previously public unauthenticated `establish_shared_secret` path is crate-internal;
+- the public `establish_authenticated_shared_secret` path verifies both peer authorizations, consumes subject-bound auth replay state on clones, consumes the transport session replay ID, then atomically commits both peer nonce states;
+- a failed transport-session replay therefore cannot burn only one peer authorization nonce;
+- `InMemoryTransportReplayGuard` exposes a domain-separated replay-state commitment over network, epoch and consumed session IDs for persistence/rollback detection, and rejects epoch zero.
+
+This closes the source-level unauthenticated-ML-KEM MITM surface. Executable confirmation remains blocked by the hosted Rust runner.
