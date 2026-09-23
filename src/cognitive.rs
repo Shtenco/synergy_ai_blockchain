@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
 };
 
 const COGNITIVE_EVIDENCE_DOMAIN: &[u8] = b"SYNERGY/COGNITIVE-EVIDENCE/V1\0";
@@ -249,7 +249,7 @@ pub struct CognitiveEvidenceValidationContext {
     pub max_future_seconds: u64,
 }
 
-pub fn verify_cognitive_evidence<V: ContextSignatureVerifier>(
+pub(crate) fn verify_cognitive_evidence<V: ContextSignatureVerifier>(
     verifier: &V,
     request: &CognitiveWorkRequest,
     node: &CognitiveNodeManifest,
@@ -312,6 +312,25 @@ pub struct CognitiveWorkReceipt {
     pub paid_amount: u128,
     pub slash_amount: u128,
     pub realized_utility_micros: i64,
+}
+
+
+pub fn verify_cognitive_evidence_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    request: &CognitiveWorkRequest,
+    node: &CognitiveNodeManifest,
+    authorized: &CognitiveEvidenceAuthorization,
+    validation: &CognitiveEvidenceValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_cognitive_evidence(verifier, request, node, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope(request, node) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified(&authorized.authorization, &envelope)
 }
 
 #[cfg(test)]
