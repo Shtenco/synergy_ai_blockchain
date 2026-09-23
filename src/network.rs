@@ -32,6 +32,13 @@ impl TransportRole {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransportValidationContext {
+    pub expected_network_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_session_id: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClassicalKexScheme {
     X25519,
     Secp256k1,
@@ -156,6 +163,9 @@ pub const TRANSPORT_TRANSCRIPT_DOMAIN: &[u8] = b"SYNERGY/PQ-TRANSPORT\0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportTranscript {
+    pub network_id: [u8; 32],
+    pub epoch: u64,
+    pub session_id: [u8; 32],
     pub initiator: TransportPeerIdentity,
     pub responder: TransportPeerIdentity,
     pub policy: TransportPolicy,
@@ -167,6 +177,12 @@ pub struct TransportTranscript {
 
 impl TransportTranscript {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.network_id == [0u8; 32] {
+            return Err("transport network id required");
+        }
+        if self.session_id == [0u8; 32] {
+            return Err("transport session id required");
+        }
         self.initiator.validate_for_policy(self.policy)?;
         self.responder.validate_for_policy(self.policy)?;
         self.rekey_policy.validate()?;
@@ -208,6 +224,31 @@ impl TransportTranscript {
         Ok(())
     }
 
+    pub fn validate_in_context(
+        &self,
+        context: &TransportValidationContext,
+    ) -> Result<(), &'static str> {
+        self.validate()?;
+        if self.network_id != context.expected_network_id {
+            return Err("transport network mismatch");
+        }
+        if self.epoch != context.expected_epoch {
+            return Err("transport epoch mismatch");
+        }
+        if self.session_id != context.expected_session_id {
+            return Err("transport session mismatch");
+        }
+        Ok(())
+    }
+
+    pub fn commitment_in_context(
+        &self,
+        context: &TransportValidationContext,
+    ) -> Option<[u8; 32]> {
+        self.validate_in_context(context).ok()?;
+        self.commitment()
+    }
+
     pub fn commitment(&self) -> Option<[u8; 32]> {
         self.validate().ok()?;
 
@@ -220,6 +261,9 @@ impl TransportTranscript {
         hasher.update(TRANSPORT_TRANSCRIPT_DOMAIN);
         hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
         hasher.update([ML_KEM_1024_PROTOCOL_CODE]);
+        hasher.update(self.network_id);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(self.session_id);
         hasher.update([match self.policy {
             TransportPolicy::Hybrid => 1,
             TransportPolicy::PqOnly => 2,
@@ -270,8 +314,9 @@ impl HybridSharedSecret {
         pq_shared: MlKemSharedSecret,
         classical_shared: Option<SecretBytes>,
         transcript: &TransportTranscript,
+        validation: &TransportValidationContext,
     ) -> Option<Self> {
-        let transcript_hash = transcript.commitment()?;
+        let transcript_hash = transcript.commitment_in_context(validation)?;
         if transcript_hash == [0u8; 32] {
             return None;
         }
@@ -500,6 +545,9 @@ mod tests {
         }
 
         TransportTranscript {
+            network_id: [0xA0; 32],
+            epoch: 7,
+            session_id: [0xA1; 32],
             initiator,
             responder,
             policy,
@@ -511,12 +559,23 @@ mod tests {
         }
     }
 
+    fn validation_for(transcript: &TransportTranscript) -> TransportValidationContext {
+        TransportValidationContext {
+            expected_network_id: transcript.network_id,
+            expected_epoch: transcript.epoch,
+            expected_session_id: transcript.session_id,
+        }
+    }
+
     fn valid_secret() -> HybridSharedSecret {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let validation = validation_for(&transcript);
         HybridSharedSecret::from_transcript(
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             SecretBytes::new(vec![2u8; 32]),
-            &valid_transcript(TransportPolicy::Hybrid),
+            &transcript,
+            &validation,
         )
         .expect("valid hybrid shared secret")
     }
@@ -585,11 +644,14 @@ mod tests {
 
         assert_ne!(valid.transcript_hash(), &[0u8; 32]);
 
+        let pq_transcript = valid_transcript(TransportPolicy::PqOnly);
+        let pq_validation = validation_for(&pq_transcript);
         let pq_only = HybridSharedSecret::from_transcript(
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             None,
-            &valid_transcript(TransportPolicy::PqOnly),
+            &pq_transcript,
+            &pq_validation,
         )
         .expect("valid PQ-only shared secret");
         assert!(!validate_shared_secret(TransportPolicy::Hybrid, &pq_only));
@@ -598,13 +660,35 @@ mod tests {
 
     #[test]
     fn hybrid_secret_rejects_oversized_classical_secret() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let validation = validation_for(&transcript);
         let secret = HybridSharedSecret::from_transcript(
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
             SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES + 1]),
-            &valid_transcript(TransportPolicy::Hybrid),
+            &transcript,
+            &validation,
         );
         assert!(secret.is_none());
+    }
+
+    #[test]
+    fn transport_context_rejects_cross_network_epoch_and_session_replay() {
+        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let ok = validation_for(&transcript);
+        assert!(transcript.validate_in_context(&ok).is_ok());
+
+        let mut wrong = ok;
+        wrong.expected_network_id = [0xB0; 32];
+        assert!(transcript.validate_in_context(&wrong).is_err());
+
+        let mut wrong = ok;
+        wrong.expected_epoch += 1;
+        assert!(transcript.validate_in_context(&wrong).is_err());
+
+        let mut wrong = ok;
+        wrong.expected_session_id = [0xB1; 32];
+        assert!(transcript.validate_in_context(&wrong).is_err());
     }
 
     #[test]
