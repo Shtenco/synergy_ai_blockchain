@@ -62,7 +62,10 @@ for exact in (
     require(exact in cargo, f"missing exact dependency pin: {exact}")
 
 # Context anti-downgrade invariants.
-require("pub fn verify_envelope_authorization" in pq, "envelope-bound verifier missing")
+require(
+    "pub(crate) fn verify_envelope_authorization" in pq,
+    "envelope-bound verifier must remain crate-internal",
+)
 require(
     '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
     "no-context authorization helper must exist only in test builds",
@@ -1706,6 +1709,14 @@ require(
     and "bytes1(uint8(3))" in smart_account_sol
     and "bytes1(uint8(4))" in smart_account_sol,
     "Rust/Solidity transaction FIPS context must remain byte-for-byte profile-v1 compatible",
+)
+
+
+require(
+    "tests/fixtures/evm_fips_context_v1.hex" in workflow
+    and "tests/vectors/M2_FIXTURE_MANIFEST.json" in workflow
+    and "m2-evidence-sha256.txt" in workflow,
+    "FIPS parity fixture must remain in the tamper-evident CI evidence bundle",
 )
 
 print("M2 static guard: PASS")
