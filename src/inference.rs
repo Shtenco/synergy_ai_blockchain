@@ -578,6 +578,10 @@ mod tests {
             expected_epoch: 7,
             expected_nonce: 8,
             expected_worker_id: assignment.worker_id,
+            expected_worker_keyset_commitment: authorized
+                .authorization
+                .keyset_commitment()
+                .expect("worker keyset commitment"),
             now: 1_000,
             max_future_seconds: 200,
         };
