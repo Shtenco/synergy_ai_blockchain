@@ -11,6 +11,7 @@ pub mod inference;
 pub mod governance;
 pub mod kv_cache;
 pub mod migration;
+pub mod mvp;
 pub mod model_shard;
 pub mod network;
 pub mod nexus;
@@ -75,6 +76,7 @@ pub use migration::{
     verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,
     MigrationAuthorization, MigrationError, MigrationValidationContext,
 };
+pub use mvp::{MvpCheckpoint, MVP_CHECKPOINT_DOMAIN};
 pub use model_shard::{
     verify_model_upgrade_and_consume, ModelLineageTransition, ModelManifestCommitment,
     ModelShardOutput, ModelUpgradeAuthorization, ModelUpgradeValidationContext,
