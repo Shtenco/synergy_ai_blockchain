@@ -31,6 +31,7 @@ pub mod service_planes;
 pub mod storage;
 pub mod tx;
 pub mod transport_record;
+pub mod transport_wire;
 pub mod validator;
 pub mod verification;
 
@@ -150,6 +151,7 @@ pub use storage::{
     ProofOfStorageReceipt, StorageBid, StorageClass, StorageProofAuthorization,
     StorageProofValidationContext,
 };
+pub use transport_wire::{InitiatorHello, ResponderHello, TRANSPORT_HELLO_DOMAIN};
 pub use transport_record::{decrypt_transport_record, encrypt_transport_record, read_encrypted_transport_frame, write_encrypted_transport_frame, EncryptedTransportRecord, MAX_TRANSPORT_RECORD_PLAINTEXT_BYTES, TRANSPORT_FRAME_MAGIC, TRANSPORT_RECORD_AAD_DOMAIN};
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{
