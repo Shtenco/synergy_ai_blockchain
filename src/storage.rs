@@ -4,6 +4,17 @@
 //! exact raw/archive byte counts, scoped dedup evidence and erasure placement
 //! commitments so storage savings can be derived rather than advertised.
 
+use sha2::{Digest, Sha256};
+
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
+};
+
+const ARCHIVE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/ARCHIVE-RECEIPT/V1\0";
+const STORAGE_PROOF_DOMAIN: &[u8] = b"SYNERGY/STORAGE-PROOF/V1\0";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageClass {
     Hot,
@@ -44,6 +55,8 @@ impl ArchiveReceipt {
         if self.object_id == [0; 32]
             || self.raw_sha256 == [0; 32]
             || self.archive_sha256 == [0; 32]
+            || self.codec_id == [0; 16]
+            || self.codec_version_commitment == [0; 32]
             || self.chunk_root == [0; 32]
         {
             return Err("content commitments required");
@@ -54,6 +67,9 @@ impl ArchiveReceipt {
         if self.replicas == 0 {
             return Err("at least one replica required");
         }
+        if self.random_access_amplification_milli == 0 || self.expires_at_epoch == 0 {
+            return Err("archive access/expiry policy required");
+        }
         if self.erasure_k == 0 || self.erasure_n < self.erasure_k {
             return Err("invalid erasure parameters");
         }
@@ -61,14 +77,50 @@ impl ArchiveReceipt {
     }
 
     /// Archive/raw ratio in basis points: 10000 = same size, 1000 = 10x smaller.
-    pub fn archive_to_raw_bps(&self) -> u64 {
-        ((self.archive_bytes as u128) * 10_000u128 / (self.raw_bytes as u128)) as u64
+    /// Rounds upward so compression savings are never overstated and any
+    /// archive expansion is observable even when it is smaller than one basis point.
+    pub fn archive_to_raw_bps(&self) -> Option<u64> {
+        let raw = u128::from(self.raw_bytes);
+        if raw == 0 {
+            return None;
+        }
+        let numerator = u128::from(self.archive_bytes).checked_mul(10_000)?;
+        let rounding = raw.checked_sub(1)?;
+        let ratio = numerator.checked_add(rounding)?.checked_div(raw)?;
+        u64::try_from(ratio).ok()
     }
 
-    /// Compression-only storage saving in basis points. Saturates at zero when
-    /// the lossless archive is larger than the source.
-    pub fn saving_bps(&self) -> u64 {
-        10_000u64.saturating_sub(self.archive_to_raw_bps())
+    /// Compression-only storage saving in basis points. Returns `None` for an
+    /// invalid zero-length raw object instead of panicking.
+    pub fn saving_bps(&self) -> Option<u64> {
+        10_000u64.checked_sub(self.archive_to_raw_bps()?)
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(ARCHIVE_RECEIPT_DOMAIN);
+        hasher.update(self.object_id);
+        hasher.update(self.raw_sha256);
+        hasher.update(self.archive_sha256);
+        hasher.update(self.codec_id);
+        hasher.update(self.codec_version_commitment);
+        hasher.update(self.raw_bytes.to_be_bytes());
+        hasher.update(self.archive_bytes.to_be_bytes());
+        hasher.update(self.chunk_root);
+        hasher.update(self.replicas.to_be_bytes());
+        hasher.update(self.erasure_k.to_be_bytes());
+        hasher.update(self.erasure_n.to_be_bytes());
+        hasher.update([match self.storage_class {
+            StorageClass::Hot => 1,
+            StorageClass::Warm => 2,
+            StorageClass::Archive => 3,
+            StorageClass::DeepArchive => 4,
+        }]);
+        hasher.update(self.random_access_amplification_milli.to_be_bytes());
+        hasher.update(self.expires_at_epoch.to_be_bytes());
+        Some(hasher.finalize().into())
     }
 }
 
@@ -100,6 +152,10 @@ impl DedupReceipt {
         if self.logical_archive_bytes != archive.archive_bytes {
             return Err("dedup logical bytes differ from archive bytes");
         }
+        if self.newly_stored_unique_bytes > 0 && self.catalog_root_before == self.catalog_root_after
+        {
+            return Err("dedup catalog root must change when unique bytes are stored");
+        }
         let total = self
             .newly_stored_unique_bytes
             .checked_add(self.reused_bytes)
@@ -112,12 +168,14 @@ impl DedupReceipt {
 
     /// Incremental unique/archive ratio: 0 means all bytes reused, 10000 means
     /// no dedup saving for this object.
-    pub fn unique_to_logical_bps(&self) -> u64 {
-        if self.logical_archive_bytes == 0 {
-            return 0;
+    pub fn unique_to_logical_bps(&self) -> Option<u64> {
+        let logical = u128::from(self.logical_archive_bytes);
+        if logical == 0 {
+            return None;
         }
-        ((self.newly_stored_unique_bytes as u128) * 10_000u128
-            / (self.logical_archive_bytes as u128)) as u64
+        let numerator = u128::from(self.newly_stored_unique_bytes).checked_mul(10_000)?;
+        let ratio = numerator.checked_div(logical)?;
+        u64::try_from(ratio).ok()
     }
 }
 
@@ -140,10 +198,10 @@ impl ErasurePlacementReceipt {
         if self.erasure_k == 0 || self.erasure_n < self.erasure_k {
             return Err("invalid erasure parameters");
         }
-        let numerator = (self.unique_archive_bytes as u128)
-            .checked_mul(self.erasure_n as u128)
+        let numerator = u128::from(self.unique_archive_bytes)
+            .checked_mul(u128::from(self.erasure_n))
             .ok_or("erasure size overflow")?;
-        let k = self.erasure_k as u128;
+        let k = u128::from(self.erasure_k);
         let ceil = numerator
             .checked_add(k - 1)
             .ok_or("erasure rounding overflow")?
@@ -151,8 +209,15 @@ impl ErasurePlacementReceipt {
         u64::try_from(ceil).map_err(|_| "erasure size exceeds u64")
     }
 
-    pub fn validate_against(&self, dedup: &DedupReceipt) -> Result<(), &'static str> {
-        if self.object_id != dedup.object_id {
+    pub fn validate_against(
+        &self,
+        archive: &ArchiveReceipt,
+        dedup: &DedupReceipt,
+    ) -> Result<(), &'static str> {
+        archive.validate()?;
+        dedup.validate_against(archive)?;
+
+        if self.object_id != archive.object_id || self.object_id != dedup.object_id {
             return Err("erasure receipt object mismatch");
         }
         if self.dedup_catalog_root != dedup.catalog_root_after {
@@ -163,6 +228,9 @@ impl ErasurePlacementReceipt {
         }
         if self.unique_archive_bytes != dedup.newly_stored_unique_bytes {
             return Err("unique byte count mismatch");
+        }
+        if self.erasure_k != archive.erasure_k || self.erasure_n != archive.erasure_n {
+            return Err("erasure placement policy differs from archive metadata");
         }
         if self.physical_stored_bytes < self.minimum_physical_bytes()? {
             return Err("physical placement below erasure minimum");
@@ -181,9 +249,43 @@ pub struct StorageBid {
     pub codec_supported: [u8; 16],
 }
 
+impl StorageBid {
+    pub fn validate_against(
+        &self,
+        archive: &ArchiveReceipt,
+        current_epoch: u64,
+    ) -> Result<(), &'static str> {
+        archive.validate()?;
+        if self.provider_id == [0u8; 32] || self.object_id == [0u8; 32] {
+            return Err("storage bid provider/object required");
+        }
+        if self.object_id != archive.object_id {
+            return Err("storage bid object mismatch");
+        }
+        if self.price_per_gib_epoch == 0 || self.max_epochs == 0 {
+            return Err("storage bid price/term required");
+        }
+        let remaining_epochs = archive
+            .expires_at_epoch
+            .checked_sub(current_epoch)
+            .ok_or("storage bid starts after archive expiry")?;
+        if remaining_epochs == 0 || self.max_epochs > remaining_epochs {
+            return Err("storage bid term exceeds archive lifetime");
+        }
+        if self.availability_commitment == [0u8; 32] {
+            return Err("storage bid availability commitment required");
+        }
+        if self.codec_supported == [0u8; 16] || self.codec_supported != archive.codec_id {
+            return Err("storage bid codec mismatch");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofOfStorageReceipt {
     pub object_id: [u8; 32],
+    pub archive_commitment: [u8; 32],
     pub provider_id: [u8; 32],
     pub epoch: u64,
     pub challenge_commitment: [u8; 32],
@@ -191,9 +293,185 @@ pub struct ProofOfStorageReceipt {
     pub served_bytes: u64,
 }
 
+impl ProofOfStorageReceipt {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.object_id == [0u8; 32]
+            || self.archive_commitment == [0u8; 32]
+            || self.provider_id == [0u8; 32]
+            || self.challenge_commitment == [0u8; 32]
+            || self.proof_commitment == [0u8; 32]
+        {
+            return Err("storage proof commitments required");
+        }
+        if self.epoch == 0 || self.served_bytes == 0 {
+            return Err("storage proof epoch/served bytes required");
+        }
+        Ok(())
+    }
+
+    pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        let mut hasher = Sha256::new();
+        hasher.update(STORAGE_PROOF_DOMAIN);
+        hasher.update(self.object_id);
+        hasher.update(self.archive_commitment);
+        hasher.update(self.provider_id);
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(self.challenge_commitment);
+        hasher.update(self.proof_commitment);
+        hasher.update(self.served_bytes.to_be_bytes());
+        Some(hasher.finalize().into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageProofAuthorization {
+    pub chain_id: [u8; 32],
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub receipt: ProofOfStorageReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl StorageProofAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::StorageProof,
+            epoch: self.receipt.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.receipt.authorization_commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StorageProofValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_nonce: u64,
+    pub expected_epoch: u64,
+    pub expected_object_id: [u8; 32],
+    pub expected_provider_id: [u8; 32],
+    pub expected_provider_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub(crate) fn verify_storage_proof<V: ContextSignatureVerifier>(
+    verifier: &V,
+    archive: &ArchiveReceipt,
+    authorized: &StorageProofAuthorization,
+    validation: &StorageProofValidationContext,
+) -> bool {
+    let archive_commitment = match archive.commitment() {
+        Some(commitment) => commitment,
+        None => return false,
+    };
+
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.object_id != archive.object_id
+        || authorized.receipt.archive_commitment != archive_commitment
+        || authorized.receipt.epoch >= archive.expires_at_epoch
+        || authorized.receipt.object_id != validation.expected_object_id
+        || authorized.receipt.provider_id != validation.expected_provider_id
+        || authorized.receipt.epoch != validation.expected_epoch
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_provider_keyset_commitment)
+        || authorized.receipt.validate().is_err()
+    {
+        return false;
+    }
+
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::StorageProof,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
+pub fn verify_storage_proof_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    archive: &ArchiveReceipt,
+    authorized: &StorageProofAuthorization,
+    validation: &StorageProofValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_storage_proof(verifier, archive, authorized, validation) {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &envelope,
+        validation.expected_provider_id,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{
+        AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn pq_only_authorization() -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x31; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x32; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x33; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x34; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
 
     fn archive() -> ArchiveReceipt {
         ArchiveReceipt {
@@ -215,10 +493,218 @@ mod tests {
     }
 
     #[test]
+    fn storage_proof_requires_registered_provider_keyset() {
+        let archive = archive();
+        let authorization = pq_only_authorization();
+        let provider_keyset = authorization.keyset_commitment().expect("provider keyset");
+        let authorized = StorageProofAuthorization {
+            chain_id: [0xE1; 32],
+            nonce: 9,
+            expires_at: 200,
+            receipt: ProofOfStorageReceipt {
+                object_id: archive.object_id,
+                archive_commitment: archive.commitment().expect("archive commitment"),
+                provider_id: [0x42; 32],
+                epoch: 7,
+                challenge_commitment: [0x43; 32],
+                proof_commitment: [0x44; 32],
+                served_bytes: 4096,
+            },
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("storage envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let validation = StorageProofValidationContext {
+            expected_chain_id: [0xE1; 32],
+            expected_nonce: 9,
+            expected_epoch: 7,
+            expected_object_id: archive.object_id,
+            expected_provider_id: [0x42; 32],
+            expected_provider_keyset_commitment: provider_keyset,
+            now: 100,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &validation,
+        ));
+
+        let mut wrong = validation;
+        wrong.expected_provider_keyset_commitment[0] ^= 1;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &wrong,
+        ));
+    }
+
+    #[test]
+    fn storage_proof_is_bound_to_exact_unexpired_archive() {
+        let archive = archive();
+        let authorization = pq_only_authorization();
+        let provider_keyset = authorization.keyset_commitment().expect("provider keyset");
+        let mut authorized = StorageProofAuthorization {
+            chain_id: [0xE1; 32],
+            nonce: 9,
+            expires_at: 200,
+            receipt: ProofOfStorageReceipt {
+                object_id: archive.object_id,
+                archive_commitment: archive.commitment().expect("archive commitment"),
+                provider_id: [0x42; 32],
+                epoch: 99,
+                challenge_commitment: [0x43; 32],
+                proof_commitment: [0x44; 32],
+                served_bytes: 4096,
+            },
+            authorization,
+        };
+        let envelope = authorized.envelope().expect("storage envelope");
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("context"),
+        };
+        let validation = StorageProofValidationContext {
+            expected_chain_id: [0xE1; 32],
+            expected_nonce: 9,
+            expected_epoch: 99,
+            expected_object_id: archive.object_id,
+            expected_provider_id: [0x42; 32],
+            expected_provider_keyset_commitment: provider_keyset,
+            now: 50,
+            max_future_seconds: 200,
+        };
+
+        assert!(verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &validation,
+        ));
+
+        let mut changed_archive = archive.clone();
+        changed_archive.chunk_root[0] ^= 1;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &changed_archive,
+            &authorized,
+            &validation,
+        ));
+
+        authorized.receipt.epoch = archive.expires_at_epoch;
+        assert!(!verify_storage_proof(
+            &verifier,
+            &archive,
+            &authorized,
+            &StorageProofValidationContext {
+                expected_epoch: archive.expires_at_epoch,
+                ..validation
+            },
+        ));
+    }
+
+    #[test]
+    fn archive_requires_codec_version_access_and_expiry_metadata() {
+        let mut a = archive();
+        assert_eq!(a.validate(), Ok(()));
+
+        a.codec_id = [0; 16];
+        assert!(a.validate().is_err());
+        a = archive();
+        a.codec_version_commitment = [0; 32];
+        assert!(a.validate().is_err());
+        a = archive();
+        a.expires_at_epoch = 0;
+        assert!(a.validate().is_err());
+    }
+
+    #[test]
+    fn storage_bid_is_bound_to_exact_archive_and_codec() {
+        let a = archive();
+        let mut bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 30,
+            availability_commitment: [0x22; 32],
+            codec_supported: a.codec_id,
+        };
+        assert_eq!(bid.validate_against(&a, 50), Ok(()));
+
+        bid.object_id[0] ^= 1;
+        assert!(bid.validate_against(&a, 50).is_err());
+        bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 30,
+            availability_commitment: [0x22; 32],
+            codec_supported: [0xFF; 16],
+        };
+        assert!(bid.validate_against(&a, 50).is_err());
+    }
+
+    #[test]
+    fn storage_bid_term_cannot_outlive_archive() {
+        let a = archive();
+        let bid = StorageBid {
+            provider_id: [0x21; 32],
+            object_id: a.object_id,
+            price_per_gib_epoch: 10,
+            max_epochs: 51,
+            availability_commitment: [0x22; 32],
+            codec_supported: a.codec_id,
+        };
+
+        assert_eq!(
+            bid.validate_against(&a, 50),
+            Err("storage bid term exceeds archive lifetime")
+        );
+        assert_eq!(
+            bid.validate_against(&a, 100),
+            Err("storage bid term exceeds archive lifetime")
+        );
+        assert_eq!(
+            bid.validate_against(&a, 101),
+            Err("storage bid starts after archive expiry")
+        );
+    }
+
+    #[test]
     fn ratio_is_measured_not_assumed() {
         let r = archive();
-        assert_eq!(r.archive_to_raw_bps(), 2500);
-        assert_eq!(r.saving_bps(), 7500);
+        assert_eq!(r.archive_to_raw_bps(), Some(2500));
+        assert_eq!(r.saving_bps(), Some(7500));
+    }
+
+    #[test]
+    fn archive_saving_fails_closed_when_archive_expands_data() {
+        let mut r = archive();
+        r.archive_bytes = r.raw_bytes.checked_add(1).expect("expanded archive bytes");
+        assert!(r.archive_to_raw_bps().expect("ratio") > 10_000);
+        assert_eq!(r.saving_bps(), None);
+    }
+
+    #[test]
+    fn archive_ratio_fails_closed_on_zero_raw_bytes() {
+        let mut r = archive();
+        r.raw_bytes = 0;
+        assert_eq!(r.archive_to_raw_bps(), None);
+        assert_eq!(r.saving_bps(), None);
     }
 
     #[test]
@@ -236,7 +722,81 @@ mod tests {
             reused_bytes: 200_000,
         };
         assert_eq!(d.validate_against(&a), Ok(()));
-        assert_eq!(d.unique_to_logical_bps(), 2000);
+        assert_eq!(d.unique_to_logical_bps(), Some(2000));
+    }
+
+    #[test]
+    fn dedup_ratio_fails_closed_on_zero_or_unrepresentable_ratio() {
+        let a = archive();
+        let mut d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [9; 32],
+            logical_archive_bytes: 0,
+            newly_stored_unique_bytes: 1,
+            reused_bytes: 0,
+        };
+        assert_eq!(d.unique_to_logical_bps(), None);
+
+        d.logical_archive_bytes = 1;
+        d.newly_stored_unique_bytes = u64::MAX;
+        assert_eq!(d.unique_to_logical_bps(), None);
+    }
+
+    #[test]
+    fn dedup_catalog_root_must_advance_when_unique_bytes_are_added() {
+        let a = archive();
+        let d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [8; 32],
+            logical_archive_bytes: a.archive_bytes,
+            newly_stored_unique_bytes: 1,
+            reused_bytes: a.archive_bytes - 1,
+        };
+        assert_eq!(
+            d.validate_against(&a),
+            Err("dedup catalog root must change when unique bytes are stored")
+        );
+    }
+
+    #[test]
+    fn erasure_placement_must_match_archive_erasure_policy() {
+        let a = archive();
+        let d = DedupReceipt {
+            object_id: a.object_id,
+            archive_sha256: a.archive_sha256,
+            scope: DedupScope::Public,
+            dedup_domain_commitment: [7; 32],
+            catalog_root_before: [8; 32],
+            catalog_root_after: [9; 32],
+            logical_archive_bytes: a.archive_bytes,
+            newly_stored_unique_bytes: 50_000,
+            reused_bytes: a.archive_bytes - 50_000,
+        };
+        let mut p = ErasurePlacementReceipt {
+            object_id: a.object_id,
+            dedup_catalog_root: d.catalog_root_after,
+            provider_set_root: [10; 32],
+            unique_archive_bytes: 50_000,
+            erasure_k: a.erasure_k,
+            erasure_n: a.erasure_n,
+            physical_stored_bytes: 100_000,
+            availability_policy_root: [11; 32],
+        };
+        assert_eq!(p.validate_against(&a, &d), Ok(()));
+
+        p.erasure_n = p.erasure_n.checked_add(1).expect("test erasure_n");
+        assert_eq!(
+            p.validate_against(&a, &d),
+            Err("erasure placement policy differs from archive metadata")
+        );
     }
 
     #[test]
@@ -264,6 +824,6 @@ mod tests {
             availability_policy_root: [11; 32],
         };
         assert_eq!(p.minimum_physical_bytes(), Ok(75_000));
-        assert!(p.validate_against(&d).is_err());
+        assert!(p.validate_against(&a, &d).is_err());
     }
 }

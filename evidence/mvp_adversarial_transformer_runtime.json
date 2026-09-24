@@ -1,0 +1,14 @@
+{
+  "challenged_output_commitment": "4f362f9093bb8e7012f466224ff1237c0746d8c8f660b16699f5036ccba9c64a",
+  "evidence_root": "397674841ae3053a23df576a6867157d802f037281a68ca09527cd2a29b80562",
+  "expected_token": 135,
+  "job_id": "6f2e4c03637510509d3deb583949956ef14eab334a98ec87756d8c87366db4a1",
+  "malicious_stage1_trace_root": "134caa67f8504d327122ced69f357d68ecc0598941ec60cf8b34ec57ff83eedb",
+  "malicious_token": 136,
+  "note": "Canonical slash consumption/finalization is enforced by tests/mvp_adversarial.rs",
+  "schema": "synergy.mvp-adversarial-transformer-runtime/v1",
+  "slash_required": true,
+  "stage0_trace_root": "28c2aad5e5b9bb6875ef0d57a790a8c6be65989a63ff88e6348e8b8f4674013c",
+  "verdict": "MISMATCH",
+  "worker_reward_allowed": false
+}

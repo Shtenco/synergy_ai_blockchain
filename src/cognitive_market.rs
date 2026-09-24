@@ -93,6 +93,11 @@ pub fn reward_breakdown(
 ) -> Result<CognitiveRewardBreakdown, &'static str> {
     policy.validate()?;
     contribution.validate()?;
+    receipt.validate()?;
+
+    if receipt.paid_amount > policy.max_reward {
+        return Err("base reward exceeds policy maximum");
+    }
 
     if receipt.verdict != WorkVerdict::Accepted {
         return Ok(CognitiveRewardBreakdown {
@@ -104,15 +109,12 @@ pub fn reward_breakdown(
         });
     }
 
-    let base = receipt.paid_amount.min(policy.max_reward);
-    let positive_utility = receipt.realized_utility_micros.max(0) as u128;
+    let base = receipt.paid_amount;
+    let positive_utility = u128::try_from(receipt.realized_utility_micros.max(0))
+        .map_err(|_| "positive utility conversion failed")?;
     let utility_factor = positive_utility.min(MICROS);
     let utility_rate = u128::from(policy.utility_bonus_bps);
-    let utility_bonus = mul_div(
-        mul_div(base, utility_rate, BPS)?,
-        utility_factor,
-        MICROS,
-    )?;
+    let utility_bonus = mul_div(mul_div(base, utility_rate, BPS)?, utility_factor, MICROS)?;
 
     let corr = u128::from(contribution.mean_positive_error_corr_micros);
     let diversity_eligible = contribution.newly_solved_cases > 0
@@ -123,7 +125,9 @@ pub fn reward_breakdown(
             MICROS,
             u128::from(contribution.residual_cases_before),
         )?;
-        let independence = MICROS.saturating_sub(corr);
+        let independence = MICROS
+            .checked_sub(corr)
+            .ok_or("correlation exceeds normalized range")?;
         let base_bonus = mul_div(base, u128::from(policy.diversity_bonus_bps), BPS)?;
         let by_residual = mul_div(base_bonus, residual_fraction, MICROS)?;
         mul_div(by_residual, independence, MICROS)?
@@ -134,8 +138,10 @@ pub fn reward_breakdown(
     let total = base
         .checked_add(utility_bonus)
         .and_then(|x| x.checked_add(diversity_bonus))
-        .ok_or("reward addition overflow")?
-        .min(policy.max_reward);
+        .ok_or("reward addition overflow")?;
+    if total > policy.max_reward {
+        return Err("total reward exceeds policy maximum");
+    }
 
     Ok(CognitiveRewardBreakdown {
         base_reward: base,
@@ -171,6 +177,44 @@ mod tests {
             diversity_bonus_bps: 5_000,
             max_positive_error_corr_micros: 600_000,
         }
+    }
+
+    #[test]
+    fn reward_engine_rejects_invalid_or_overcap_base_receipt() {
+        let contribution = VerifiedMarginalContribution {
+            newly_solved_cases: 1,
+            residual_cases_before: 10,
+            mean_positive_error_corr_micros: 100_000,
+            contribution_evidence_root: [7; 32],
+        };
+
+        let mut overcap = receipt(100_000);
+        overcap.paid_amount = policy().max_reward + 1;
+        assert_eq!(
+            reward_breakdown(&overcap, &contribution, &policy()),
+            Err("base reward exceeds policy maximum")
+        );
+
+        let mut inconsistent = receipt(100_000);
+        inconsistent.slash_amount = 1;
+        assert!(reward_breakdown(&inconsistent, &contribution, &policy()).is_err());
+    }
+
+    #[test]
+    fn reward_engine_rejects_total_reward_above_cap_instead_of_clipping() {
+        let contribution = VerifiedMarginalContribution {
+            newly_solved_cases: 100,
+            residual_cases_before: 100,
+            mean_positive_error_corr_micros: 0,
+            contribution_evidence_root: [7; 32],
+        };
+        let mut tight = policy();
+        tight.max_reward = 1_100;
+
+        assert_eq!(
+            reward_breakdown(&receipt(1_000_000), &contribution, &tight),
+            Err("total reward exceeds policy maximum")
+        );
     }
 
     #[test]
