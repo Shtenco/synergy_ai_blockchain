@@ -21,6 +21,7 @@ pub mod payment_funding;
 pub mod peer_discovery;
 pub mod payments;
 pub mod pq;
+pub mod pq_rpc;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
 pub mod scheduling;
@@ -116,6 +117,7 @@ pub use payments::{
     PaymentIntentValidationContext, PaymentLaneKey, PaymentRail, SettlementBatch,
     SettlementBatchAuthorization, SettlementBatchValidationContext, SettlementState,
 };
+pub use pq_rpc::{AuthenticatedStageRequest, AuthenticatedStageResponse, STAGE_RPC_BINDING_DOMAIN};
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
     AuthPolicy, AuthScheme,
