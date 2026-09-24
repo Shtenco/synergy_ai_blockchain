@@ -9,6 +9,7 @@ pub mod cognitive_registry;
 pub mod consensus;
 pub mod inference;
 pub mod governance;
+pub mod discovery;
 pub mod kv_cache;
 pub mod migration;
 pub mod mvp;
@@ -64,6 +65,7 @@ pub use inference::{
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
 };
+pub use discovery::{ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN, PROVIDER_SET_DOMAIN};
 pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
     GovernanceValidationContext,
