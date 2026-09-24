@@ -47,13 +47,29 @@ The following are NOT complete because no executable runner has started:
 - doctests/release PQ tests;
 - actual solc 0.8.26 compilation.
 
-## Infrastructure blocker
+## Infrastructure blocker — confirmed 2026-09-24
 
-Latest workflow run at this checkpoint failed before any job step executed.
+Head: `286b36e70877f977e16e4db0527f5d7ca24f9ff8`.
 
-Both jobs reported no executable steps/logs:
-- rust-core: steps=null, logs_url=null
-- solidity-core: steps=null, logs_url=null
+GitHub Actions run #1189 / run id `35967798927` failed before any workflow step executed.
+
+First attempt:
+- rust-core job `107530249167`: `steps=null`, `logs_url=null`;
+- solidity-core job `107530249455`: `steps=null`, `logs_url=null`.
+
+A failed-jobs rerun was explicitly requested on 2026-09-24. The rerun was accepted by GitHub, but the replacement jobs failed in the same pre-step state:
+- rust-core job `107540287836`: `steps=null`, `logs_url=null`;
+- solidity-core job `107540288037`: `steps=null`, `logs_url=null`.
+
+Independent local-container check on 2026-09-24:
+- `cargo`: missing;
+- `rustc`: missing;
+- `rustup`: missing;
+- `solc`: missing;
+- `forge`: missing;
+- outbound DNS/network required for `git clone` is unavailable.
+
+Therefore neither the hosted runner nor the current local execution environment can produce executable Rust/Solidity evidence.
 
 Cargo.lock is still absent.
 
@@ -71,7 +87,9 @@ M2 may move from YELLOW to GREEN only after a real runner produces, at minimum:
 
 Until those conditions are met, the correct status is:
 
+```
 M2 source hardening: COMPLETE
 M2 executable evidence: BLOCKED BY RUNNER
 M2 GREEN: FORBIDDEN
 M3: NOT STARTED
+```
