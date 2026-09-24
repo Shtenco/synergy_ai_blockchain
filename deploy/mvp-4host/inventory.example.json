@@ -1,0 +1,10 @@
+{
+  "schema": "synergy.mvp-4host-inventory/v1",
+  "network_id": "REPLACE_64_HEX",
+  "nodes": [
+    {"node_id":"REPLACE_NODE_A","role":"provider","host":"HOST_A","content_port":7791},
+    {"node_id":"REPLACE_NODE_B","role":"stage0-worker","host":"HOST_B","rpc_port":7801},
+    {"node_id":"REPLACE_NODE_C","role":"stage1-worker","host":"HOST_C","rpc_port":7802},
+    {"node_id":"REPLACE_NODE_D","role":"verifier-replica","host":"HOST_D","rpc_port":7803}
+  ]
+}

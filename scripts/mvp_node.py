@@ -23,7 +23,11 @@ def _wait() -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="SYNERGY MVP node role launcher")
-    p.add_argument("--role", required=True, choices=["provider","stage0","stage1","trained-worker"])
+    p.add_argument(
+        "--role",
+        required=True,
+        choices=["provider", "stage0", "stage1", "verifier-replica", "trained-worker"],
+    )
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--store")
@@ -45,7 +49,7 @@ def main() -> int:
     cfg = MiniTransformerConfig()
     if args.role == "stage0":
         backend = MiniTransformerStage0(cfg)
-    elif args.role == "stage1":
+    elif args.role in {"stage1", "verifier-replica"}:
         backend = MiniTransformerStage1(cfg)
     else:
         required = [args.llama_cli,args.gguf,args.model_root,args.shard_root,args.capability_root]

@@ -11,6 +11,11 @@
       "sha256": "ff909c920651548d7621aa1203733f9d57a8955ab742b06fdc799d1b9f794e65"
     },
     {
+      "bytes": 773,
+      "path": "evidence/GREENFULL_LOCAL.json",
+      "sha256": "10ac750ed4b231e54639ffda9c2ba00780eb2dafcfa088592849efa859c15940"
+    },
+    {
       "bytes": 1329,
       "path": "evidence/heavy_pq_remaining_summary.json",
       "sha256": "6a20937957659444b52a825eb767f28ad4f8fd1b70e8a09a17c145b08d87cf67"
@@ -361,6 +366,11 @@
       "sha256": "5ca93b43244fbdaad809b7d3a029097853f80cbb3d342fded45b5ccacc7c191e"
     },
     {
+      "bytes": 1050,
+      "path": "evidence/mvp_four_node_smoke.json",
+      "sha256": "1fea4274761d79151f7601ba9b0e110c3023fec3e24f2273a6a069a3923cc42f"
+    },
+    {
       "bytes": 850,
       "path": "evidence/mvp_real_transformer_smoke.json",
       "sha256": "e29e9d0257320820f0549b7f1ae6220b2f6126f436dfc830fdc06428bd5250e8"
@@ -476,6 +486,6 @@
       "sha256": "a6f2316beb821cd7733af68685f90aa718e601f0b3e219a413990d63bc74a960"
     }
   ],
-  "bundle_root": "12383e588b096d2e581881ac3b1baa28cfd8337f7475d6c624c3bf87dd1bb011",
+  "bundle_root": "295ce35933377d7972639d14421d9197afab615876e40ef2885f80549beee091",
   "schema": "synergy.mvp-evidence-bundle/v1"
 }

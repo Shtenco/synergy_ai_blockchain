@@ -1,0 +1,26 @@
+{
+  "evidence_root": "d6c44a67973973d962c128e943e4d4df3c56e37b16b584d4a76077cd29f6663c",
+  "failover_node": "node-d",
+  "four_node_failover": true,
+  "model_shard_digest": "80b82f210cac7fa59ffb4de7667a608ccf879832d9583e498ef49e22e774d46e",
+  "node_c_token": 41,
+  "node_c_trace_root": "8708e383c8a4dc82621c1f724858b3549da36cb6265abbeef6fa5fe14f02a6b0",
+  "node_c_verdict": "MISMATCH",
+  "node_d_token": 40,
+  "node_d_trace_root": "6c856c93e19f6ce2054db15cbe2f9abc5eb9be4c4650a67059941cdd42fc93a3",
+  "node_d_verdict": "MATCH",
+  "nodes": [
+    "node-a",
+    "node-b",
+    "node-c",
+    "node-d"
+  ],
+  "reference_token": 40,
+  "relay_roots": {
+    "node-b": "8281772b5eb53f29659a096c32ff43e93f2d1c1f7ea1d7e12a7a43b5738635e0",
+    "node-c": "426b515602c4ca908cd8e5e52f28759663b246b1888f465b1e2e90ff2774cf43",
+    "node-d": "81b3c4d085ed74df9293bef069ccd72866d25c4b94faf17dfebaf56ffb055df0"
+  },
+  "schema": "synergy.mvp-four-node/v1",
+  "stage0_trace_root": "8af72694488e1d5d36dd37ebfa87c670d6723461a64c252f5f080086e588b429"
+}
