@@ -5,6 +5,7 @@ pub mod autopilot_budget;
 pub mod autopilot_execution_lease;
 pub mod cognitive;
 pub mod cognitive_market;
+pub mod compute_settlement;
 pub mod cognitive_registry;
 pub mod consensus;
 pub mod inference;
@@ -17,11 +18,13 @@ pub mod model_shard;
 pub mod network;
 pub mod nexus;
 pub mod payment_funding;
+pub mod peer_discovery;
 pub mod payments;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
 pub mod scheduling;
+pub mod slashing;
 pub mod service_planes;
 pub mod storage;
 pub mod tx;
@@ -48,6 +51,7 @@ pub use cognitive::{
     CognitiveEvidenceValidationContext, CognitiveNodeManifest, CognitiveRole,
     CognitiveWorkReceipt, CognitiveWorkRequest, EvidenceKind, WorkVerdict,
 };
+pub use compute_settlement::{ComputeSettlement, COMPUTE_SETTLEMENT_DOMAIN};
 pub use cognitive_market::{
     reward_breakdown, CognitiveRewardBreakdown, CognitiveRewardPolicy,
     VerifiedMarginalContribution,
@@ -102,6 +106,7 @@ pub use network::{
 pub use nexus::{
     infer_reference_metered, NexusError, NexusManifest, NexusMode, NexusRequest, NexusResponse,
 };
+pub use peer_discovery::{NodeRecord, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN};
 pub use payment_funding::{
     FundedSettlementCommitment, FundingStatus, PaymentFundingConsumptionReceipt,
     PaymentFundingReleaseReceipt, PaymentFundingReservation,
@@ -127,6 +132,7 @@ pub use pq::{
 pub use pq_reference::{
     MlKemSecretHandle, ReferenceMlKem1024Provider, ReferencePqSignatureVerifier, ReferencePqSigner,
 };
+pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
 pub use scheduling::{can_host, choose_node, placement_score, NodeCapacity, NodeClass, WorkRequirements};
 pub use service_planes::{
     verify_service_plane_checkpoint_with_finality_and_consume, ServiceFinalityBatch,
