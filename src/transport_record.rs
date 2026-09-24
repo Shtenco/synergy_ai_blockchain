@@ -193,3 +193,133 @@ mod tests {
         assert_eq!(recv.next_sequence(), 1);
     }
 }
+
+
+pub const TRANSPORT_FRAME_MAGIC: [u8; 4] = *b"SYR1";
+
+pub fn write_encrypted_transport_frame<W: std::io::Write>(
+    writer: &mut W,
+    key: &TransportSessionKey,
+    sequence: &mut TransportRecordSequence,
+    now: u64,
+    session_root: [u8; 32],
+    sender: TransportRole,
+    application_root: [u8; 32],
+    plaintext: &[u8],
+) -> std::io::Result<[u8; 32]> {
+    let record = encrypt_transport_record(
+        key,
+        sequence,
+        now,
+        session_root,
+        sender,
+        application_root,
+        plaintext,
+    )
+    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "transport encryption failed"))?;
+
+    let ciphertext_len = u32::try_from(record.ciphertext.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "ciphertext too large"))?;
+
+    writer.write_all(&TRANSPORT_FRAME_MAGIC)?;
+    writer.write_all(&record.nonce)?;
+    writer.write_all(&record.plaintext_commitment)?;
+    writer.write_all(&ciphertext_len.to_be_bytes())?;
+    writer.write_all(&record.ciphertext)?;
+    writer.flush()?;
+    Ok(record.plaintext_commitment)
+}
+
+pub fn read_encrypted_transport_frame<R: std::io::Read>(
+    reader: &mut R,
+    key: &TransportSessionKey,
+    sequence: &mut TransportRecordSequence,
+    now: u64,
+    session_root: [u8; 32],
+    sender: TransportRole,
+    application_root: [u8; 32],
+) -> std::io::Result<Vec<u8>> {
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic)?;
+    if magic != TRANSPORT_FRAME_MAGIC {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "transport frame magic mismatch"));
+    }
+
+    let mut nonce = [0u8; TRANSPORT_RECORD_NONCE_BYTES];
+    reader.read_exact(&mut nonce)?;
+    let mut plaintext_commitment = [0u8; 32];
+    reader.read_exact(&mut plaintext_commitment)?;
+    let mut len_bytes = [0u8; 4];
+    reader.read_exact(&mut len_bytes)?;
+    let ciphertext_len = u32::from_be_bytes(len_bytes) as usize;
+    if ciphertext_len == 0 || ciphertext_len > MAX_TRANSPORT_RECORD_PLAINTEXT_BYTES + 16 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "transport ciphertext length invalid"));
+    }
+
+    let mut ciphertext = vec![0u8; ciphertext_len];
+    reader.read_exact(&mut ciphertext)?;
+    let record = EncryptedTransportRecord {
+        nonce,
+        ciphertext,
+        plaintext_commitment,
+    };
+    decrypt_transport_record(
+        key,
+        sequence,
+        now,
+        session_root,
+        sender,
+        application_root,
+        &record,
+    )
+    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "transport authentication failed"))
+}
+
+#[cfg(test)]
+mod socket_tests {
+    use super::*;
+    use crate::network::{RekeyPolicy, TransportRecordSequence, TransportRole};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+
+    #[test]
+    fn encrypted_record_crosses_real_tcp_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("address");
+        let policy = RekeyPolicy { max_messages: 8, max_seconds: 60 };
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let key = crate::network::transport_session_key_from_test_bytes([0x44; 32]);
+            let mut recv = TransportRecordSequence::new_initiator_to_responder(policy, 100).unwrap();
+            let plaintext = read_encrypted_transport_frame(
+                &mut stream,
+                &key,
+                &mut recv,
+                101,
+                [0x11; 32],
+                TransportRole::Initiator,
+                [0x22; 32],
+            )
+            .expect("decrypt frame");
+            assert_eq!(plaintext, b"remote-kv-or-activation");
+            assert_eq!(recv.next_sequence(), 1);
+        });
+
+        let mut stream = TcpStream::connect(address).expect("connect");
+        let key = crate::network::transport_session_key_from_test_bytes([0x44; 32]);
+        let mut send = TransportRecordSequence::new_initiator_to_responder(policy, 100).unwrap();
+        write_encrypted_transport_frame(
+            &mut stream,
+            &key,
+            &mut send,
+            101,
+            [0x11; 32],
+            TransportRole::Initiator,
+            [0x22; 32],
+            b"remote-kv-or-activation",
+        )
+        .expect("encrypt frame");
+        assert_eq!(send.next_sequence(), 1);
+        server.join().expect("server");
+    }
+}
