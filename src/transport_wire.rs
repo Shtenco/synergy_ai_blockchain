@@ -32,7 +32,8 @@ impl InitiatorHello {
         {
             return Err("initiator hello commitments required");
         }
-        self.initiator.validate_for_policy(TransportPolicy::PqOnly)?;
+        self.initiator
+            .validate_for_policy(TransportPolicy::PqOnly)?;
         self.rekey_policy.validate()
     }
 
@@ -66,10 +67,13 @@ pub struct ResponderHello {
 impl ResponderHello {
     pub fn validate_against(&self, initiator: &InitiatorHello) -> Result<(), &'static str> {
         initiator.validate()?;
-        if self.initiator_hello_root != initiator.commitment().ok_or("initiator root unavailable")? {
+        if self.initiator_hello_root
+            != initiator.commitment().ok_or("initiator root unavailable")?
+        {
             return Err("responder hello not bound to initiator hello");
         }
-        self.responder.validate_for_policy(TransportPolicy::PqOnly)?;
+        self.responder
+            .validate_for_policy(TransportPolicy::PqOnly)?;
         if self.responder.node_id == initiator.initiator.node_id {
             return Err("transport peers must be distinct");
         }
@@ -142,7 +146,10 @@ mod tests {
             session_id: [2; 32],
             initiator: peer(3, 4),
             endpoint_root: [5; 32],
-            rekey_policy: RekeyPolicy { max_messages: 100, max_seconds: 60 },
+            rekey_policy: RekeyPolicy {
+                max_messages: 100,
+                max_seconds: 60,
+            },
         };
         let resp = ResponderHello {
             initiator_hello_root: init.commitment().unwrap(),
@@ -159,15 +166,22 @@ mod tests {
     #[test]
     fn responder_cannot_switch_initiator_hello() {
         let a = InitiatorHello {
-            network_id: [1; 32], epoch: 1, session_id: [2; 32],
-            initiator: peer(3, 4), endpoint_root: [5; 32],
-            rekey_policy: RekeyPolicy { max_messages: 100, max_seconds: 60 },
+            network_id: [1; 32],
+            epoch: 1,
+            session_id: [2; 32],
+            initiator: peer(3, 4),
+            endpoint_root: [5; 32],
+            rekey_policy: RekeyPolicy {
+                max_messages: 100,
+                max_seconds: 60,
+            },
         };
         let mut b = a.clone();
         b.session_id = [10; 32];
         let resp = ResponderHello {
             initiator_hello_root: a.commitment().unwrap(),
-            responder: peer(6, 7), endpoint_root: [8; 32],
+            responder: peer(6, 7),
+            endpoint_root: [8; 32],
             ml_kem_ciphertext: vec![9; ML_KEM_1024_CIPHERTEXT_BYTES],
         };
         assert!(resp.transcript(&b).is_none());

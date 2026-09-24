@@ -153,15 +153,32 @@ mod tests {
     #[test]
     fn round_trip_is_authenticated_and_sequence_bound() {
         let key = key();
-        let policy = RekeyPolicy { max_messages: 4, max_seconds: 60 };
+        let policy = RekeyPolicy {
+            max_messages: 4,
+            max_seconds: 60,
+        };
         let mut send = TransportRecordSequence::new_initiator_to_responder(policy, 10).unwrap();
         let mut recv = TransportRecordSequence::new_initiator_to_responder(policy, 10).unwrap();
         let record = encrypt_transport_record(
-            &key, &mut send, 11, [1;32], TransportRole::Initiator, [2;32], b"secret-stage-payload"
-        ).unwrap();
+            &key,
+            &mut send,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [2; 32],
+            b"secret-stage-payload",
+        )
+        .unwrap();
         let plain = decrypt_transport_record(
-            &key, &mut recv, 11, [1;32], TransportRole::Initiator, [2;32], &record
-        ).unwrap();
+            &key,
+            &mut recv,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [2; 32],
+            &record,
+        )
+        .unwrap();
         assert_eq!(plain, b"secret-stage-payload");
         assert_eq!(send.next_sequence(), 1);
         assert_eq!(recv.next_sequence(), 1);
@@ -170,33 +187,64 @@ mod tests {
     #[test]
     fn replay_and_aad_tamper_fail_without_burning_receive_sequence() {
         let key = key();
-        let policy = RekeyPolicy { max_messages: 4, max_seconds: 60 };
+        let policy = RekeyPolicy {
+            max_messages: 4,
+            max_seconds: 60,
+        };
         let mut send = TransportRecordSequence::new_initiator_to_responder(policy, 10).unwrap();
         let mut recv = TransportRecordSequence::new_initiator_to_responder(policy, 10).unwrap();
         let record = encrypt_transport_record(
-            &key, &mut send, 11, [1;32], TransportRole::Initiator, [2;32], b"payload"
-        ).unwrap();
+            &key,
+            &mut send,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [2; 32],
+            b"payload",
+        )
+        .unwrap();
 
         assert!(decrypt_transport_record(
-            &key, &mut recv, 11, [1;32], TransportRole::Initiator, [9;32], &record
-        ).is_none());
+            &key,
+            &mut recv,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [9; 32],
+            &record
+        )
+        .is_none());
         assert_eq!(recv.next_sequence(), 0);
 
         assert!(decrypt_transport_record(
-            &key, &mut recv, 11, [1;32], TransportRole::Initiator, [2;32], &record
-        ).is_some());
+            &key,
+            &mut recv,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [2; 32],
+            &record
+        )
+        .is_some());
         assert_eq!(recv.next_sequence(), 1);
 
         assert!(decrypt_transport_record(
-            &key, &mut recv, 11, [1;32], TransportRole::Initiator, [2;32], &record
-        ).is_none());
+            &key,
+            &mut recv,
+            11,
+            [1; 32],
+            TransportRole::Initiator,
+            [2; 32],
+            &record
+        )
+        .is_none());
         assert_eq!(recv.next_sequence(), 1);
     }
 }
 
-
 pub const TRANSPORT_FRAME_MAGIC: [u8; 4] = *b"SYR1";
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_encrypted_transport_frame<W: std::io::Write>(
     writer: &mut W,
     key: &TransportSessionKey,
@@ -216,10 +264,16 @@ pub fn write_encrypted_transport_frame<W: std::io::Write>(
         application_root,
         plaintext,
     )
-    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "transport encryption failed"))?;
+    .ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "transport encryption failed",
+        )
+    })?;
 
-    let ciphertext_len = u32::try_from(record.ciphertext.len())
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "ciphertext too large"))?;
+    let ciphertext_len = u32::try_from(record.ciphertext.len()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "ciphertext too large")
+    })?;
 
     writer.write_all(&TRANSPORT_FRAME_MAGIC)?;
     writer.write_all(&record.nonce)?;
@@ -242,7 +296,10 @@ pub fn read_encrypted_transport_frame<R: std::io::Read>(
     let mut magic = [0u8; 4];
     reader.read_exact(&mut magic)?;
     if magic != TRANSPORT_FRAME_MAGIC {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "transport frame magic mismatch"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "transport frame magic mismatch",
+        ));
     }
 
     let mut nonce = [0u8; TRANSPORT_RECORD_NONCE_BYTES];
@@ -253,7 +310,10 @@ pub fn read_encrypted_transport_frame<R: std::io::Read>(
     reader.read_exact(&mut len_bytes)?;
     let ciphertext_len = u32::from_be_bytes(len_bytes) as usize;
     if ciphertext_len == 0 || ciphertext_len > MAX_TRANSPORT_RECORD_PLAINTEXT_BYTES + 16 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "transport ciphertext length invalid"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "transport ciphertext length invalid",
+        ));
     }
 
     let mut ciphertext = vec![0u8; ciphertext_len];
@@ -272,7 +332,12 @@ pub fn read_encrypted_transport_frame<R: std::io::Read>(
         application_root,
         &record,
     )
-    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "transport authentication failed"))
+    .ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "transport authentication failed",
+        )
+    })
 }
 
 #[cfg(test)]
@@ -286,11 +351,15 @@ mod socket_tests {
     fn encrypted_record_crosses_real_tcp_socket() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let address = listener.local_addr().expect("address");
-        let policy = RekeyPolicy { max_messages: 8, max_seconds: 60 };
+        let policy = RekeyPolicy {
+            max_messages: 8,
+            max_seconds: 60,
+        };
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accept");
             let key = crate::network::transport_session_key_from_test_bytes([0x44; 32]);
-            let mut recv = TransportRecordSequence::new_initiator_to_responder(policy, 100).unwrap();
+            let mut recv =
+                TransportRecordSequence::new_initiator_to_responder(policy, 100).unwrap();
             let plaintext = read_encrypted_transport_frame(
                 &mut stream,
                 &key,

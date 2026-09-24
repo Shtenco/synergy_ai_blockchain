@@ -2,7 +2,8 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const CONSENSUS_ACTIVATION_DOMAIN: &[u8] = b"SYNERGY/CONSENSUS-ACTIVATION/V1\0";
@@ -82,7 +83,6 @@ pub struct ConsensusActivation {
     pub implementation_hash: [u8; 32],
     pub gas_schedule: PrecompileGasSchedule,
 }
-
 
 impl ConsensusActivation {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -198,7 +198,6 @@ pub(crate) fn verify_consensus_activation<V: ContextSignatureVerifier>(
     )
 }
 
-
 pub fn verify_consensus_activation_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &ConsensusActivationAuthorization,
@@ -290,14 +289,17 @@ mod tests {
         }
     }
 
-
     #[test]
     fn consensus_activation_requires_registered_max_authority() {
         let authorized = authorized_activation();
         let envelope = authorized.envelope().expect("activation envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = ConsensusActivationValidationContext {
             expected_chain_id: [0x91; 32],
@@ -314,7 +316,11 @@ mod tests {
             max_future_seconds: 200,
         };
 
-        assert!(verify_consensus_activation(&verifier, &authorized, &validation));
+        assert!(verify_consensus_activation(
+            &verifier,
+            &authorized,
+            &validation
+        ));
 
         let mut wrong = validation;
         wrong.expected_activation_block += 1;
@@ -326,8 +332,12 @@ mod tests {
         let authorized = authorized_activation();
         let envelope = authorized.envelope().expect("activation envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let mut validation = ConsensusActivationValidationContext {
             expected_chain_id: [0x91; 32],
@@ -343,11 +353,19 @@ mod tests {
             now: 1_000,
             max_future_seconds: 200,
         };
-        assert!(!verify_consensus_activation(&verifier, &authorized, &validation));
+        assert!(!verify_consensus_activation(
+            &verifier,
+            &authorized,
+            &validation
+        ));
 
         validation.current_block = 49_000;
         validation.min_activation_delay_blocks = 0;
-        assert!(!verify_consensus_activation(&verifier, &authorized, &validation));
+        assert!(!verify_consensus_activation(
+            &verifier,
+            &authorized,
+            &validation
+        ));
     }
 
     #[test]
@@ -357,16 +375,25 @@ mod tests {
 
         let mut changed = base.clone();
         changed.implementation_hash[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("impl change"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("impl change")
+        );
 
         let mut changed = base;
         changed.gas_schedule.base += 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("gas change"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("gas change")
+        );
     }
 
     #[test]
     fn gas_cost_is_deterministic() {
         let s = PrecompileGasSchedule::default();
-        assert_eq!(s.nexus_cost(32, 32, 16, 32, 3), s.nexus_cost(32, 32, 16, 32, 3));
+        assert_eq!(
+            s.nexus_cost(32, 32, 16, 32, 3),
+            s.nexus_cost(32, 32, 16, 32, 3)
+        );
     }
 }

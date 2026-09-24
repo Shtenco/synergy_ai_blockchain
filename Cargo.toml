@@ -16,7 +16,9 @@ reference-pq = [
     "dep:ml-kem",
     "dep:ml-dsa",
     "dep:slh-dsa",
+    "dep:fips205",
     "dep:rand",
+    "dep:signature",
 ]
 
 [dependencies]
@@ -27,7 +29,9 @@ chacha20poly1305 = { version = "=0.10.1", default-features = false, features = [
 ml-kem = { version = "=0.3.2", optional = true, default-features = false, features = ["getrandom", "zeroize"] }
 ml-dsa = { version = "=0.1.1", optional = true, default-features = false, features = ["alloc", "getrandom", "zeroize"] }
 slh-dsa = { version = "=0.1.0", optional = true, default-features = false, features = ["alloc"] }
-rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom"] }
+fips205 = { version = "=0.4.1", optional = true, default-features = false, features = ["default-rng", "slh_dsa_shake_256s"] }
+rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom", "std", "std_rng"] }
+signature = { version = "=2.3.0-pre.4", optional = true, default-features = false, features = ["rand_core"] }
 
 [dev-dependencies]
 hex = "=0.4.3"
@@ -36,4 +40,12 @@ serde_json = "=1.0.145"
 
 
 [profile.release]
+overflow-checks = true
+
+# Optimize the test profile while explicitly preserving debug assertions
+# and overflow checks. This keeps the exact same tests/coverage but makes
+# SLH-DSA/FIPS cryptography practical on older CPUs.
+[profile.test]
+opt-level = 3
+debug-assertions = true
 overflow-checks = true

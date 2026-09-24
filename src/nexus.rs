@@ -112,7 +112,9 @@ fn qadd_saturating(a: i64, b: i64) -> i64 {
 fn graph_step(x: &[i64]) -> Vec<i64> {
     let n = x.len();
     let mut out = vec![0i64; n];
-    if n == 0 { return out; }
+    if n == 0 {
+        return out;
+    }
     for i in 0..n {
         // Ring + deterministic shortcut. Integer-only analogue of the
         // ring-plus-shortcuts small-world transition used by NEXUS V18.
@@ -132,12 +134,15 @@ fn residual_mix(x: &[i64]) -> Vec<i64> {
     let w0 = 22938i64; // 0.35
     let w1 = 19661i64; // 0.30
     let w2 = 13107i64; // 0.20
-    let w4 = 9830i64;  // 0.15
-    x.iter().enumerate().map(|(i, &v)| {
-        let a = qadd_saturating(qmul(v, w0), qmul(p1[i], w1));
-        let b = qadd_saturating(a, qmul(p2[i], w2));
-        qadd_saturating(b, qmul(p4[i], w4))
-    }).collect()
+    let w4 = 9830i64; // 0.15
+    x.iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            let a = qadd_saturating(qmul(v, w0), qmul(p1[i], w1));
+            let b = qadd_saturating(a, qmul(p2[i], w2));
+            qadd_saturating(b, qmul(p4[i], w4))
+        })
+        .collect()
 }
 
 /// Consensus-safe reference kernel. This is the deterministic graph brick and ABI
@@ -197,10 +202,13 @@ pub fn infer_reference_metered(
     }
 
     let output = state[..output_len].to_vec();
-    Ok(NexusResponse { output_q16: output, gas_used })
+    Ok(NexusResponse {
+        output_q16: output,
+        gas_used,
+    })
 }
 
-
+#[allow(dead_code)]
 pub(crate) fn infer_reference(
     manifest: &NexusManifest,
     gas: &PrecompileGasSchedule,
@@ -285,27 +293,22 @@ mod tests {
             .gas_used;
         assert!(required > 0);
         assert_eq!(
-            infer_reference_metered(
-                &m,
-                &PrecompileGasSchedule::default(),
-                &r,
-                required - 1,
-            ),
+            infer_reference_metered(&m, &PrecompileGasSchedule::default(), &r, required - 1,),
             Err(NexusError::OutOfGas)
         );
-        assert!(infer_reference_metered(
-            &m,
-            &PrecompileGasSchedule::default(),
-            &r,
-            required,
-        )
-        .is_ok());
+        assert!(
+            infer_reference_metered(&m, &PrecompileGasSchedule::default(), &r, required,).is_ok()
+        );
     }
 
     #[test]
     fn fixed_point_inference_is_bit_exact() {
         let m = NexusManifest::v18_consensus_profile([7u8; 32]);
-        let r = NexusRequest { mode: NexusMode::Score, input_q16: vec![Q, 2*Q, -Q], max_output_values: 8 };
+        let r = NexusRequest {
+            mode: NexusMode::Score,
+            input_q16: vec![Q, 2 * Q, -Q],
+            max_output_values: 8,
+        };
         let a = infer_reference(&m, &PrecompileGasSchedule::default(), &r).unwrap();
         let b = infer_reference(&m, &PrecompileGasSchedule::default(), &r).unwrap();
         assert_eq!(a, b);

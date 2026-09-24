@@ -1,0 +1,19 @@
+﻿{
+    "schema":  "synergy.greenfull-local/v1",
+    "timestamp":  "2026-09-25T02:04:55.4076301+05:00",
+    "qwen_sha256":  "fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526",
+    "qwen_bytes":  579615840,
+    "llama_sha256":  "8226f3f294702e393480394240202219052e16739f3aeab959181852234325e0",
+    "solc_sha256":  "537fd8d8d4a0433a971bf456fc06f7b021cdcee27b252f74da49e0d8559aeb67",
+    "cargo_lock_sha256":  "e065e45b2fb4ed8f96136472fa67aa62607fc3ae093dc3dc6cfd387f2b300799",
+    "fmt":  "PASS",
+    "clippy":  "PASS",
+    "reference_pq":  "256/256 PASS",
+    "adversarial":  "PASS",
+    "acvp":  "5/5 PASS",
+    "doc":  "PASS",
+    "release":  "PASS",
+    "solidity":  "PASS",
+    "qwen_inference":  "PASS",
+    "kv_resume":  "PASS"
+}

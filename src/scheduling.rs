@@ -24,7 +24,10 @@ pub struct NodeCapacity {
 
 impl NodeCapacity {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.node_id == [0; 32] || self.locality_domain == [0; 32] || self.capability_root == [0; 32] {
+        if self.node_id == [0; 32]
+            || self.locality_domain == [0; 32]
+            || self.capability_root == [0; 32]
+        {
             return Err("node capacity commitments required");
         }
         if self.memory_bytes == 0 || self.max_compute_units == 0 {
@@ -50,7 +53,7 @@ impl WorkRequirements {
         if self.compute_units == 0 {
             return Err("work compute units required");
         }
-        if matches!(self.preferred_locality_domain, Some([0u8; 32])) {
+        if self.preferred_locality_domain == Some([0u8; 32]) {
             return Err("preferred locality domain must be nonzero");
         }
         Ok(())
@@ -81,19 +84,25 @@ pub fn placement_score(node: &NodeCapacity, work: &WorkRequirements) -> Option<u
     Some(locality_penalty + memory_slack / 1_048_576u128 + compute_slack)
 }
 
-pub fn choose_node<'a>(nodes: &'a [NodeCapacity], work: &WorkRequirements) -> Option<&'a NodeCapacity> {
+pub fn choose_node<'a>(
+    nodes: &'a [NodeCapacity],
+    work: &WorkRequirements,
+) -> Option<&'a NodeCapacity> {
     if work.validate().is_err() {
         return None;
     }
     for (index, node) in nodes.iter().enumerate() {
         if node.validate().is_err()
-            || nodes[..index].iter().any(|prior| prior.node_id == node.node_id)
+            || nodes[..index]
+                .iter()
+                .any(|prior| prior.node_id == node.node_id)
         {
             return None;
         }
     }
 
-    nodes.iter()
+    nodes
+        .iter()
         .filter_map(|node| placement_score(node, work).map(|score| (score, node)))
         .min_by_key(|(score, node)| (*score, node.node_id))
         .map(|(_, node)| node)
@@ -103,7 +112,14 @@ pub fn choose_node<'a>(nodes: &'a [NodeCapacity], work: &WorkRequirements) -> Op
 mod tests {
     use super::*;
 
-    fn node(id: u8, class: NodeClass, mem: u64, accel: u64, compute: u64, locality: u8) -> NodeCapacity {
+    fn node(
+        id: u8,
+        class: NodeClass,
+        mem: u64,
+        accel: u64,
+        compute: u64,
+        locality: u8,
+    ) -> NodeCapacity {
         NodeCapacity {
             node_id: [id; 32],
             class,
@@ -203,6 +219,11 @@ mod tests {
             compute_units: 100,
             preferred_locality_domain: Some([7; 32]),
         };
-        assert_eq!(choose_node(&[remote, local.clone()], &work).unwrap().node_id, local.node_id);
+        assert_eq!(
+            choose_node(&[remote, local.clone()], &work)
+                .unwrap()
+                .node_id,
+            local.node_id
+        );
     }
 }

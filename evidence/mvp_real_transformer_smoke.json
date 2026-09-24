@@ -1,0 +1,15 @@
+{
+  "activation_bytes": 5645,
+  "backend": "NUMPY_CAUSAL_TRANSFORMER_REFERENCE",
+  "evidence_root": "c15835907a855b49810656030ddd45f844afb7299b3c2b918299e96c1744217c",
+  "exact_distributed_equivalence": true,
+  "language_quality_claim": "NONE_UNTRAINED_REFERENCE_MODEL",
+  "model_root": "99ee4f9f84932be6dd20107fa9f88cd8439d8cd602b7b686c2b7b9737742620f",
+  "next_token_id": 135,
+  "reference_next_token_id": 135,
+  "schema": "synergy.real-transformer-two-stage-smoke/v1",
+  "stage0_shard_root": "a44f95962f73f51b1ad475ab9636dc4c3833d5e559198492eec166739f244ccf",
+  "stage0_trace_root": "caae9c9ed31742f2ad93ae4d1568d558905c7e3ecd9d22d8ad656bcfaf402d73",
+  "stage1_shard_root": "ab6f918295f422ae570fd379dfc2af2647f66fdfebcd2f6b0cc5aaec63746323",
+  "stage1_trace_root": "6bcdafb7e8c7bf506d60b3f87561998c415d6bbae5e55848c7b6b67e1b4e6866"
+}

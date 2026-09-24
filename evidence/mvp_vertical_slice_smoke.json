@@ -1,0 +1,14 @@
+{
+  "content_authority": "NONE",
+  "evidence_root": "a5571f34f0ace0dc1bf1bb86d6a8270a880f92ceecba1ec159373b1eef74dd7d",
+  "model_shard_digest": "2955f0cfe726d379e84121c098d22a9722cb062d9fdd972aea33170e3024d5f0",
+  "relay_response_digest": "80816c87cf7a33828b9082d4cf3383c9e68c0909973b8404dae2ec5ab0209d10",
+  "schema": "synergy.mvp-vertical-slice-smoke/v1",
+  "session_root": "7777777777777777777777777777777777777777777777777777777777777777",
+  "stage_execution_authority": "NONE",
+  "stage_output_commitment": "2dc353491a8fa9d66574d667361292ea687237c7abf13330fa89396d55fd8e78",
+  "stage_payment_authority": "NONE",
+  "stage_trace_root": "f62199ec33e2d5c544fe0eb0bf7c9d007b64c2abbddefc379f27ce08c9a56768",
+  "verification_root": "b9b3cbd6dd0d3ab3d6d1eb0f47ee461b579c654488e4e0d3a13e116978c2fa27",
+  "verifier_match": true
+}

@@ -66,9 +66,11 @@ impl ProviderRecord {
     }
 }
 
+type ProviderRegistryKey = ([u8; 32], [u8; 32], [u8; 32]);
+
 #[derive(Debug, Clone, Default)]
 pub struct ProviderRegistry {
-    records: BTreeMap<([u8; 32], [u8; 32], [u8; 32]), ProviderRecord>,
+    records: BTreeMap<ProviderRegistryKey, ProviderRecord>,
 }
 
 impl ProviderRegistry {
@@ -125,7 +127,11 @@ impl ProviderRegistry {
         if now == 0 {
             return None;
         }
-        let live: Vec<_> = self.records.values().filter(|r| r.is_live_at(now)).collect();
+        let live: Vec<_> = self
+            .records
+            .values()
+            .filter(|r| r.is_live_at(now))
+            .collect();
         let count = u64::try_from(live.len()).ok()?;
         let mut h = Sha256::new();
         h.update(PROVIDER_SET_DOMAIN);

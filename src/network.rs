@@ -1,7 +1,7 @@
 use core::fmt;
-use std::collections::BTreeMap;
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
 use crate::pq::{
@@ -84,7 +84,6 @@ impl InMemoryTransportReplayGuard {
     pub fn consumed_sessions(&self) -> usize {
         self.consumed.len()
     }
-
 
     pub fn commitment(&self) -> Option<[u8; 32]> {
         const DOMAIN: &[u8] = b"SYNERGY/TRANSPORT-REPLAY-STATE/V1\0";
@@ -224,8 +223,6 @@ pub struct TransportPeerAuthorizationValidationContext {
     pub max_future_seconds: u64,
 }
 
-
-
 pub struct MlKemSharedSecret([u8; ML_KEM_SHARED_SECRET_BYTES]);
 
 impl MlKemSharedSecret {
@@ -260,6 +257,10 @@ impl SecretBytes {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -379,10 +380,7 @@ impl TransportTranscript {
         Ok(())
     }
 
-    pub fn commitment_in_context(
-        &self,
-        context: &TransportValidationContext,
-    ) -> Option<[u8; 32]> {
+    pub fn commitment_in_context(&self, context: &TransportValidationContext) -> Option<[u8; 32]> {
         self.validate_in_context(context).ok()?;
         self.commitment()
     }
@@ -442,12 +440,8 @@ impl TransportTranscript {
     }
 }
 
-
 impl TransportPeerAuthorization {
-    fn peer_for_role<'a>(
-        &self,
-        transcript: &'a TransportTranscript,
-    ) -> &'a TransportPeerIdentity {
+    fn peer_for_role<'a>(&self, transcript: &'a TransportTranscript) -> &'a TransportPeerIdentity {
         match self.role {
             TransportRole::Initiator => &transcript.initiator,
             TransportRole::Responder => &transcript.responder,
@@ -483,9 +477,7 @@ fn verify_transport_peer_authorization<V: ContextSignatureVerifier>(
     authorized: &TransportPeerAuthorization,
     validation: &TransportPeerAuthorizationValidationContext,
 ) -> bool {
-    if authorized.role != expected_role
-        || authorized.authorization.policy != AuthPolicy::PqOnly
-    {
+    if authorized.role != expected_role || authorized.authorization.policy != AuthPolicy::PqOnly {
         return false;
     }
 
@@ -544,9 +536,7 @@ impl HybridSharedSecret {
             TransportPolicy::Hybrid
                 if classical_shared
                     .as_ref()
-                    .map(|secret| {
-                        secret.len() != CLASSICAL_SHARED_SECRET_BYTES
-                    })
+                    .map(|secret| secret.len() != CLASSICAL_SHARED_SECRET_BYTES)
                     .unwrap_or(true) =>
             {
                 return None;
@@ -598,12 +588,8 @@ pub(crate) fn establish_shared_secret<G: TransportReplayGuard>(
 ) -> Option<HybridSharedSecret> {
     // Validate transcript and secret material before consuming replay state.
     // Otherwise malformed local input could burn an otherwise valid session ID.
-    let secret = HybridSharedSecret::from_transcript(
-        pq_shared,
-        classical_shared,
-        transcript,
-        validation,
-    )?;
+    let secret =
+        HybridSharedSecret::from_transcript(pq_shared, classical_shared, transcript, validation)?;
     let transcript_hash = *secret.transcript_hash();
 
     if !replay_guard.consume_session(
@@ -618,7 +604,11 @@ pub(crate) fn establish_shared_secret<G: TransportReplayGuard>(
     Some(secret)
 }
 
-pub fn establish_authenticated_shared_secret<G: TransportReplayGuard, V: ContextSignatureVerifier>(
+#[allow(clippy::too_many_arguments)]
+pub fn establish_authenticated_shared_secret<
+    G: TransportReplayGuard,
+    V: ContextSignatureVerifier,
+>(
     replay_guard: &mut G,
     initiator_replay: &mut AuthorizationReplayState,
     responder_replay: &mut AuthorizationReplayState,
@@ -716,16 +706,13 @@ impl Drop for TransportSessionKey {
 }
 
 #[cfg(test)]
-fn derive_transport_session_key(
-    secret: &HybridSharedSecret,
-) -> Option<TransportSessionKey> {
+fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<TransportSessionKey> {
     if !validate_shared_secret(secret.policy(), secret) {
         return None;
     }
 
-    let mut ikm = Vec::with_capacity(
-        2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES,
-    );
+    let mut ikm =
+        Vec::with_capacity(2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES);
     ikm.push(1); // PQ component present.
     ikm.extend_from_slice(secret.pq_shared().as_bytes());
 
@@ -740,9 +727,7 @@ fn derive_transport_session_key(
     let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
     ikm.zeroize();
 
-    let mut info = Vec::with_capacity(
-        TRANSPORT_KDF_DOMAIN.len() + 2 + 2 + 32,
-    );
+    let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 2 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
     info.push(match secret.policy() {
@@ -755,11 +740,6 @@ fn derive_transport_session_key(
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
     let expand_result = hkdf.expand(&info, &mut output);
-    // RustCrypto hkdf 0.12.4/0.13.0 do not expose zeroize-on-drop for
-    // internal PRK/HMAC state. Keep the object strictly local and drop it
-    // immediately after the single expand operation.
-    drop(hkdf);
-
     if expand_result.is_err() {
         info.zeroize();
         output.zeroize();
@@ -770,7 +750,6 @@ fn derive_transport_session_key(
     Some(TransportSessionKey(output))
 }
 
-
 fn derive_transport_direction_key(
     secret: &HybridSharedSecret,
     direction: TransportDirection,
@@ -779,9 +758,8 @@ fn derive_transport_direction_key(
         return None;
     }
 
-    let mut ikm = Vec::with_capacity(
-        2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES,
-    );
+    let mut ikm =
+        Vec::with_capacity(2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES);
     ikm.push(1);
     ikm.extend_from_slice(secret.pq_shared().as_bytes());
     match secret.classical_shared() {
@@ -795,9 +773,7 @@ fn derive_transport_direction_key(
     let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
     ikm.zeroize();
 
-    let mut info = Vec::with_capacity(
-        TRANSPORT_KDF_DOMAIN.len() + 2 + 4 + 32,
-    );
+    let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 4 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
     info.push(match secret.policy() {
@@ -811,7 +787,6 @@ fn derive_transport_direction_key(
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
     let expand_result = hkdf.expand(&info, &mut output);
-    drop(hkdf);
 
     if expand_result.is_err() {
         info.zeroize();
@@ -843,7 +818,6 @@ impl fmt::Debug for TransportSessionKeys {
     }
 }
 
-
 pub const TRANSPORT_RECORD_NONCE_BYTES: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -856,10 +830,7 @@ pub struct TransportRecordSequence {
 }
 
 impl TransportRecordSequence {
-    pub fn new_initiator_to_responder(
-        rekey_policy: RekeyPolicy,
-        started_at: u64,
-    ) -> Option<Self> {
+    pub fn new_initiator_to_responder(rekey_policy: RekeyPolicy, started_at: u64) -> Option<Self> {
         Self::new(
             TransportDirection::InitiatorToResponder,
             rekey_policy,
@@ -867,10 +838,7 @@ impl TransportRecordSequence {
         )
     }
 
-    pub fn new_responder_to_initiator(
-        rekey_policy: RekeyPolicy,
-        started_at: u64,
-    ) -> Option<Self> {
+    pub fn new_responder_to_initiator(rekey_policy: RekeyPolicy, started_at: u64) -> Option<Self> {
         Self::new(
             TransportDirection::ResponderToInitiator,
             rekey_policy,
@@ -907,10 +875,7 @@ impl TransportRecordSequence {
             .unwrap_or(false)
     }
 
-    pub fn next_nonce(
-        &mut self,
-        now: u64,
-    ) -> Option<[u8; TRANSPORT_RECORD_NONCE_BYTES]> {
+    pub fn next_nonce(&mut self, now: u64) -> Option<[u8; TRANSPORT_RECORD_NONCE_BYTES]> {
         if !self.within_time_window(now) || self.next_sequence >= self.max_messages {
             return None;
         }
@@ -980,9 +945,7 @@ pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecr
         TransportPolicy::PqOnly => true,
         TransportPolicy::Hybrid => secret
             .classical_shared()
-            .map(|shared| {
-                shared.len() == CLASSICAL_SHARED_SECRET_BYTES
-            })
+            .map(|shared| shared.len() == CLASSICAL_SHARED_SECRET_BYTES)
             .unwrap_or(false),
     }
 }
@@ -1026,7 +989,6 @@ impl Default for RekeyPolicy {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1049,9 +1011,11 @@ mod tests {
             context: &[u8],
             _signature: &[u8],
         ) -> bool {
-            self.accepted.iter().any(|(expected_message, expected_context)| {
-                message == expected_message && context == expected_context
-            })
+            self.accepted
+                .iter()
+                .any(|(expected_message, expected_context)| {
+                    message == expected_message && context == expected_context
+                })
         }
     }
 
@@ -1167,10 +1131,8 @@ mod tests {
         let network_id = [0xAA; 32];
         let session_id = [0xBB; 32];
 
-        let mut a = InMemoryTransportReplayGuard::new(network_id, 7)
-            .expect("replay guard");
-        let mut b = InMemoryTransportReplayGuard::new(network_id, 7)
-            .expect("replay guard");
+        let mut a = InMemoryTransportReplayGuard::new(network_id, 7).expect("replay guard");
+        let mut b = InMemoryTransportReplayGuard::new(network_id, 7).expect("replay guard");
 
         assert!(a.consume_session(&network_id, 7, &session_id, &[0x01; 32]));
         assert!(b.consume_session(&network_id, 7, &session_id, &[0x02; 32]));
@@ -1258,19 +1220,14 @@ mod tests {
     #[test]
     fn in_memory_replay_guard_is_bounded_and_epoch_monotonic() {
         let network_id = [0xC1; 32];
-        let mut guard = InMemoryTransportReplayGuard::new(network_id, 7)
-            .expect("valid replay guard");
+        let mut guard =
+            InMemoryTransportReplayGuard::new(network_id, 7).expect("valid replay guard");
         let session = [0xC2; 32];
         let transcript = [0xC3; 32];
 
         assert!(guard.consume_session(&network_id, 7, &session, &transcript));
         assert!(!guard.consume_session(&network_id, 7, &session, &transcript));
-        assert!(!guard.consume_session(
-            &network_id,
-            7,
-            &session,
-            &[0xC6; 32],
-        ));
+        assert!(!guard.consume_session(&network_id, 7, &session, &[0xC6; 32],));
         assert!(!guard.consume_session(&[0xC4; 32], 7, &[0xC5; 32], &transcript));
         assert!(!guard.consume_session(&network_id, 8, &[0xC5; 32], &transcript));
 
@@ -1285,16 +1242,11 @@ mod tests {
     #[test]
     fn transport_replay_state_commitment_changes_on_consume_and_epoch_rotation() {
         let network_id = [0xD1; 32];
-        let mut guard = InMemoryTransportReplayGuard::new(network_id, 1)
-            .expect("valid replay guard");
+        let mut guard =
+            InMemoryTransportReplayGuard::new(network_id, 1).expect("valid replay guard");
         let initial = guard.commitment().expect("initial replay commitment");
 
-        assert!(guard.consume_session(
-            &network_id,
-            1,
-            &[0xD2; 32],
-            &[0xD3; 32],
-        ));
+        assert!(guard.consume_session(&network_id, 1, &[0xD2; 32], &[0xD3; 32],));
         let consumed = guard.commitment().expect("consumed replay commitment");
         assert_ne!(initial, consumed);
 
@@ -1312,16 +1264,18 @@ mod tests {
     #[test]
     fn in_memory_replay_guard_rejects_zero_capabilities() {
         let network_id = [0xD1; 32];
-        let mut guard = InMemoryTransportReplayGuard::new(network_id, 1)
-            .expect("valid replay guard");
+        let mut guard =
+            InMemoryTransportReplayGuard::new(network_id, 1).expect("valid replay guard");
         assert!(!guard.consume_session(&network_id, 1, &[0u8; 32], &[1u8; 32]));
         assert!(!guard.consume_session(&network_id, 1, &[1u8; 32], &[0u8; 32]));
         assert!(InMemoryTransportReplayGuard::new([0u8; 32], 1).is_none());
     }
 
+    type ReplayTuple = ([u8; 32], u64, [u8; 32], [u8; 32]);
+
     #[derive(Default)]
     struct OneShotReplayGuard {
-        used: std::collections::BTreeSet<([u8; 32], u64, [u8; 32], [u8; 32])>,
+        used: std::collections::BTreeSet<ReplayTuple>,
     }
 
     impl TransportReplayGuard for OneShotReplayGuard {
@@ -1630,14 +1584,12 @@ mod tests {
 
     #[test]
     fn shared_secret_requires_exact_pq_size_and_nonzero_transcript() {
-        assert!(MlKemSharedSecret::try_from_slice(
-            &[1u8; ML_KEM_SHARED_SECRET_BYTES - 1]
-        )
-        .is_none());
-        assert!(MlKemSharedSecret::try_from_slice(
-            &[1u8; ML_KEM_SHARED_SECRET_BYTES + 1]
-        )
-        .is_none());
+        assert!(
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES - 1]).is_none()
+        );
+        assert!(
+            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES + 1]).is_none()
+        );
 
         let valid = valid_secret();
         assert!(validate_shared_secret(TransportPolicy::Hybrid, &valid));
@@ -1758,8 +1710,7 @@ mod tests {
         assert!(mismatch.commitment().is_none());
 
         let mut same_kem = valid_transcript(TransportPolicy::Hybrid);
-        same_kem.responder.ml_kem1024_public_key =
-            same_kem.initiator.ml_kem1024_public_key.clone();
+        same_kem.responder.ml_kem1024_public_key = same_kem.initiator.ml_kem1024_public_key.clone();
         assert!(same_kem.commitment().is_none());
 
         let mut same_classical = valid_transcript(TransportPolicy::Hybrid);
@@ -1775,7 +1726,10 @@ mod tests {
 
         let mut changed = base;
         changed.ml_kem_recipient = TransportRole::Initiator;
-        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
+        assert_ne!(
+            commitment,
+            changed.commitment().expect("changed commitment")
+        );
     }
 
     #[test]
@@ -1785,7 +1739,10 @@ mod tests {
 
         let mut changed = base.clone();
         changed.rekey_policy.max_messages -= 1;
-        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
+        assert_ne!(
+            commitment,
+            changed.commitment().expect("changed commitment")
+        );
 
         let mut invalid = base;
         invalid.rekey_policy.max_seconds = 0;
@@ -1799,14 +1756,23 @@ mod tests {
 
         let mut changed = base.clone();
         changed.initiator.node_id = [9u8; 32];
-        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
+        assert_ne!(
+            commitment,
+            changed.commitment().expect("changed commitment")
+        );
 
         let mut changed = base.clone();
         changed.ml_kem_ciphertext[0] ^= 1;
-        assert_ne!(commitment, changed.commitment().expect("changed commitment"));
+        assert_ne!(
+            commitment,
+            changed.commitment().expect("changed commitment")
+        );
 
         let pq_only = valid_transcript(TransportPolicy::PqOnly);
-        assert_ne!(commitment, pq_only.commitment().expect("PQ-only commitment"));
+        assert_ne!(
+            commitment,
+            pq_only.commitment().expect("PQ-only commitment")
+        );
 
         let mut invalid = base;
         invalid.classical_transcript_hash = Some([0u8; 32]);
@@ -1888,8 +1854,7 @@ mod tests {
             max_seconds: 10,
         };
         let mut sequence =
-            TransportRecordSequence::new_initiator_to_responder(policy, 1_000)
-                .expect("sequence");
+            TransportRecordSequence::new_initiator_to_responder(policy, 1_000).expect("sequence");
 
         assert!(sequence.next_nonce(999).is_none());
         assert_eq!(sequence.next_sequence(), 0);
@@ -1906,8 +1871,8 @@ mod tests {
     #[test]
     fn transport_directional_keys_are_distinct_and_transcript_bound() {
         let secret = valid_secret();
-        let keys = derive_directional_transport_session_keys(&secret)
-            .expect("directional transport keys");
+        let keys =
+            derive_directional_transport_session_keys(&secret).expect("directional transport keys");
         assert_ne!(
             keys.initiator_to_responder().as_bytes(),
             keys.responder_to_initiator().as_bytes()

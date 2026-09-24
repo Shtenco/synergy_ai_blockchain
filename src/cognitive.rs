@@ -8,11 +8,11 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const COGNITIVE_EVIDENCE_DOMAIN: &[u8] = b"SYNERGY/COGNITIVE-EVIDENCE/V1\0";
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CognitiveRole {
@@ -174,7 +174,6 @@ impl CognitiveEvidence {
         Ok(())
     }
 }
-
 
 impl CognitiveEvidence {
     pub fn authorization_commitment(
@@ -350,7 +349,6 @@ impl CognitiveWorkReceipt {
         Ok(())
     }
 }
-
 
 pub fn verify_cognitive_evidence_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,

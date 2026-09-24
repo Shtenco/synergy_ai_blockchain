@@ -118,13 +118,7 @@ pub fn authorize_and_lock_autopilot_execution<V: ContextSignatureVerifier>(
         return false;
     }
 
-    verify_autopilot_execution_and_consume(
-        verifier,
-        reservation,
-        authorized,
-        validation,
-        replay,
-    )
+    verify_autopilot_execution_and_consume(verifier, reservation, authorized, validation, replay)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,7 +210,6 @@ impl AutopilotExecutionLease {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AutopilotLeaseTerminalAuthorization {
     pub chain_id: [u8; 32],
@@ -267,7 +260,9 @@ fn verify_autopilot_lease_terminal<V: ContextSignatureVerifier>(
         || authorized.terminal.lease_root != lease.lease_root
         || reservation.owner_account != validation.expected_owner_account
         || authorized.authorization.policy != AuthPolicy::Max
-        || authorized.authorization.primary_account_identity_commitment()
+        || authorized
+            .authorization
+            .primary_account_identity_commitment()
             != Some(validation.expected_owner_account)
         || authorized.authorization.keyset_commitment()
             != Some(validation.expected_owner_keyset_commitment)
@@ -324,6 +319,7 @@ fn verify_autopilot_lease_terminal<V: ContextSignatureVerifier>(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn finalize_autopilot_lease_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     lease: &mut AutopilotExecutionLease,
@@ -374,10 +370,10 @@ mod tests {
         AutopilotExecutionAuthorization, AutopilotExecutionValidationContext,
     };
     use crate::pq::{
-        AuthPolicy, AuthScheme, AuthorizationDomain, ContextSignatureVerifier,
-        HybridAuthorization, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
-        ML_DSA_87_SIGNATURE_BYTES, SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
-        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        AuthPolicy, AuthScheme, AuthorizationDomain, ContextSignatureVerifier, HybridAuthorization,
+        SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+        SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
 
     #[derive(Clone)]
@@ -456,7 +452,6 @@ mod tests {
         };
         (reservation, call)
     }
-
 
     #[test]
     fn canonical_lease_root_binds_exact_signed_call() {
@@ -578,9 +573,7 @@ mod tests {
             .commitment_against(&call)
             .expect("realized receipt root");
         let authorization = max_authorization();
-        let owner_keyset = authorization
-            .keyset_commitment()
-            .expect("owner keyset");
+        let owner_keyset = authorization.keyset_commitment().expect("owner keyset");
         let terminal = AutopilotLeaseTerminalReceipt {
             lease_root: lease.lease_root,
             execution_receipt_root: Some(realized_root),
@@ -678,8 +671,12 @@ mod tests {
         };
         let envelope = authorized.envelope().expect("terminal envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = AutopilotLeaseTerminalValidationContext {
             expected_chain_id: [0xC1; 32],
@@ -780,10 +777,7 @@ mod tests {
             lease.finalize_once(&terminal),
             Err("terminal receipt lease mismatch")
         );
-        assert_eq!(
-            lease.status,
-            AutopilotExecutionLeaseStatus::ExecutionLocked
-        );
+        assert_eq!(lease.status, AutopilotExecutionLeaseStatus::ExecutionLocked);
     }
 
     #[test]

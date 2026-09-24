@@ -18,7 +18,8 @@ use crate::payment_funding::FundedSettlementCommitment;
 use crate::payments::SettlementBatchAuthorization;
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 use crate::storage::{ArchiveReceipt, StorageProofAuthorization};
 
@@ -58,10 +59,7 @@ pub struct ServiceFinalityItem {
 }
 
 impl ServiceFinalityItem {
-    fn subject_hash(
-        kind: ServiceFinalityKind,
-        parts: &[&[u8]],
-    ) -> Option<[u8; 32]> {
+    fn subject_hash(kind: ServiceFinalityKind, parts: &[&[u8]]) -> Option<[u8; 32]> {
         let mut hasher = Sha256::new();
         hasher.update(SERVICE_FINALITY_SUBJECT_DOMAIN);
         hasher.update([kind.protocol_code()]);
@@ -103,10 +101,8 @@ impl ServiceFinalityItem {
             return None;
         }
 
-        let subject_id = Self::subject_hash(
-            ServiceFinalityKind::AutopilotTerminal,
-            &[&lease.lease_root],
-        )?;
+        let subject_id =
+            Self::subject_hash(ServiceFinalityKind::AutopilotTerminal, &[&lease.lease_root])?;
         Some(Self {
             kind: ServiceFinalityKind::AutopilotTerminal,
             subject_id,
@@ -130,7 +126,10 @@ impl ServiceFinalityItem {
 
         let subject_id = Self::subject_hash(
             ServiceFinalityKind::StorageReceipt,
-            &[&authorized.receipt.object_id, &authorized.receipt.provider_id],
+            &[
+                &authorized.receipt.object_id,
+                &authorized.receipt.provider_id,
+            ],
         )?;
         Some(Self {
             kind: ServiceFinalityKind::StorageReceipt,
@@ -254,10 +253,10 @@ impl ServiceFinalityBatch {
                 item.root,
             )
         });
-        if ordered.windows(2).any(|pair| {
-            pair[0].kind == pair[1].kind
-                && pair[0].subject_id == pair[1].subject_id
-        }) {
+        if ordered
+            .windows(2)
+            .any(|pair| pair[0].kind == pair[1].kind && pair[0].subject_id == pair[1].subject_id)
+        {
             return Err("conflicting service finality subject");
         }
         Ok(())
@@ -292,7 +291,6 @@ impl ServiceFinalityBatch {
         Some(hasher.finalize().into())
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServicePlaneRoots {
@@ -339,7 +337,6 @@ impl ServicePlaneRoots {
         Ok(())
     }
 }
-
 
 impl ServicePlaneRoots {
     pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
@@ -470,7 +467,6 @@ impl ServicePlaneCapacityEnvelope {
     }
 }
 
-
 pub(crate) fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &ServicePlaneCheckpointAuthorization,
@@ -491,7 +487,6 @@ pub(crate) fn verify_service_plane_checkpoint_and_consume<V: ContextSignatureVer
     )
 }
 
-
 pub fn verify_service_plane_checkpoint_with_finality_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &ServicePlaneCheckpointAuthorization,
@@ -500,16 +495,14 @@ pub fn verify_service_plane_checkpoint_with_finality_and_consume<V: ContextSigna
     replay: &mut AuthorizationReplayState,
 ) -> bool {
     if finality.chain_id != authorized.chain_id
-        || authorized.roots.validate_against_finality(finality).is_err()
+        || authorized
+            .roots
+            .validate_against_finality(finality)
+            .is_err()
     {
         return false;
     }
-    verify_service_plane_checkpoint_and_consume(
-        verifier,
-        authorized,
-        validation,
-        replay,
-    )
+    verify_service_plane_checkpoint_and_consume(verifier, authorized, validation, replay)
 }
 
 #[cfg(test)]
@@ -607,7 +600,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn service_finality_items_are_derived_from_authorized_epoch_bound_objects() {
         let settlement = SettlementBatchAuthorization {
@@ -644,7 +636,9 @@ mod tests {
         assert_eq!(item.source_epoch(), 7);
         assert_eq!(
             item.root(),
-            funded.canonical_root(&settlement).expect("funded settlement root")
+            funded
+                .canonical_root(&settlement)
+                .expect("funded settlement root")
         );
 
         let terminal = AutopilotLeaseTerminalAuthorization {
@@ -777,8 +771,12 @@ mod tests {
         };
         let envelope = authorized.envelope().expect("service checkpoint envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = ServicePlaneCheckpointValidationContext {
             expected_chain_id: [0xA1; 32],
@@ -833,8 +831,12 @@ mod tests {
         };
         let envelope = authorized.envelope().expect("service checkpoint envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = ServicePlaneCheckpointValidationContext {
             expected_chain_id: [0xA1; 32],
@@ -877,8 +879,12 @@ mod tests {
         };
         let envelope = authorized.envelope().expect("service checkpoint envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let mut validation = ServicePlaneCheckpointValidationContext {
             expected_chain_id: [0xA1; 32],
@@ -916,11 +922,17 @@ mod tests {
 
         let mut changed = base.clone();
         changed.service_finality_root[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("finality change"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("finality change")
+        );
 
         let mut changed = base;
         changed.payment_global_checkpoint_root[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("payment change"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("payment change")
+        );
     }
 
     #[test]

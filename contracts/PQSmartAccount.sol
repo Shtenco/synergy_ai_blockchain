@@ -59,12 +59,12 @@ contract PQSmartAccount {
 
     receive() external payable {}
 
-    function callPayloadCommitment(
+    function _callPayloadCommitmentFromHash(
         address target,
         uint256 value,
-        bytes calldata data,
+        bytes32 dataHash,
         uint64 callGasLimit
-    ) public view returns (bytes32) {
+    ) private view returns (bytes32) {
         return sha256(
             abi.encodePacked(
                 "SYNERGY/PQ-SMART-ACCOUNT-CALL/V1",
@@ -73,9 +73,20 @@ contract PQSmartAccount {
                 address(this),
                 target,
                 bytes32(value),
-                keccak256(data),
+                dataHash,
                 callGasLimit
             )
+        );
+    }
+
+    function callPayloadCommitment(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint64 callGasLimit
+    ) public view returns (bytes32) {
+        return _callPayloadCommitmentFromHash(
+            target, value, keccak256(data), callGasLimit
         );
     }
 
@@ -114,6 +125,24 @@ contract PQSmartAccount {
             txNonce,
             validUntil
         );
+    }
+
+    function _verifyAuthorization(
+        bytes32 payloadCommitment,
+        uint64 txNonce,
+        uint64 validUntil,
+        bytes calldata mlDsaSignature,
+        bytes calldata slhDsaSignature
+    ) private view {
+        bytes memory message =
+            authorizationEnvelopeMessage(payloadCommitment, txNonce, validUntil);
+        bytes memory context = fipsContext();
+        if (!PQVerify.mlDsa87(mlDsa87PublicKey, message, context, mlDsaSignature)) {
+            revert Unauthorized();
+        }
+        if (!PQVerify.slhDsa256s(slhDsaPublicKey, message, context, slhDsaSignature)) {
+            revert Unauthorized();
+        }
     }
 
     function fipsContext() public view returns (bytes memory) {
@@ -169,6 +198,39 @@ contract PQSmartAccount {
         truncated = fullReturnDataSize > maxReturnData;
     }
 
+    function _executeAuthorizedCall(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint64 callGasLimit,
+        uint64 current,
+        bytes32 callHash
+    ) private returns (bool success, bytes memory result) {
+        // All potentially reverting authorization work is complete before this
+        // helper is entered. Only bounded execution and one-shot nonce state remain.
+        bytes memory callData = data;
+        uint256 requiredGas = uint256(callGasLimit) + POST_CALL_GAS_RESERVE;
+        if (gasleft() <= requiredGas) revert InsufficientExecutionGas();
+
+        nonce = current + 1;
+        executing = true;
+        bool truncated;
+        (success, result, truncated) =
+            _boundedCall(target, value, callData, callGasLimit);
+        executing = false;
+
+        emit Executed(
+            current,
+            target,
+            value,
+            callHash,
+            success,
+            keccak256(result),
+            truncated
+        );
+        return (success, result);
+    }
+
     function execute(
         address target,
         uint256 value,
@@ -195,40 +257,23 @@ contract PQSmartAccount {
         uint64 current = nonce;
         if (current == type(uint64).max) revert Unauthorized();
         bytes32 callHash = keccak256(data);
-        bytes memory message =
-            authorizationMessage(target, value, data, callGasLimit, current, validUntil);
-        bytes memory context = fipsContext();
-
-        if (!PQVerify.mlDsa87(mlDsa87PublicKey, message, context, mlDsaSignature)) {
-            revert Unauthorized();
-        }
-        if (!PQVerify.slhDsa256s(slhDsaPublicKey, message, context, slhDsaSignature)) {
-            revert Unauthorized();
-        }
-
-        // All potentially reverting authorization and local allocation work is
-        // completed before nonce consumption. After this point the target receives
-        // only a signed, bounded gas budget and returndata copying is capped.
-        bytes memory callData = data;
-        uint256 requiredGas = uint256(callGasLimit) + POST_CALL_GAS_RESERVE;
-        if (gasleft() <= requiredGas) revert InsufficientExecutionGas();
-
-        nonce = current + 1;
-        executing = true;
-        bool truncated;
-        (success, result, truncated) =
-            _boundedCall(target, value, callData, callGasLimit);
-        executing = false;
-
-        emit Executed(
+        bytes32 payloadCommitment =
+            _callPayloadCommitmentFromHash(target, value, callHash, callGasLimit);
+        _verifyAuthorization(
+            payloadCommitment,
             current,
+            validUntil,
+            mlDsaSignature,
+            slhDsaSignature
+        );
+
+        return _executeAuthorizedCall(
             target,
             value,
-            callHash,
-            success,
-            keccak256(result),
-            truncated
+            data,
+            callGasLimit,
+            current,
+            callHash
         );
-        return (success, result);
     }
 }

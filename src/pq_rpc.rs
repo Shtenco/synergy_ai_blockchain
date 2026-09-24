@@ -53,10 +53,7 @@ impl AuthenticatedStageRequest {
             .ok_or("authenticated transport transcript required")
     }
 
-    pub fn commitment(
-        &self,
-        transcript: &TransportTranscript,
-    ) -> Option<[u8; 32]> {
+    pub fn commitment(&self, transcript: &TransportTranscript) -> Option<[u8; 32]> {
         let session_root = self.validate_against_session(transcript).ok()?;
         let mut h = Sha256::new();
         h.update(STAGE_RPC_BINDING_DOMAIN);
@@ -131,8 +128,7 @@ impl AuthenticatedStageResponse {
 mod tests {
     use super::*;
     use crate::network::{
-        RekeyPolicy, TransportPeerIdentity, TransportPolicy, TransportRole,
-        TransportTranscript,
+        RekeyPolicy, TransportPeerIdentity, TransportPolicy, TransportRole, TransportTranscript,
     };
 
     fn transcript() -> TransportTranscript {
@@ -153,7 +149,10 @@ mod tests {
                 legacy_kex_public_key: vec![],
             },
             policy: TransportPolicy::PqOnly,
-            rekey_policy: RekeyPolicy { max_messages: 100, max_seconds: 60 },
+            rekey_policy: RekeyPolicy {
+                max_messages: 100,
+                max_seconds: 60,
+            },
             ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: vec![7; crate::network::ML_KEM_1024_CIPHERTEXT_BYTES],
             classical_transcript_hash: None,
@@ -162,10 +161,15 @@ mod tests {
 
     fn request() -> AuthenticatedStageRequest {
         AuthenticatedStageRequest {
-            request_id: [5; 32], job_id: [6; 32], stage_index: 0,
-            requester_node_id: [3; 32], worker_node_id: [4; 32],
-            model_root: [7; 32], shard_root: [8; 32],
-            input_commitment: [9; 32], endpoint_root: [10; 32],
+            request_id: [5; 32],
+            job_id: [6; 32],
+            stage_index: 0,
+            requester_node_id: [3; 32],
+            worker_node_id: [4; 32],
+            model_root: [7; 32],
+            shard_root: [8; 32],
+            input_commitment: [9; 32],
+            endpoint_root: [10; 32],
             expires_at: 100,
         }
     }
@@ -181,12 +185,18 @@ mod tests {
 
     #[test]
     fn response_must_bind_exact_request_root() {
-        let t=transcript(); let r=request(); let root=r.commitment(&t).unwrap();
-        let response=AuthenticatedStageResponse {
-            request_root:root, worker_node_id:r.worker_node_id,
-            output_commitment:[11;32], trace_root:[12;32],
-            bytes_read:10, bytes_written:20, elapsed_micros:1,
+        let t = transcript();
+        let r = request();
+        let root = r.commitment(&t).unwrap();
+        let response = AuthenticatedStageResponse {
+            request_root: root,
+            worker_node_id: r.worker_node_id,
+            output_commitment: [11; 32],
+            trace_root: [12; 32],
+            bytes_read: 10,
+            bytes_written: 20,
+            elapsed_micros: 1,
         };
-        assert!(response.commitment(&r,&t).is_some());
+        assert!(response.commitment(&r, &t).is_some());
     }
 }

@@ -8,12 +8,12 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const ARCHIVE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/ARCHIVE-RECEIPT/V1\0";
 const STORAGE_PROOF_DOMAIN: &[u8] = b"SYNERGY/STORAGE-PROOF/V1\0";
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageClass {
@@ -77,13 +77,16 @@ impl ArchiveReceipt {
     }
 
     /// Archive/raw ratio in basis points: 10000 = same size, 1000 = 10x smaller.
+    /// Rounds upward so compression savings are never overstated and any
+    /// archive expansion is observable even when it is smaller than one basis point.
     pub fn archive_to_raw_bps(&self) -> Option<u64> {
         let raw = u128::from(self.raw_bytes);
         if raw == 0 {
             return None;
         }
         let numerator = u128::from(self.archive_bytes).checked_mul(10_000)?;
-        let ratio = numerator.checked_div(raw)?;
+        let rounding = raw.checked_sub(1)?;
+        let ratio = numerator.checked_add(rounding)?.checked_div(raw)?;
         u64::try_from(ratio).ok()
     }
 
@@ -149,8 +152,7 @@ impl DedupReceipt {
         if self.logical_archive_bytes != archive.archive_bytes {
             return Err("dedup logical bytes differ from archive bytes");
         }
-        if self.newly_stored_unique_bytes > 0
-            && self.catalog_root_before == self.catalog_root_after
+        if self.newly_stored_unique_bytes > 0 && self.catalog_root_before == self.catalog_root_after
         {
             return Err("dedup catalog root must change when unique bytes are stored");
         }
@@ -291,7 +293,6 @@ pub struct ProofOfStorageReceipt {
     pub served_bytes: u64,
 }
 
-
 impl ProofOfStorageReceipt {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.object_id == [0u8; 32]
@@ -405,7 +406,6 @@ pub(crate) fn verify_storage_proof<V: ContextSignatureVerifier>(
     )
 }
 
-
 pub fn verify_storage_proof_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     archive: &ArchiveReceipt,
@@ -496,9 +496,7 @@ mod tests {
     fn storage_proof_requires_registered_provider_keyset() {
         let archive = archive();
         let authorization = pq_only_authorization();
-        let provider_keyset = authorization
-            .keyset_commitment()
-            .expect("provider keyset");
+        let provider_keyset = authorization.keyset_commitment().expect("provider keyset");
         let authorized = StorageProofAuthorization {
             chain_id: [0xE1; 32],
             nonce: 9,
@@ -555,9 +553,7 @@ mod tests {
     fn storage_proof_is_bound_to_exact_unexpired_archive() {
         let archive = archive();
         let authorization = pq_only_authorization();
-        let provider_keyset = authorization
-            .keyset_commitment()
-            .expect("provider keyset");
+        let provider_keyset = authorization.keyset_commitment().expect("provider keyset");
         let mut authorized = StorageProofAuthorization {
             chain_id: [0xE1; 32],
             nonce: 9,

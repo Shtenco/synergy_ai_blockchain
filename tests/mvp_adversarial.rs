@@ -8,6 +8,7 @@ fn receipt(
     verifier: u8,
     verdict: VerificationVerdict,
     recomputed: [u8; 32],
+    completed_at: u64,
 ) -> VerifierReceipt {
     VerifierReceipt {
         challenge_id,
@@ -16,7 +17,7 @@ fn receipt(
         trace_commitment: [40 + verifier; 32],
         signature_commitment: [60 + verifier; 32],
         verdict,
-        completed_at: 5,
+        completed_at,
     }
 }
 
@@ -56,8 +57,20 @@ fn bad_worker_is_slashed_once_then_honest_retry_extends_chain() {
         closes_at: 10,
     };
     let bad_receipts = vec![
-        receipt(bad.challenge_id, 21, VerificationVerdict::Mismatch, [14; 32]),
-        receipt(bad.challenge_id, 22, VerificationVerdict::Mismatch, [14; 32]),
+        receipt(
+            bad.challenge_id,
+            21,
+            VerificationVerdict::Mismatch,
+            [14; 32],
+            5,
+        ),
+        receipt(
+            bad.challenge_id,
+            22,
+            VerificationVerdict::Mismatch,
+            [14; 32],
+            5,
+        ),
     ];
     let bad_aggregate = aggregate_verifier_receipts(&bad, &bad_receipts).unwrap();
     assert_eq!(bad_aggregate.final_verdict(), VerificationVerdict::Mismatch);
@@ -127,12 +140,14 @@ fn bad_worker_is_slashed_once_then_honest_retry_extends_chain() {
             31,
             VerificationVerdict::Match,
             good.challenged_output_commitment,
+            15,
         ),
         receipt(
             good.challenge_id,
             32,
             VerificationVerdict::Match,
             good.challenged_output_commitment,
+            15,
         ),
     ];
     let good_aggregate = aggregate_verifier_receipts(&good, &good_receipts).unwrap();

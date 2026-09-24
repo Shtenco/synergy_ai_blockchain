@@ -2,9 +2,9 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthScheme, AuthorizationDomain,
-    AuthorizationEnvelope, AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
-    HybridAuthorization, CRYPTO_PROFILE_VERSION, ML_DSA_87_PUBLIC_KEY_BYTES,
-    SECP256K1_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+    AuthorizationEnvelope, AuthorizationReplayState, AuthorizationValidationContext,
+    ContextSignatureVerifier, HybridAuthorization, CRYPTO_PROFILE_VERSION,
+    ML_DSA_87_PUBLIC_KEY_BYTES, SECP256K1_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,8 +58,7 @@ impl ValidatorIdentity {
         hasher.update(&self.ml_dsa87_public_key);
 
         hasher.update([AuthScheme::SlhDsaShake256s.protocol_code()]);
-        let slh_dsa_len =
-            u64::try_from(self.slh_dsa_shake256s_public_key.len()).ok()?;
+        let slh_dsa_len = u64::try_from(self.slh_dsa_shake256s_public_key.len()).ok()?;
         hasher.update(slh_dsa_len.to_be_bytes());
         hasher.update(&self.slh_dsa_shake256s_public_key);
 
@@ -114,17 +113,20 @@ impl ValidatorIdentity {
         if authorization.policy != policy.authorization_policy() {
             return false;
         }
-        authorization.evidence.iter().all(|evidence| match evidence.scheme {
-            AuthScheme::Secp256k1 => {
-                matches!(policy, ValidatorPolicy::HybridTransition)
-                    && evidence.public_key == self.legacy_public_key
-            }
-            AuthScheme::MlDsa87 => evidence.public_key == self.ml_dsa87_public_key,
-            AuthScheme::SlhDsaShake256s => {
-                evidence.public_key == self.slh_dsa_shake256s_public_key
-            }
-            AuthScheme::Ed25519 => false,
-        })
+        authorization
+            .evidence
+            .iter()
+            .all(|evidence| match evidence.scheme {
+                AuthScheme::Secp256k1 => {
+                    matches!(policy, ValidatorPolicy::HybridTransition)
+                        && evidence.public_key == self.legacy_public_key
+                }
+                AuthScheme::MlDsa87 => evidence.public_key == self.ml_dsa87_public_key,
+                AuthScheme::SlhDsaShake256s => {
+                    evidence.public_key == self.slh_dsa_shake256s_public_key
+                }
+                AuthScheme::Ed25519 => false,
+            })
     }
 }
 
@@ -189,14 +191,8 @@ pub(crate) fn verify_validator_vote<V: ContextSignatureVerifier>(
         max_future_seconds: validation.max_future_seconds,
     };
 
-    verify_envelope_authorization(
-        verifier,
-        &vote.authorization,
-        &envelope,
-        &auth_validation,
-    )
+    verify_envelope_authorization(verifier, &vote.authorization, &envelope, &auth_validation)
 }
-
 
 pub fn verify_validator_vote_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
@@ -210,11 +206,7 @@ pub fn verify_validator_vote_and_consume<V: ContextSignatureVerifier>(
         return false;
     }
     let envelope = vote.envelope();
-    replay.consume_verified_for_subject(
-        &vote.authorization,
-        &envelope,
-        identity.validator_id,
-    )
+    replay.consume_verified_for_subject(&vote.authorization, &envelope, identity.validator_id)
 }
 
 #[cfg(test)]
@@ -339,18 +331,25 @@ mod tests {
     fn validator_id_rejects_pq_key_substitution() {
         let mut identity = identity_for(ValidatorPolicy::PqOnly);
         identity.ml_dsa87_public_key[0] ^= 1;
-        assert!(identity.validate_for_policy(ValidatorPolicy::PqOnly).is_err());
+        assert!(identity
+            .validate_for_policy(ValidatorPolicy::PqOnly)
+            .is_err());
     }
 
     #[test]
     fn pq_only_validator_identity_rejects_legacy_key_material() {
         let mut identity = identity_for(ValidatorPolicy::PqOnly);
-        assert_eq!(identity.validate_for_policy(ValidatorPolicy::PqOnly), Ok(()));
+        assert_eq!(
+            identity.validate_for_policy(ValidatorPolicy::PqOnly),
+            Ok(())
+        );
 
         let mut legacy = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
         legacy[0] = 0x02;
         identity.legacy_public_key = legacy;
-        assert!(identity.validate_for_policy(ValidatorPolicy::PqOnly).is_err());
+        assert!(identity
+            .validate_for_policy(ValidatorPolicy::PqOnly)
+            .is_err());
     }
 
     #[test]
@@ -378,14 +377,14 @@ mod tests {
     #[test]
     fn validator_vote_rejects_policy_downgrade_and_key_substitution() {
         let identity = identity_for(ValidatorPolicy::HybridTransition);
-        let mut vote = vote(ValidatorPolicy::HybridTransition);
-        let envelope = vote.envelope();
+        let mut candidate_vote = vote(ValidatorPolicy::HybridTransition);
+        let envelope = candidate_vote.envelope();
         let verifier = ExpectedVerifier {
             message: envelope
-                .canonical_message(vote.authorization.policy)
+                .canonical_message(candidate_vote.authorization.policy)
                 .expect("canonical vote"),
             context: envelope
-                .fips_signature_context(vote.authorization.policy)
+                .fips_signature_context(candidate_vote.authorization.policy)
                 .expect("vote context"),
         };
 
@@ -393,16 +392,16 @@ mod tests {
             &verifier,
             ValidatorPolicy::HybridTransition,
             &identity,
-            &vote,
+            &candidate_vote,
             &validation(),
         ));
 
-        vote.authorization.policy = AuthPolicy::Online;
+        candidate_vote.authorization.policy = AuthPolicy::Online;
         assert!(!verify_validator_vote(
             &verifier,
             ValidatorPolicy::HybridTransition,
             &identity,
-            &vote,
+            &candidate_vote,
             &validation(),
         ));
 

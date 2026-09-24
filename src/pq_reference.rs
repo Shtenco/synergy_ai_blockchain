@@ -43,11 +43,10 @@ impl Drop for InternalCapabilityId {
 
 use ml_kem::{
     ml_kem_1024::{
-        Ciphertext as MlKem1024Ciphertext,
-        DecapsulationKey as MlKem1024DecapsulationKey,
+        Ciphertext as MlKem1024Ciphertext, DecapsulationKey as MlKem1024DecapsulationKey,
         EncapsulationKey as MlKem1024EncapsulationKey,
     },
-    B32, Decapsulate, Generate, Key, KeyExport,
+    Decapsulate, Generate, Key, KeyExport, B32,
 };
 
 /// Opaque local handle for one ML-KEM-1024 decapsulation key.
@@ -77,7 +76,6 @@ impl Drop for MlKemSecretHandle {
         zeroize::Zeroize::zeroize(&mut self.0);
     }
 }
-
 
 /// Reference ML-KEM provider.
 ///
@@ -117,11 +115,15 @@ impl ReferenceMlKem1024Provider {
         }
         let handle = selected?;
 
-        if self.secrets.insert(InternalCapabilityId::from(*handle.as_id_bytes()), dk).is_some() {
+        if self
+            .secrets
+            .insert(InternalCapabilityId::from(*handle.as_id_bytes()), dk)
+            .is_some()
+        {
             return None;
         }
 
-        Some((handle, ek.to_bytes().as_ref().to_vec()))
+        Some((handle, ek.to_bytes().as_slice().to_vec()))
     }
 
     pub fn remove_key(&mut self, handle: &MlKemSecretHandle) -> bool {
@@ -158,7 +160,7 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
 
         let wrapped = MlKemSharedSecret::try_from_slice(shared.as_ref());
         zeroize::Zeroize::zeroize(&mut shared);
-        wrapped.map(|wrapped| (ciphertext.as_ref().to_vec(), wrapped))
+        wrapped.map(|wrapped| (ciphertext.as_slice().to_vec(), wrapped))
     }
 
     fn decapsulate(
@@ -178,16 +180,20 @@ impl MlKem1024Provider for ReferenceMlKem1024Provider {
     }
 }
 
-
-/// Reference ML-DSA-87 signer with opaque key handles.
+/// Reference dual-PQ signer with opaque key handles.
 ///
-/// This signer intentionally supports ML-DSA only. The pinned stable
-/// `slh-dsa = 0.1.0` dependency does not provide zeroize-on-drop for signing
-/// keys, so SLH signing remains verification-only until a reviewed zeroizing
-/// backend (or HSM/keystore integration) is selected.
+/// ML-DSA-87 uses RustCrypto's zeroizing signing-key type. SLH-DSA-SHAKE-256s
+/// uses the pinned `fips205` backend whose private-key type derives
+/// `Zeroize + ZeroizeOnDrop`. Protocol code receives only opaque handles.
+struct SlhDsaSigningMaterial {
+    secret: fips205::slh_dsa_shake_256s::PrivateKey,
+    public_key: [u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+}
+
 #[derive(Default)]
 pub struct ReferencePqSigner {
     ml_dsa_keys: BTreeMap<InternalCapabilityId, ml_dsa::SigningKey<ml_dsa::MlDsa87>>,
+    slh_dsa_keys: BTreeMap<InternalCapabilityId, SlhDsaSigningMaterial>,
 }
 
 impl ReferencePqSigner {
@@ -197,6 +203,7 @@ impl ReferencePqSigner {
 
     pub fn contains_key(&self, handle: &PqSigningKeyHandle) -> bool {
         self.ml_dsa_keys.contains_key(handle.as_id_bytes())
+            || self.slh_dsa_keys.contains_key(handle.as_id_bytes())
     }
 
     fn try_allocate_handle(&self) -> Option<PqSigningKeyHandle> {
@@ -207,7 +214,9 @@ impl ReferencePqSigner {
             let mut handle_bytes = [0u8; 32];
             rng.try_fill_bytes(&mut handle_bytes).ok()?;
             if let Some(handle) = PqSigningKeyHandle::from_random_bytes(handle_bytes) {
-                if !self.ml_dsa_keys.contains_key(handle.as_id_bytes()) {
+                if !self.ml_dsa_keys.contains_key(handle.as_id_bytes())
+                    && !self.slh_dsa_keys.contains_key(handle.as_id_bytes())
+                {
                     return Some(handle);
                 }
             }
@@ -217,28 +226,47 @@ impl ReferencePqSigner {
 }
 
 impl ContextSignatureSigner for ReferencePqSigner {
-    fn generate_keypair(
-        &mut self,
-        scheme: AuthScheme,
-    ) -> Option<(PqSigningKeyHandle, Vec<u8>)> {
-        use ml_dsa::{Generate, Keypair, MlDsa87, SigningKey};
+    fn generate_keypair(&mut self, scheme: AuthScheme) -> Option<(PqSigningKeyHandle, Vec<u8>)> {
+        match scheme {
+            AuthScheme::MlDsa87 => {
+                use ml_dsa::{Generate, Keypair, MlDsa87, SigningKey};
 
-        if scheme != AuthScheme::MlDsa87 {
-            return None;
+                let signing_key = SigningKey::<MlDsa87>::try_generate().ok()?;
+                let public_key = signing_key.verifying_key().encode().to_vec();
+                let handle = self.try_allocate_handle()?;
+                if self
+                    .ml_dsa_keys
+                    .insert(
+                        InternalCapabilityId::from(*handle.as_id_bytes()),
+                        signing_key,
+                    )
+                    .is_some()
+                {
+                    return None;
+                }
+                Some((handle, public_key))
+            }
+            AuthScheme::SlhDsaShake256s => {
+                use fips205::traits::SerDes;
+
+                let (public_key, signing_key) = fips205::slh_dsa_shake_256s::try_keygen().ok()?;
+                let public_key = public_key.into_bytes();
+                let handle = self.try_allocate_handle()?;
+                let material = SlhDsaSigningMaterial {
+                    secret: signing_key,
+                    public_key,
+                };
+                if self
+                    .slh_dsa_keys
+                    .insert(InternalCapabilityId::from(*handle.as_id_bytes()), material)
+                    .is_some()
+                {
+                    return None;
+                }
+                Some((handle, public_key.to_vec()))
+            }
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => None,
         }
-
-        let signing_key = SigningKey::<MlDsa87>::try_generate().ok()?;
-        let public_key = signing_key.verifying_key().encode().to_vec();
-        let handle = self.try_allocate_handle()?;
-
-        if self
-            .ml_dsa_keys
-            .insert(InternalCapabilityId::from(*handle.as_id_bytes()), signing_key)
-            .is_some() {
-            return None;
-        }
-
-        Some((handle, public_key))
     }
 
     fn public_key(
@@ -246,13 +274,18 @@ impl ContextSignatureSigner for ReferencePqSigner {
         scheme: AuthScheme,
         secret_key_handle: &PqSigningKeyHandle,
     ) -> Option<Vec<u8>> {
-        use ml_dsa::Keypair;
-
-        if scheme != AuthScheme::MlDsa87 {
-            return None;
+        match scheme {
+            AuthScheme::MlDsa87 => {
+                use ml_dsa::Keypair;
+                let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
+                Some(signing_key.verifying_key().encode().to_vec())
+            }
+            AuthScheme::SlhDsaShake256s => self
+                .slh_dsa_keys
+                .get(secret_key_handle.as_id_bytes())
+                .map(|material| material.public_key.to_vec()),
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => None,
         }
-        let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
-        Some(signing_key.verifying_key().encode().to_vec())
     }
 
     fn sign_with_context(
@@ -262,31 +295,45 @@ impl ContextSignatureSigner for ReferencePqSigner {
         message: &[u8],
         context: &[u8],
     ) -> Option<Vec<u8>> {
-        use ml_dsa::SignatureEncoding;
-
-        if scheme != AuthScheme::MlDsa87 || context.len() > 255 {
+        if context.len() > 255 {
             return None;
         }
 
-        let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
-        signing_key
-            .expanded_key()
-            .sign_deterministic(message, context)
-            .ok()
-            .map(|signature| signature.to_vec())
+        match scheme {
+            AuthScheme::MlDsa87 => {
+                use ml_dsa::SignatureEncoding;
+                let signing_key = self.ml_dsa_keys.get(secret_key_handle.as_id_bytes())?;
+                signing_key
+                    .expanded_key()
+                    .sign_deterministic(message, context)
+                    .ok()
+                    .map(|signature| signature.to_vec())
+            }
+            AuthScheme::SlhDsaShake256s => {
+                use fips205::traits::Signer;
+                let material = self.slh_dsa_keys.get(secret_key_handle.as_id_bytes())?;
+                material
+                    .secret
+                    .try_sign(message, context, true)
+                    .ok()
+                    .map(|signature| signature.to_vec())
+            }
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => None,
+        }
     }
 
-    fn remove_key(
-        &mut self,
-        scheme: AuthScheme,
-        secret_key_handle: &PqSigningKeyHandle,
-    ) -> bool {
-        if scheme != AuthScheme::MlDsa87 {
-            return false;
+    fn remove_key(&mut self, scheme: AuthScheme, secret_key_handle: &PqSigningKeyHandle) -> bool {
+        match scheme {
+            AuthScheme::MlDsa87 => self
+                .ml_dsa_keys
+                .remove(secret_key_handle.as_id_bytes())
+                .is_some(),
+            AuthScheme::SlhDsaShake256s => self
+                .slh_dsa_keys
+                .remove(secret_key_handle.as_id_bytes())
+                .is_some(),
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => false,
         }
-        self.ml_dsa_keys
-            .remove(secret_key_handle.as_id_bytes())
-            .is_some()
     }
 }
 
@@ -307,7 +354,9 @@ impl SignatureVerifier for ReferencePqSignatureVerifier {
     ) -> bool {
         match scheme {
             AuthScheme::MlDsa87 => verify_ml_dsa_87(public_key, message, signature),
-            AuthScheme::SlhDsaShake256s => verify_slh_dsa_shake_256s(public_key, message, signature),
+            AuthScheme::SlhDsaShake256s => {
+                verify_slh_dsa_shake_256s(public_key, message, signature)
+            }
             AuthScheme::Secp256k1 | AuthScheme::Ed25519 => false,
         }
     }
@@ -385,8 +434,8 @@ fn verify_ml_dsa_87_with_context(
 }
 
 fn verify_slh_dsa_shake_256s(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
-    use slh_dsa::{Shake256s, Signature, VerifyingKey};
     use slh_dsa::signature::Verifier;
+    use slh_dsa::{Shake256s, Signature, VerifyingKey};
 
     if public_key.len() != SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES
         || signature.len() != SLH_DSA_SHAKE_256S_SIGNATURE_BYTES
@@ -441,11 +490,15 @@ mod tests {
     #[test]
     fn ml_kem_1024_real_round_trip() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
+        let (handle, public_key) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
         assert!(provider.contains_key(&handle));
 
         let (ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
-        let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("decapsulation");
+        let receiver_shared = provider
+            .decapsulate(&handle, &ciphertext)
+            .expect("decapsulation");
 
         assert_eq!(sender_shared.as_bytes(), receiver_shared.as_bytes());
         assert_eq!(sender_shared.as_bytes().len(), 32);
@@ -472,8 +525,12 @@ mod tests {
     #[test]
     fn ml_kem_handles_are_nonzero_and_unique_while_live() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (h1, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
-        let (h2, _) = provider.try_generate_keypair().expect("ML-KEM key generation");
+        let (h1, _) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
+        let (h2, _) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
 
         assert!(!h1.is_zero());
         assert!(!h2.is_zero());
@@ -485,7 +542,9 @@ mod tests {
     #[test]
     fn ml_kem_remove_key_revokes_handle_and_drops_private_key() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
+        let (handle, public_key) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
         let (ciphertext, _) = provider.encapsulate(&public_key).expect("encapsulation");
 
         assert!(provider.contains_key(&handle));
@@ -520,50 +579,57 @@ mod tests {
     #[test]
     fn ml_kem_corrupted_ciphertext_does_not_recover_original_secret() {
         let mut provider = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = provider.try_generate_keypair().expect("ML-KEM key generation");
-        let (mut ciphertext, sender_shared) = provider.encapsulate(&public_key).expect("encapsulation");
+        let (handle, public_key) = provider
+            .try_generate_keypair()
+            .expect("ML-KEM key generation");
+        let (mut ciphertext, sender_shared) =
+            provider.encapsulate(&public_key).expect("encapsulation");
         ciphertext[0] ^= 0x01;
-        let receiver_shared = provider.decapsulate(&handle, &ciphertext).expect("implicit rejection");
+        let receiver_shared = provider
+            .decapsulate(&handle, &ciphertext)
+            .expect("implicit rejection");
         assert_ne!(sender_shared.as_bytes(), receiver_shared.as_bytes());
     }
 
     #[test]
     fn serialized_size_guards_fail_closed_before_crypto_parsing() {
         let mut kem = ReferenceMlKem1024Provider::new();
-        let (handle, public_key) = kem
-            .try_generate_keypair()
-            .expect("ML-KEM key generation");
+        let (handle, public_key) = kem.try_generate_keypair().expect("ML-KEM key generation");
         let (ciphertext, _) = kem.encapsulate(&public_key).expect("encapsulation");
 
         assert_eq!(public_key.len(), ML_KEM_1024_PUBLIC_KEY_BYTES);
         assert_eq!(ciphertext.len(), ML_KEM_1024_CIPHERTEXT_BYTES);
-        assert!(kem.encapsulate(&public_key[..public_key.len() - 1]).is_none());
-        assert!(kem.decapsulate(&handle, &ciphertext[..ciphertext.len() - 1]).is_none());
+        assert!(kem
+            .encapsulate(&public_key[..public_key.len() - 1])
+            .is_none());
+        assert!(kem
+            .decapsulate(&handle, &ciphertext[..ciphertext.len() - 1])
+            .is_none());
 
         let verifier = ReferencePqSignatureVerifier;
         assert!(!verifier.verify(
             AuthScheme::MlDsa87,
-            &vec![0u8; ML_DSA_87_PUBLIC_KEY_BYTES - 1],
+            &[0u8; ML_DSA_87_PUBLIC_KEY_BYTES - 1],
             b"m",
-            &vec![0u8; ML_DSA_87_SIGNATURE_BYTES],
+            &[0u8; ML_DSA_87_SIGNATURE_BYTES],
         ));
         assert!(!verifier.verify(
             AuthScheme::MlDsa87,
-            &vec![0u8; ML_DSA_87_PUBLIC_KEY_BYTES],
+            &[0u8; ML_DSA_87_PUBLIC_KEY_BYTES],
             b"m",
-            &vec![0u8; ML_DSA_87_SIGNATURE_BYTES + 1],
+            &[0u8; ML_DSA_87_SIGNATURE_BYTES + 1],
         ));
         assert!(!verifier.verify(
             AuthScheme::SlhDsaShake256s,
-            &vec![0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES + 1],
+            &[0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES + 1],
             b"m",
-            &vec![0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+            &[0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
         ));
         assert!(!verifier.verify(
             AuthScheme::SlhDsaShake256s,
-            &vec![0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+            &[0u8; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
             b"m",
-            &vec![0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES - 1],
+            &[0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES - 1],
         ));
     }
 
@@ -584,7 +650,10 @@ mod tests {
 
     #[test]
     fn ml_dsa_reference_signer_uses_opaque_handle_and_context() {
-        use crate::pq::{ContextSignatureSigner, sign_envelope_evidence, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope};
+        use crate::pq::{
+            sign_envelope_evidence, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+            ContextSignatureSigner,
+        };
 
         let envelope = AuthorizationEnvelope {
             chain_id: [0x81; 32],
@@ -596,7 +665,7 @@ mod tests {
         };
 
         let mut signer = ReferencePqSigner::new();
-        let (handle, public_key) = signer
+        let (handle, _public_key) = signer
             .generate_keypair(AuthScheme::MlDsa87)
             .expect("ML-DSA keypair");
         assert!(signer.contains_key(&handle));
@@ -623,7 +692,9 @@ mod tests {
 
         let mut wrong_domain = envelope.clone();
         wrong_domain.domain = AuthorizationDomain::Governance;
-        let wrong_context = wrong_domain.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+        let wrong_context = wrong_domain
+            .fips_signature_context(AuthPolicy::PqOnly)
+            .unwrap();
         assert!(!verifier.verify_with_context(
             AuthScheme::MlDsa87,
             &evidence.public_key,
@@ -645,11 +716,42 @@ mod tests {
     }
 
     #[test]
-    fn reference_signer_rejects_slh_until_zeroizing_backend_exists() {
+    fn slh_reference_signer_is_zeroizing_and_cross_verifies() {
         use crate::pq::ContextSignatureSigner;
 
         let mut signer = ReferencePqSigner::new();
-        assert!(signer.generate_keypair(AuthScheme::SlhDsaShake256s).is_none());
+        let (handle, public_key) = signer
+            .generate_keypair(AuthScheme::SlhDsaShake256s)
+            .expect("SLH-DSA keypair");
+        assert!(signer.contains_key(&handle));
+
+        let message = b"SYNERGY/PQ/SLH-LIVE/v1";
+        let context = b"SYNERGY/context/live-signer";
+        let signature = signer
+            .sign_with_context(AuthScheme::SlhDsaShake256s, &handle, message, context)
+            .expect("SLH-DSA context signature");
+
+        let verifier = ReferencePqSignatureVerifier;
+        assert!(verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            message,
+            context,
+            &signature,
+        ));
+        assert!(!verifier.verify_with_context(
+            AuthScheme::SlhDsaShake256s,
+            &public_key,
+            b"tampered",
+            context,
+            &signature,
+        ));
+
+        assert!(signer.remove_key(AuthScheme::SlhDsaShake256s, &handle));
+        assert!(!signer.contains_key(&handle));
+        assert!(signer
+            .sign_with_context(AuthScheme::SlhDsaShake256s, &handle, message, context,)
+            .is_none());
         assert!(signer.generate_keypair(AuthScheme::Secp256k1).is_none());
     }
 
@@ -667,20 +769,24 @@ mod tests {
         assert!(!verifier.verify(AuthScheme::MlDsa87, &public_key, b"tampered", &signature));
 
         let mut corrupted = signature.clone();
-        corrupted[corrupted.len() / 2] ^= 0x80;
+        let corruption_index = corrupted.len() / 2;
+        corrupted[corruption_index] ^= 0x80;
         assert!(!verifier.verify(AuthScheme::MlDsa87, &public_key, message, &corrupted));
     }
 
     #[test]
     fn slh_dsa_shake_256s_real_sign_verify_and_negative_message() {
-        use slh_dsa::{Shake256s, SigningKey};
         use slh_dsa::signature::{Keypair, Signer};
+        use slh_dsa::{Shake256s, SigningKey};
 
         let mut rng = rand::thread_rng();
         let signing_key = SigningKey::<Shake256s>::new(&mut rng);
         let public_key = signing_key.verifying_key().to_vec();
         let message = b"SYNERGY/PQ/COLD/v1";
-        let signature = signing_key.try_sign(message).expect("SLH-DSA sign").to_vec();
+        let signature = signing_key
+            .try_sign(message)
+            .expect("SLH-DSA sign")
+            .to_vec();
 
         let verifier = ReferencePqSignatureVerifier;
         assert!(verifier.verify(
@@ -745,8 +851,8 @@ mod tests {
 
     #[test]
     fn slh_dsa_shake_256s_fips_context_is_cryptographically_enforced() {
-        use slh_dsa::{Shake256s, SigningKey};
         use slh_dsa::signature::Keypair;
+        use slh_dsa::{Shake256s, SigningKey};
 
         let mut rng = rand::thread_rng();
         let signing_key = SigningKey::<Shake256s>::new(&mut rng);
@@ -797,11 +903,10 @@ mod tests {
             AuthorizationEnvelope, HybridAuthorization, SignatureEvidence,
         };
         use ml_dsa::{
-            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding,
-            SigningKey as MlSigningKey,
+            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, SigningKey as MlSigningKey,
         };
-        use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
         use slh_dsa::signature::Keypair as SlhKeypair;
+        use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
 
         let envelope = AuthorizationEnvelope {
             chain_id: [0x31; 32],
@@ -848,10 +953,7 @@ mod tests {
 
         let verifier = ReferencePqSignatureVerifier;
         assert!(verify_authorization_with_context(
-            &verifier,
-            &auth,
-            &message,
-            &context,
+            &verifier, &auth, &message, &context,
         ));
 
         let mut wrong_domain = envelope.clone();
@@ -866,9 +968,7 @@ mod tests {
             &wrong_context,
         ));
 
-        let wrong_policy_context = envelope
-            .fips_signature_context(AuthPolicy::Max)
-            .unwrap();
+        let wrong_policy_context = envelope.fips_signature_context(AuthPolicy::Max).unwrap();
         assert!(!verify_authorization_with_context(
             &verifier,
             &auth,
@@ -880,12 +980,14 @@ mod tests {
     #[test]
     fn pq_only_authorization_verifies_two_independent_real_pq_lanes() {
         use crate::pq::{
-            verify_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-            HybridAuthorization, SignatureEvidence,
+            verify_authorization_with_context, AuthPolicy, AuthorizationDomain,
+            AuthorizationEnvelope, HybridAuthorization, SignatureEvidence,
         };
-        use ml_dsa::{Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, Signer as MlSigner, SigningKey as MlSigningKey};
+        use ml_dsa::{
+            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, SigningKey as MlSigningKey,
+        };
+        use slh_dsa::signature::Keypair as SlhKeypair;
         use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
-        use slh_dsa::signature::{Keypair as SlhKeypair, Signer as SlhSigner};
 
         let envelope = AuthorizationEnvelope {
             chain_id: [1; 32],
@@ -896,15 +998,23 @@ mod tests {
             payload_commitment: [2; 32],
         };
         let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
 
         let ml_sk = MlSigningKey::<MlDsa87>::generate();
         let ml_pk = ml_sk.verifying_key().encode().to_vec();
-        let ml_sig = ml_sk.sign(&message).to_vec();
+        let ml_sig = ml_sk
+            .expanded_key()
+            .sign_deterministic(&message, &context)
+            .expect("ML-DSA FIPS-context sign")
+            .to_vec();
 
         let mut rng = rand::thread_rng();
         let slh_sk = SlhSigningKey::<Shake256s>::new(&mut rng);
         let slh_pk = slh_sk.verifying_key().to_vec();
-        let slh_sig = slh_sk.try_sign(&message).expect("SLH-DSA sign").to_vec();
+        let slh_sig = slh_sk
+            .try_sign_with_context(&message, &context, None)
+            .expect("SLH-DSA FIPS-context sign")
+            .to_vec();
 
         let auth = HybridAuthorization {
             policy: AuthPolicy::PqOnly,
@@ -922,28 +1032,33 @@ mod tests {
             ],
         };
 
-        assert!(verify_authorization(&ReferencePqSignatureVerifier, &auth, &message));
-
-        let wrong_policy_message = envelope.canonical_message(AuthPolicy::Online).unwrap();
-        assert!(!verify_authorization(
+        assert!(verify_authorization_with_context(
             &ReferencePqSignatureVerifier,
             &auth,
-            &wrong_policy_message
+            &message,
+            &context,
+        ));
+
+        let wrong_policy_message = envelope.canonical_message(AuthPolicy::Online).unwrap();
+        assert!(!verify_authorization_with_context(
+            &ReferencePqSignatureVerifier,
+            &auth,
+            &wrong_policy_message,
+            &context,
         ));
     }
 
     #[test]
     fn max_authorization_requires_classical_and_both_real_pq_lanes() {
         use crate::pq::{
-            verify_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-            HybridAuthorization, SchemeRoutedVerifier, SignatureEvidence,
+            verify_authorization_with_context, AuthPolicy, AuthorizationDomain,
+            AuthorizationEnvelope, HybridAuthorization, SchemeRoutedVerifier, SignatureEvidence,
         };
         use ml_dsa::{
-            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, Signer as MlSigner,
-            SigningKey as MlSigningKey,
+            Generate, Keypair as MlKeypair, MlDsa87, SignatureEncoding, SigningKey as MlSigningKey,
         };
+        use slh_dsa::signature::Keypair as SlhKeypair;
         use slh_dsa::{Shake256s, SigningKey as SlhSigningKey};
-        use slh_dsa::signature::{Keypair as SlhKeypair, Signer as SlhSigner};
 
         #[derive(Clone, Copy)]
         struct TestClassicalVerifier;
@@ -957,8 +1072,13 @@ mod tests {
                 signature: &[u8],
             ) -> bool {
                 scheme == AuthScheme::Secp256k1
-                    && public_key == b"classical-key"
-                    && signature == b"classical-signature"
+                    && public_key.len()
+                        == AuthScheme::Secp256k1.expected_public_key_bytes().unwrap()
+                    && public_key.first() == Some(&0x02)
+                    && signature.len() == AuthScheme::Secp256k1.expected_signature_bytes().unwrap()
+                    && signature[31] == 1
+                    && signature[63] == 1
+                    && signature[64] == 0
                     && !message.is_empty()
             }
         }
@@ -972,28 +1092,45 @@ mod tests {
             payload_commitment: [0x22; 32],
         };
         let message = envelope.canonical_message(AuthPolicy::Max).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::Max).unwrap();
 
         let ml_sk = MlSigningKey::<MlDsa87>::generate();
         let ml_pk = ml_sk.verifying_key().encode().to_vec();
-        let ml_sig = ml_sk.sign(&message).to_vec();
+        let ml_sig = ml_sk
+            .expanded_key()
+            .sign_deterministic(&message, &context)
+            .expect("ML-DSA FIPS-context sign")
+            .to_vec();
 
         let mut rng = rand::thread_rng();
         let slh_sk = SlhSigningKey::<Shake256s>::new(&mut rng);
         let slh_pk = slh_sk.verifying_key().to_vec();
-        let slh_sig = slh_sk.try_sign(&message).expect("SLH-DSA sign").to_vec();
+        let slh_sig = slh_sk
+            .try_sign_with_context(&message, &context, None)
+            .expect("SLH-DSA FIPS-context sign")
+            .to_vec();
 
         let verifier = SchemeRoutedVerifier {
             classical: TestClassicalVerifier,
             pq: ReferencePqSignatureVerifier,
         };
 
+        let mut classical_public_key =
+            vec![1; AuthScheme::Secp256k1.expected_public_key_bytes().unwrap()];
+        classical_public_key[0] = 0x02;
+        let mut classical_signature =
+            vec![0; AuthScheme::Secp256k1.expected_signature_bytes().unwrap()];
+        classical_signature[31] = 1;
+        classical_signature[63] = 1;
+        classical_signature[64] = 0;
+
         let mut auth = HybridAuthorization {
             policy: AuthPolicy::Max,
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: b"classical-key".to_vec(),
-                    signature: b"classical-signature".to_vec(),
+                    public_key: classical_public_key,
+                    signature: classical_signature,
                 },
                 SignatureEvidence {
                     scheme: AuthScheme::MlDsa87,
@@ -1008,10 +1145,14 @@ mod tests {
             ],
         };
 
-        assert!(verify_authorization(&verifier, &auth, &message));
+        assert!(verify_authorization_with_context(
+            &verifier, &auth, &message, &context,
+        ));
 
-        auth.evidence[0].signature = b"wrong-classical-signature".to_vec();
-        assert!(!verify_authorization(&verifier, &auth, &message));
+        auth.evidence[0].signature[31] = 2;
+        assert!(!verify_authorization_with_context(
+            &verifier, &auth, &message, &context,
+        ));
     }
 
     #[test]

@@ -7,7 +7,8 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 pub const MAX_INFERENCE_STAGES: usize = 65_536;
@@ -177,7 +178,6 @@ impl InferenceStageReceipt {
     }
 }
 
-
 impl InferenceStageReceipt {
     pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
         if self.output_commitment == [0; 32]
@@ -313,7 +313,6 @@ impl InferenceOutcome {
     }
 }
 
-
 pub fn verify_inference_receipt_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     assignment: &InferenceStageAssignment,
@@ -399,7 +398,11 @@ mod tests {
         InferenceStageAssignment {
             job_id: [1; 32],
             stage_index: index,
-            kind: if index == 0 { InferenceStageKind::Prefill } else { InferenceStageKind::Decode },
+            kind: if index == 0 {
+                InferenceStageKind::Prefill
+            } else {
+                InferenceStageKind::Decode
+            },
             worker_id: [10 + index as u8; 32],
             model_shard_commitment: [20 + index as u8; 32],
             input_commitment: [30 + index as u8; 32],
@@ -640,7 +643,6 @@ mod tests {
             &validation,
         ));
 
-        let mut authorized = authorized;
         authorized.authorization = pq_only_authorization();
         authorized.receipt.worker_id = [0xFF; 32];
         assert!(!verify_inference_receipt(

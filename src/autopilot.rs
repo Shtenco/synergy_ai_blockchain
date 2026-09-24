@@ -158,7 +158,8 @@ mod tests {
         assert!(p.validate().is_err());
 
         p.valid_until = 100;
-        p.allowed_capabilities.push(AutopilotCapability::PreparePayment);
+        p.allowed_capabilities
+            .push(AutopilotCapability::PreparePayment);
         assert!(p.validate().is_err());
 
         p.allowed_capabilities.pop();

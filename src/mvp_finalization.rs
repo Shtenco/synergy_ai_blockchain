@@ -165,8 +165,16 @@ mod tests {
     fn match_finalizes_from_real_receipt_set_without_slash() {
         let c = challenge();
         let receipts = vec![
-            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
-            receipt(6, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
+            receipt(
+                6,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
         ];
         let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
         let s = ComputeSettlement {
@@ -182,14 +190,8 @@ mod tests {
             slash_root: None,
             refund_amount: 0,
         };
-        let cp = finalize_mvp_checkpoint(
-            &base_input(a.receipt_root),
-            &c,
-            &receipts,
-            &s,
-            None,
-        )
-        .expect("checkpoint");
+        let cp = finalize_mvp_checkpoint(&base_input(a.receipt_root), &c, &receipts, &s, None)
+            .expect("checkpoint");
         assert!(cp.commitment().is_some());
     }
 
@@ -197,7 +199,11 @@ mod tests {
     fn mismatch_requires_exact_slash_root_from_same_receipts() {
         let c = challenge();
         let receipts = vec![
-            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
             receipt(6, VerificationVerdict::Mismatch, [99; 32]),
         ];
         let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
@@ -248,8 +254,16 @@ mod tests {
     fn forged_verification_root_is_rejected() {
         let c = challenge();
         let receipts = vec![
-            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
-            receipt(6, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
+            receipt(
+                6,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
         ];
         let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
         let s = ComputeSettlement {
@@ -265,13 +279,6 @@ mod tests {
             slash_root: None,
             refund_amount: 0,
         };
-        assert!(finalize_mvp_checkpoint(
-            &base_input([88; 32]),
-            &c,
-            &receipts,
-            &s,
-            None,
-        )
-        .is_err());
+        assert!(finalize_mvp_checkpoint(&base_input([88; 32]), &c, &receipts, &s, None,).is_err());
     }
 }

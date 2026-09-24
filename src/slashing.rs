@@ -1,7 +1,7 @@
 //! One-shot worker slashing bound to canonical verification evidence.
 
-use sha2::{Digest, Sha256};
 use crate::verification::{VerificationAggregate, VerificationChallenge, VerificationVerdict};
+use sha2::{Digest, Sha256};
 
 pub const WORKER_SLASH_DOMAIN: &[u8] = b"SYNERGY/WORKER-SLASH/V1\0";
 
@@ -37,7 +37,11 @@ impl WorkerSlash {
         if self.state != SlashState::Open {
             return Err("worker slash already consumed");
         }
-        if self.slash_id == [0; 32] || self.worker_id == [0; 32] || self.amount == 0 || self.epoch == 0 {
+        if self.slash_id == [0; 32]
+            || self.worker_id == [0; 32]
+            || self.amount == 0
+            || self.epoch == 0
+        {
             return Err("worker slash fields required");
         }
         if self.job_id != challenge.job_id
@@ -88,39 +92,60 @@ mod tests {
 
     fn challenge() -> VerificationChallenge {
         VerificationChallenge {
-            challenge_id: [1; 32], job_id: [2; 32],
+            challenge_id: [1; 32],
+            job_id: [2; 32],
             challenged_output_commitment: [3; 32],
-            sample_seed_commitment: [4; 32], required_replications: 2,
-            opened_at: 10, closes_at: 20,
+            sample_seed_commitment: [4; 32],
+            required_replications: 2,
+            opened_at: 10,
+            closes_at: 20,
         }
     }
 
     fn mismatch() -> VerificationAggregate {
         VerificationAggregate {
-            challenge_id: [1; 32], receipt_root: [5; 32],
-            distinct_verifiers: 2, matches: 1, mismatches: 1, inconclusive: 0,
+            challenge_id: [1; 32],
+            receipt_root: [5; 32],
+            distinct_verifiers: 2,
+            matches: 1,
+            mismatches: 1,
+            inconclusive: 0,
         }
     }
 
     fn slash() -> WorkerSlash {
         WorkerSlash {
-            slash_id: [6; 32], job_id: [2; 32], worker_id: [7; 32],
-            challenged_output_commitment: [3; 32], verification_receipt_root: [5; 32],
-            amount: 100, epoch: 1, state: SlashState::Open,
+            slash_id: [6; 32],
+            job_id: [2; 32],
+            worker_id: [7; 32],
+            challenged_output_commitment: [3; 32],
+            verification_receipt_root: [5; 32],
+            amount: 100,
+            epoch: 1,
+            state: SlashState::Open,
         }
     }
 
     #[test]
     fn confirmed_mismatch_can_be_slashed_once() {
-        let c=challenge(); let a=mismatch(); let mut s=slash();
-        assert!(s.consume_once(&c,&a).is_ok());
-        assert!(s.consume_once(&c,&a).is_err());
+        let c = challenge();
+        let a = mismatch();
+        let mut s = slash();
+        assert!(s.consume_once(&c, &a).is_ok());
+        assert!(s.consume_once(&c, &a).is_err());
     }
 
     #[test]
     fn all_match_cannot_be_slashed() {
-        let c=challenge();
-        let a=VerificationAggregate{challenge_id:[1;32],receipt_root:[5;32],distinct_verifiers:2,matches:2,mismatches:0,inconclusive:0};
-        assert!(slash().canonical_root(&c,&a).is_none());
+        let c = challenge();
+        let a = VerificationAggregate {
+            challenge_id: [1; 32],
+            receipt_root: [5; 32],
+            distinct_verifiers: 2,
+            matches: 2,
+            mismatches: 0,
+            inconclusive: 0,
+        };
+        assert!(slash().canonical_root(&c, &a).is_none());
     }
 }

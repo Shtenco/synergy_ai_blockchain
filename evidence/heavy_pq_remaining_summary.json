@@ -1,0 +1,27 @@
+[
+    {
+        "test":  "pq_reference::tests::pq_only_authorization_requires_same_derived_fips_context_on_both_pq_lanes",
+        "exit":  0,
+        "log":  "evidence\\logs\\heavy_pq_reference_tests_pq_only_authorization_requires_same_derived_fips_context_on_both_pq_lanes.log"
+    },
+    {
+        "test":  "pq_reference::tests::pq_only_authorization_verifies_two_independent_real_pq_lanes",
+        "exit":  0,
+        "log":  "evidence\\logs\\heavy_pq_reference_tests_pq_only_authorization_verifies_two_independent_real_pq_lanes.log"
+    },
+    {
+        "test":  "pq_reference::tests::slh_dsa_shake_256s_fips_context_is_cryptographically_enforced",
+        "exit":  0,
+        "log":  "evidence\\logs\\heavy_pq_reference_tests_slh_dsa_shake_256s_fips_context_is_cryptographically_enforced.log"
+    },
+    {
+        "test":  "pq_reference::tests::slh_dsa_shake_256s_real_sign_verify_and_negative_message",
+        "exit":  0,
+        "log":  "evidence\\logs\\heavy_pq_reference_tests_slh_dsa_shake_256s_real_sign_verify_and_negative_message.log"
+    },
+    {
+        "test":  "pq_reference::tests::slh_reference_signer_is_zeroizing_and_cross_verifies",
+        "exit":  0,
+        "log":  "evidence\\logs\\heavy_pq_reference_tests_slh_reference_signer_is_zeroizing_and_cross_verifies.log"
+    }
+]
