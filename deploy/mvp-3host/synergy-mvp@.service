@@ -1,0 +1,21 @@
+[Unit]
+Description=SYNERGY MVP Node %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/synergy-ai-blockchain
+Environment=PYTHONPATH=/opt/synergy-ai-blockchain
+EnvironmentFile=/etc/synergy/mvp-%i.env
+ExecStart=/opt/synergy-ai-blockchain/.venv/bin/python scripts/mvp_node.py $MVP_ARGS
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/synergy
+
+[Install]
+WantedBy=multi-user.target

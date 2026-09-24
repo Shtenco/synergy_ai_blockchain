@@ -1,0 +1,111 @@
+# M2 Privileged Authorization Coverage
+
+Branch: `feat/distributed-ai-foundation-v1-20260922`
+
+This document records the source-level authorization boundary for every privileged
+domain currently present in `AuthorizationDomain`.
+
+| Domain | State transition | Required policy | Identity binding | Replay / state binding |
+|---|---|---|---|---|
+| `Transaction` | EVM transaction authorization | caller-required `Online`, `Max` or `PqOnly` | stable `sender_account == primary_account_identity_commitment(ML-DSA)` plus exact expected current authorization keyset commitment | chain, nonce, authorization epoch, exclusive expiry, protocol lifetime ceiling, subject-bound nonce consumption |
+| `ValidatorVote` | consensus vote | `Max` in hybrid transition, `PqOnly` in native PQ mode | `validator_id` is stable commitment to ML-DSA + SLH-DSA public keys; evidence keys must match registered identity | chain, epoch, nonce, expiry, expected validator ID |
+| `BridgeMigration` | legacy identity -> native PQ account | `PqOnly` plus independent legacy ownership proof | `pq_identity_commitment == authorization.keyset_commitment()`; `synergy_account_id == pq_identity_commitment` | chain, epoch, nonce, expiry, legacy proof |
+| `ModelUpgrade` | model lineage/state upgrade | `Max` | expected authority keyset commitment | chain, epoch, nonce, expiry, activation epoch, lineage parent/index closure |
+| `InferenceReceipt` | off-consensus AI worker receipt accepted by protocol | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, expiry, assignment/worker/shard/input binding |
+| `Governance` | privileged governance action | `Max` | expected governance authority keyset commitment | chain, epoch, nonce, expiry, proposal ID, governance state root, activation epoch |
+| `VerificationReceipt` | independent AI verifier receipt | `PqOnly` | expected verifier ID + expected verifier keyset commitment | challenge ID, chain, epoch, nonce, expiry, verifier receipt payload |
+| `ConsensusActivation` | activate consensus implementation/model/gas schedule | `Max` | expected consensus authority keyset commitment | chain, epoch, nonce, expiry, expected activation block, mandatory future activation delay, full activation commitment |
+| `ServicePlaneCheckpoint` | commit canonical payment/storage/cognitive/autopilot/finality roots | `Max` | expected service-plane authority keyset commitment | chain, authorization epoch, nonce, expiry, exact next service-plane epoch, all canonical roots |
+| `AutopilotExecution` | execute a value-bearing AI-prepared call | `Max` | owner account equals authorization keyset commitment | chain, reservation epoch, nonce, expiry, reservation root, policy root, proposal/call commitment |
+| `PaymentIntent` | authorize payer payment intent | caller/account-required policy | payer account equals authorization keyset commitment | chain, epoch, nonce, expiry, amount, fee, rails, corridor, compliance commitment |
+| `SettlementBatch` | authorize execution-lane settlement batch | `PqOnly` | expected lane authority keyset commitment | chain, epoch, nonce, expiry, lane ID, sequence, accounting/availability/finality commitments |
+| `StorageProof` | storage provider proof receipt | `PqOnly` | expected provider ID + expected provider keyset commitment | chain, storage epoch, nonce, expiry, object/challenge/proof/served-byte commitment |
+| `CognitiveEvidence` | CognitiveNode AI/symbolic evidence | `PqOnly` | node manifest PQ identity equals authorization keyset commitment | chain, epoch, nonce, expiry, request/node/model/input/output/proof/price/policy bindings |
+| `KvReplicaReceipt` | distributed KV-cache replica evidence | `PqOnly` | expected worker ID + expected worker keyset commitment | chain, epoch, nonce, receipt validity, canonical lease root, KV root, stored bytes, replica authorization |
+| `TransportHandshake` | authenticate initiator/responder KEX identities before session establishment | `PqOnly` | expected node ID + registered current peer keyset commitment | network/epoch/session transcript, role, node ID, ML-KEM/classical KEX keys, auth nonce/expiry |
+
+## Keyset identity primitive
+
+`authorization_keyset_commitment(policy, ordered_public_keys)` derives the
+canonical identity root without requiring signature bytes. The same commitment
+can therefore be registered before the first authorization proof is produced.
+
+The commitment binds:
+
+- crypto profile version;
+- authorization policy;
+- ordered algorithm suite;
+- exact serialized public-key lengths;
+- exact public-key bytes.
+
+`HybridAuthorization::keyset_commitment()` delegates to the same primitive after
+the proof structure has passed fail-closed validation.
+
+## AI verification aggregation
+
+`VerificationAggregate::validate_receipts` binds aggregate counters and
+`receipt_root` to the canonical ordered receipt set.
+
+Verifier IDs must be strictly ordered and unique. Each receipt must independently
+validate against the challenge. Counts are recomputed with checked arithmetic;
+caller-supplied aggregate counters are not trusted.
+
+## M2 execution boundary
+
+All entries above are source/test-definition evidence only until the pinned Rust
+toolchain actually executes:
+
+```text
+cargo fmt --all -- --check
+cargo check --frozen --all-targets
+cargo check --frozen --all-targets --features reference-pq
+cargo clippy --frozen --all-targets --features reference-pq -- -D warnings -D clippy::all
+cargo test --frozen --all-targets
+cargo test --frozen --all-targets --features reference-pq
+cargo test --frozen --doc --features reference-pq
+cargo test --frozen --release --lib --features reference-pq
+```
+
+M2 must remain YELLOW until real runner logs exist and the exact generated
+`Cargo.lock` is committed and revalidated with `--frozen`.
+
+
+## Replay-consumption API boundary
+
+All privileged authorization verifiers in the public crate surface now use a consuming API. The stateless cryptographic/domain checks remain `pub(crate)` implementation primitives, while public entrypoints are `verify_*_and_consume` wrappers that call `AuthorizationReplayState::consume_verified` only after the full domain-specific verification succeeds.
+
+Covered paths: transactions, governance, consensus activation, service-plane checkpoints, lease-enforced Autopilot execution, payment intents, settlement batches, storage proofs, CognitiveNode evidence, inference receipts, verifier receipts, model upgrades, bridge migration, validator votes, KV replica receipts and authenticated transport handshakes.
+
+This prevents integrations from accidentally treating a matching signed nonce as replay protection without actually advancing replay state.
+
+
+## Autopilot execution lease
+
+The public value-bearing Autopilot execution path is now `authorize_and_lock_autopilot_execution`.
+The raw consuming authorization verifier is crate-internal. A new execution requires a canonical
+`ExecutionLocked` lease whose root binds the exact budget reservation, signed call commitment and
+proposal root. The lease is terminal exactly once (`Settled` or `Cancelled`) and terminal state
+has its own canonical commitment.
+
+This prevents a valid signed Autopilot call from being replayed through a second execution lease
+or from bypassing the one-time execution-lock layer.
+
+| `AutopilotLeaseTerminal` | settle/cancel a one-time Autopilot execution lease | `Max` | stable owner account + registered current owner keyset | chain, epoch, nonce, expiry, exact lease root, successful realized execution receipt or cancellation reason |
+
+
+## Canonical service finality
+
+`ServicePlaneCheckpoint` no longer accepts an opaque finality hash through the public verifier path.
+The public API requires a bounded `ServiceFinalityBatch`.
+
+Each finality item is created through a typed constructor from an authorization wrapper for a
+payment settlement, Autopilot terminal receipt, storage proof, CognitiveNode evidence or KV replica
+receipt. Raw `kind/root` construction is not part of the public API.
+
+Every item binds its source chain and source epoch; the batch requires every item to match the
+batch chain/epoch, canonicalizes ordering, rejects duplicates and hashes the chain/epoch into the
+finality commitment. The checkpoint verifier additionally requires the batch chain to equal the
+checkpoint chain before consuming the service-authority nonce.
+
+The raw consuming checkpoint verifier remains crate-internal. The public path is
+`verify_service_plane_checkpoint_with_finality_and_consume`.

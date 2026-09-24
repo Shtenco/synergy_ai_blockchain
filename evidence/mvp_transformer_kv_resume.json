@@ -1,0 +1,13 @@
+{
+  "evidence_root": "eeefb91715ffd6abc187d759091b8201eb97cba6e913b7dfd520f1db13fe7f2a",
+  "exact_resume_equivalence": true,
+  "kv_root": "3c4fb7806e48063ed8f2bb56c18de15ff09989c3a1ae827403dd407aef3653fa",
+  "last_prefill_token": 103,
+  "primary_worker_terminated_before_resume": true,
+  "prompt_bytes": 10,
+  "resumed_next_token": 24,
+  "schema": "synergy.remote-kv-transformer-resume/v1",
+  "stage0_snapshot_bytes": 5866,
+  "stage1_snapshot_bytes": 5866,
+  "uninterrupted_next_token": 24
+}

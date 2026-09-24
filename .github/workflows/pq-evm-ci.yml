@@ -1,0 +1,209 @@
+name: PQ-EVM consensus core
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-pq-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rust-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify pinned local PQ fixtures
+        run: python3 scripts/m2_verify_fixture_manifest.py
+
+      - name: M2 static security guard
+        run: python3 scripts/m2_static_guard.py
+
+      - name: Pin MSRV toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup component add rustfmt clippy --toolchain 1.85.0
+          rustup override set 1.85.0
+          rustc --version
+          cargo --version
+          rustfmt --version
+          cargo clippy --version
+          python3 --version
+
+      - name: Resolve reproducibility bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f Cargo.lock ]]; then
+            echo "Using committed Cargo.lock"
+          else
+            echo "::warning::Cargo.lock is absent; generating bootstrap lockfile. M2 cannot become GREEN until this exact lockfile is committed and a later run succeeds with it."
+            cargo generate-lockfile
+          fi
+          cargo metadata --locked --format-version 1 > m2-cargo-metadata-core.json
+          cargo metadata --locked --format-version 1 --features reference-pq > m2-cargo-metadata-reference-pq.json
+          python3 scripts/m2_verify_lock.py Cargo.lock m2-cargo-metadata-reference-pq.json
+          cargo tree --locked --edges normal,build,dev > m2-cargo-tree-core.txt
+          cargo tree --locked --edges normal,build,dev --features reference-pq > m2-cargo-tree-reference-pq.txt
+          cargo tree --locked --duplicates --features reference-pq > m2-cargo-duplicates-reference-pq.txt
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          python3 scripts/m2_spdx_from_cargo_metadata.py \
+            Cargo.lock \
+            m2-cargo-metadata-core.json \
+            m2-spdx-core.json
+          python3 scripts/m2_spdx_from_cargo_metadata.py \
+            Cargo.lock \
+            m2-cargo-metadata-reference-pq.json \
+            m2-spdx-reference-pq.json
+
+          {
+            echo "git_commit=$(git rev-parse HEAD)"
+            echo "rustup=$(rustup --version 2>&1 | head -n 1)"
+            echo "rustc=$(rustc --version)"
+            echo "cargo=$(cargo --version)"
+            echo "rustfmt=$(rustfmt --version)"
+            echo "clippy=$(cargo clippy --version)"
+            echo "python=$(python3 --version 2>&1)"
+          } > m2-build-environment.txt
+
+          cargo fetch --locked
+          echo "CARGO_NET_OFFLINE=true" >> "$GITHUB_ENV"
+
+          sha256sum \
+            Cargo.lock \
+            m2-cargo-metadata-core.json \
+            m2-cargo-metadata-reference-pq.json \
+            m2-cargo-tree-core.txt \
+            m2-cargo-tree-reference-pq.txt \
+            m2-cargo-duplicates-reference-pq.txt \
+            m2-spdx-core.json \
+            m2-spdx-reference-pq.json \
+            m2-build-environment.txt \
+            tests/vectors/M2_FIXTURE_MANIFEST.json \
+            tests/fixtures/evm_fips_context_v1.hex \
+            tests/fixtures/evm_authorization_envelope_v1.hex \
+            > m2-evidence-sha256.txt
+
+      - name: Committed Cargo.lock gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          git diff --exit-code -- Cargo.lock
+
+      - name: Formatting gate
+        run: cargo fmt --all -- --check
+
+      - name: Core compile gate
+        run: cargo check --frozen --all-targets
+
+      - name: Reference PQ compile gate
+        run: cargo check --frozen --all-targets --features reference-pq
+
+      - name: Reference PQ clippy gate
+        run: cargo clippy --frozen --all-targets --features reference-pq -- -D warnings -D clippy::all
+
+      - name: Core unit tests
+        run: cargo test --frozen --all-targets
+
+      - name: Real PQ reference provider tests
+        run: cargo test --frozen --all-targets --features reference-pq
+
+      - name: Reference PQ doctests
+        run: cargo test --frozen --doc --features reference-pq
+
+      - name: Release-mode PQ library tests
+        run: cargo test --frozen --release --lib --features reference-pq
+
+      - name: Upload M2 reproducibility evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m2-cargo-reproducibility-${{ github.run_id }}
+          path: |
+            Cargo.lock
+            m2-cargo-metadata-core.json
+            m2-cargo-metadata-reference-pq.json
+            m2-cargo-tree-core.txt
+            m2-cargo-tree-reference-pq.txt
+            m2-cargo-duplicates-reference-pq.txt
+            m2-spdx-core.json
+            m2-spdx-reference-pq.json
+            m2-build-environment.txt
+            m2-evidence-sha256.txt
+            tests/vectors/M2_FIXTURE_MANIFEST.json
+            tests/fixtures/evm_fips_context_v1.hex
+            tests/fixtures/evm_authorization_envelope_v1.hex
+          if-no-files-found: warn
+          retention-days: 30
+
+
+  solidity-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify static M2 security policy
+        run: python3 scripts/m2_static_guard.py
+
+      - name: Install pinned solc 0.8.26
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOLC_PATH="solc-linux-amd64-v0.8.26+commit.8a97fa7a"
+          SOLC_SHA256="d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef"
+          curl --fail --silent --show-error --location \
+            "https://binaries.soliditylang.org/linux-amd64/$SOLC_PATH" \
+            --output /tmp/solc
+          echo "$SOLC_SHA256  /tmp/solc" | sha256sum --check --strict
+          chmod 0555 /tmp/solc
+          /tmp/solc --version
+
+      - name: Compile strict PQ-EVM Solidity boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf m2-solc-out
+          mkdir -p m2-solc-out
+          /tmp/solc \
+            --base-path . \
+            --include-path . \
+            --bin \
+            --abi \
+            --metadata-hash none \
+            --overwrite \
+            --output-dir m2-solc-out \
+            contracts/IPQVerifier.sol \
+            contracts/PQSmartAccount.sol \
+            contracts/INexusAI.sol
+          find m2-solc-out -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > m2-solidity-evidence-sha256.txt
+          test -s m2-solidity-evidence-sha256.txt
+
+      - name: Upload Solidity M2 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m2-solidity-${{ github.run_id }}
+          path: |
+            m2-solc-out
+            m2-solidity-evidence-sha256.txt
+          if-no-files-found: warn
+          retention-days: 30
