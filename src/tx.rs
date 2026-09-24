@@ -1,6 +1,7 @@
 use crate::pq::{
-    verify_authorization_with_context, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState, ContextSignatureSigner,
-    ContextSignatureVerifier, HybridAuthorization, PqSigningKeyHandle, SignatureEvidence,
+    verify_authorization_with_context, AuthScheme, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, ContextSignatureSigner, ContextSignatureVerifier,
+    HybridAuthorization, PqSigningKeyHandle, SignatureEvidence,
 };
 
 pub const PQ_TX_DOMAIN: &[u8] = b"SYNERGY-PQ-EVM-TX/1";
@@ -87,8 +88,7 @@ impl PqEvmTransaction {
 
         let message = self.signing_preimage()?;
         let context = self.fips_signature_context();
-        let signature =
-            signer.sign_with_context(scheme, secret_key_handle, &message, &context)?;
+        let signature = signer.sign_with_context(scheme, secret_key_handle, &message, &context)?;
 
         (!signature.is_empty()).then_some(SignatureEvidence {
             scheme,
@@ -208,16 +208,9 @@ impl PqEvmTransaction {
         {
             return Err(TxError::DataTooLarge);
         }
-        let message = self
-            .signing_preimage()
-            .ok_or(TxError::DataTooLarge)?;
+        let message = self.signing_preimage().ok_or(TxError::DataTooLarge)?;
         let context = self.fips_signature_context();
-        if !verify_authorization_with_context(
-            verifier,
-            &self.authorization,
-            &message,
-            &context,
-        ) {
+        if !verify_authorization_with_context(verifier, &self.authorization, &message, &context) {
             return Err(TxError::AuthorizationFailed);
         }
         Ok(())
@@ -233,25 +226,21 @@ impl PqEvmTransaction {
         let envelope = self
             .authorization_envelope()
             .ok_or(TxError::AuthorizationFailed)?;
-        if !replay.consume_verified_for_subject(
-            &self.authorization,
-            &envelope,
-            self.sender_account,
-        ) {
+        if !replay.consume_verified_for_subject(&self.authorization, &envelope, self.sender_account)
+        {
             return Err(TxError::AuthorizationFailed);
         }
         Ok(())
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pq::{
         AuthPolicy, AuthScheme, ContextSignatureVerifier, SignatureEvidence,
-        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
-        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
 
     #[derive(Clone)]
@@ -277,16 +266,16 @@ mod tests {
         let authorization = HybridAuthorization {
             policy: AuthPolicy::PqOnly,
             evidence: vec![
-                    SignatureEvidence {
-                        scheme: AuthScheme::MlDsa87,
-                        public_key: vec![1; ML_DSA_87_PUBLIC_KEY_BYTES],
-                        signature: vec![2; ML_DSA_87_SIGNATURE_BYTES],
-                    },
-                    SignatureEvidence {
-                        scheme: AuthScheme::SlhDsaShake256s,
-                        public_key: vec![3; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
-                        signature: vec![4; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
-                    },
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![1; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![2; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![3; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![4; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
             ],
         };
         let sender_account = authorization
@@ -312,7 +301,9 @@ mod tests {
     fn transaction_validation_is_chain_nonce_and_fips_context_bound() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -381,7 +372,9 @@ mod tests {
     fn transaction_validation_rejects_wrong_epoch_and_expiry() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -430,7 +423,9 @@ mod tests {
     fn transaction_consuming_api_accepts_nonce_once() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
         let context = TxValidationContext {
@@ -469,7 +464,9 @@ mod tests {
     fn transaction_context_cannot_weaken_protocol_lifetime_ceiling() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -485,8 +482,8 @@ mod tests {
                         .keyset_commitment()
                         .expect("sender keyset commitment"),
                     now: 999,
-                    max_authorization_future_seconds:
-                        crate::pq::MAX_AUTHORIZATION_LIFETIME_SECONDS + 1,
+                    max_authorization_future_seconds: crate::pq::MAX_AUTHORIZATION_LIFETIME_SECONDS
+                        + 1,
                     required_policy: AuthPolicy::PqOnly,
                     max_calldata_bytes: 1024,
                 },
@@ -499,7 +496,9 @@ mod tests {
     fn transaction_validation_rejects_expiry_beyond_policy_horizon() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -535,7 +534,9 @@ mod tests {
     fn transaction_calldata_policy_cannot_exceed_protocol_ceiling() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -581,13 +582,12 @@ mod tests {
             tx.authorization.primary_account_identity_commitment(),
             Some(tx.sender_account)
         );
-        assert_ne!(
-            tx.authorization.keyset_commitment(),
-            Some(expected_keyset)
-        );
+        assert_ne!(tx.authorization.keyset_commitment(), Some(expected_keyset));
 
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -615,7 +615,9 @@ mod tests {
         tx.authorization.evidence[0].public_key[0] ^= 1;
 
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -644,7 +646,9 @@ mod tests {
     fn transaction_validation_rejects_weaker_or_different_policy() {
         let tx = test_tx();
         let verifier = ExpectedTxVerifier {
-            message: tx.signing_preimage().expect("canonical transaction preimage"),
+            message: tx
+                .signing_preimage()
+                .expect("canonical transaction preimage"),
             context: tx.fips_signature_context(),
         };
 
@@ -676,14 +680,13 @@ mod tests {
             .signing_preimage()
             .expect("canonical transaction preimage");
         let version = crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes();
-        assert!(preimage.windows(version.len()).any(|window| window == version));
+        assert!(preimage
+            .windows(version.len())
+            .any(|window| window == version));
 
         let mut other_policy = tx.clone();
         other_policy.authorization.policy = AuthPolicy::Max;
-        assert_ne!(
-            Some(preimage),
-            other_policy.signing_preimage()
-        );
+        assert_ne!(Some(preimage), other_policy.signing_preimage());
     }
 
     #[test]

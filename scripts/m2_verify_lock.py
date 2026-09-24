@@ -118,14 +118,21 @@ def main() -> int:
         ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
         ("slh-dsa", "0.1.0"): {"alloc"},
         ("hkdf", "0.12.4"): set(),
-        ("rand", "0.8.5"): {"getrandom"},
+        ("rand", "0.8.5"): {"getrandom", "std", "std_rng"},
     }
     allowed_features = {
         ("ml-kem", "0.3.2"): {"getrandom", "zeroize"},
-        ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"},
+        ("ml-dsa", "0.1.1"): {"alloc", "getrandom", "rand_core", "zeroize"},
         ("slh-dsa", "0.1.0"): {"alloc"},
         ("hkdf", "0.12.4"): set(),
-        ("rand", "0.8.5"): {"getrandom"},
+        ("rand", "0.8.5"): {
+            "alloc",
+            "getrandom",
+            "libc",
+            "rand_chacha",
+            "std",
+            "std_rng",
+        },
     }
     package_by_id = {pkg.get("id"): pkg for pkg in meta_packages}
     observed_feature_targets = set()

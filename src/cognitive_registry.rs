@@ -112,8 +112,7 @@ pub fn independent_registered_count(
     entries: &[(&CognitiveNodeManifest, &CognitiveNodeProvenance)],
     epoch: u64,
 ) -> Result<usize, &'static str> {
-    let mut ordered: Vec<(&CognitiveNodeManifest, &CognitiveNodeProvenance)> =
-        entries.iter().copied().collect();
+    let mut ordered: Vec<(&CognitiveNodeManifest, &CognitiveNodeProvenance)> = entries.to_vec();
     ordered.sort_by_key(|(node, _)| node.node_id);
 
     let mut provenances = Vec::with_capacity(ordered.len());
@@ -201,11 +200,9 @@ mod tests {
         );
 
         node_b.valid_until_epoch = 5;
-        assert!(independent_registered_count(
-            &[(&node_a, &prov_a), (&node_b, &prov_b)],
-            10
-        )
-        .is_err());
+        assert!(
+            independent_registered_count(&[(&node_a, &prov_a), (&node_b, &prov_b)], 10).is_err()
+        );
 
         let duplicate = manifest(1, 6, 10);
         let duplicate_prov = provenance(1, 6, 9, 10);
@@ -220,7 +217,10 @@ mod tests {
     fn same_checkpoint_is_not_two_independent_nodes() {
         let a = provenance(1, 5, 7, 8);
         let b = provenance(2, 5, 9, 10);
-        assert_eq!(structural_independence(&a, &b), IndependenceVerdict::DuplicateModel);
+        assert_eq!(
+            structural_independence(&a, &b),
+            IndependenceVerdict::DuplicateModel
+        );
         assert_eq!(independent_prefix_count(&[a, b]), 1);
     }
 
@@ -243,7 +243,10 @@ mod tests {
     fn distinct_model_lineage_and_implementation_count_independently() {
         let a = provenance(1, 5, 7, 8);
         let b = provenance(2, 6, 9, 10);
-        assert_eq!(structural_independence(&a, &b), IndependenceVerdict::Independent);
+        assert_eq!(
+            structural_independence(&a, &b),
+            IndependenceVerdict::Independent
+        );
         assert_eq!(independent_prefix_count(&[a, b]), 2);
     }
 }

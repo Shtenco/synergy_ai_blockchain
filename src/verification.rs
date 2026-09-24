@@ -8,9 +8,9 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
-
 
 const VERIFICATION_RECEIPT_SET_DOMAIN: &[u8] = b"SYNERGY/VERIFICATION-RECEIPTS/V1\0";
 
@@ -104,12 +104,8 @@ impl VerifierReceipt {
     }
 }
 
-
 impl VerifierReceipt {
-    pub fn authorization_commitment(
-        &self,
-        challenge: &VerificationChallenge,
-    ) -> Option<[u8; 32]> {
+    pub fn authorization_commitment(&self, challenge: &VerificationChallenge) -> Option<[u8; 32]> {
         self.validate_against(challenge).ok()?;
 
         const DOMAIN: &[u8] = b"SYNERGY/VERIFIER-RECEIPT/V1\0";
@@ -141,10 +137,7 @@ pub struct VerifierReceiptAuthorization {
 }
 
 impl VerifierReceiptAuthorization {
-    pub fn envelope(
-        &self,
-        challenge: &VerificationChallenge,
-    ) -> Option<AuthorizationEnvelope> {
+    pub fn envelope(&self, challenge: &VerificationChallenge) -> Option<AuthorizationEnvelope> {
         Some(AuthorizationEnvelope {
             chain_id: self.chain_id,
             domain: AuthorizationDomain::VerificationReceipt,
@@ -279,14 +272,33 @@ fn canonical_receipt_set(
     Ok((root, matches, mismatches, inconclusive))
 }
 
+pub fn aggregate_verifier_receipts(
+    challenge: &VerificationChallenge,
+    receipts: &[VerifierReceipt],
+) -> Result<VerificationAggregate, &'static str> {
+    let (receipt_root, matches, mismatches, inconclusive) =
+        canonical_receipt_set(challenge, receipts)?;
+    let distinct_verifiers =
+        u16::try_from(receipts.len()).map_err(|_| "too many verifier receipts")?;
+    let aggregate = VerificationAggregate {
+        challenge_id: challenge.challenge_id,
+        receipt_root,
+        distinct_verifiers,
+        matches,
+        mismatches,
+        inconclusive,
+    };
+    aggregate.validate(challenge)?;
+    Ok(aggregate)
+}
+
 impl VerificationAggregate {
     pub fn validate(&self, challenge: &VerificationChallenge) -> Result<(), &'static str> {
         if self.challenge_id != challenge.challenge_id || self.receipt_root == [0; 32] {
             return Err("verification aggregate mismatch");
         }
-        let total = u32::from(self.matches)
-            + u32::from(self.mismatches)
-            + u32::from(self.inconclusive);
+        let total =
+            u32::from(self.matches) + u32::from(self.mismatches) + u32::from(self.inconclusive);
         if total != u32::from(self.distinct_verifiers) {
             return Err("verification receipt accounting mismatch");
         }
@@ -303,8 +315,7 @@ impl VerificationAggregate {
     ) -> Result<(), &'static str> {
         self.validate(challenge)?;
 
-        let (root, matches, mismatches, inconclusive) =
-            canonical_receipt_set(challenge, receipts)?;
+        let (root, matches, mismatches, inconclusive) = canonical_receipt_set(challenge, receipts)?;
 
         if receipts.len() != usize::from(self.distinct_verifiers)
             || root != self.receipt_root
@@ -328,7 +339,6 @@ impl VerificationAggregate {
         }
     }
 }
-
 
 pub fn verify_verifier_receipt_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
@@ -531,8 +541,16 @@ mod tests {
     fn aggregate_must_match_canonical_unique_receipt_set() {
         let challenge = challenge();
         let receipts = vec![
-            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
-            receipt(6, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
+            receipt(
+                6,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
         ];
         let (root, matches, mismatches, inconclusive) =
             canonical_receipt_set(&challenge, &receipts).expect("receipt set");
@@ -557,14 +575,30 @@ mod tests {
     fn duplicate_or_reordered_verifiers_are_rejected() {
         let challenge = challenge();
         let duplicate = vec![
-            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
-            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
         ];
         assert!(canonical_receipt_set(&challenge, &duplicate).is_err());
 
         let reordered = vec![
-            receipt(6, VerificationVerdict::Match, challenge.challenged_output_commitment),
-            receipt(5, VerificationVerdict::Match, challenge.challenged_output_commitment),
+            receipt(
+                6,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+            ),
         ];
         assert!(canonical_receipt_set(&challenge, &reordered).is_err());
     }

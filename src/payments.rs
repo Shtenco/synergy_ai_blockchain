@@ -8,12 +8,12 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const PAYMENT_INTENT_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-INTENT/V1\0";
-const SETTLEMENT_LANE_REPLAY_SUBJECT_DOMAIN: &[u8] =
-    b"SYNERGY/SETTLEMENT-LANE-REPLAY-SUBJECT/V1\0";
+const SETTLEMENT_LANE_REPLAY_SUBJECT_DOMAIN: &[u8] = b"SYNERGY/SETTLEMENT-LANE-REPLAY-SUBJECT/V1\0";
 
 fn settlement_lane_replay_subject(lane_id: [u8; 16]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -21,7 +21,6 @@ fn settlement_lane_replay_subject(lane_id: [u8; 16]) -> [u8; 32] {
     hasher.update(lane_id);
     hasher.finalize().into()
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaymentRail {
@@ -95,7 +94,6 @@ impl PaymentIntent {
     }
 }
 
-
 impl PaymentIntent {
     pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
         self.validate(0).ok()?;
@@ -165,7 +163,9 @@ pub(crate) fn verify_payment_intent<V: ContextSignatureVerifier>(
     if authorized.intent.payer != validation.expected_payer
         || authorized.intent.validate(validation.now).is_err()
         || authorized.authorization.policy != validation.required_policy
-        || authorized.authorization.primary_account_identity_commitment()
+        || authorized
+            .authorization
+            .primary_account_identity_commitment()
             != Some(authorized.intent.payer)
         || authorized.authorization.keyset_commitment()
             != Some(validation.expected_payer_keyset_commitment)
@@ -233,7 +233,6 @@ impl SettlementBatch {
         Ok(())
     }
 }
-
 
 impl SettlementBatch {
     pub fn authorization_commitment(&self) -> Option<[u8; 32]> {
@@ -348,7 +347,6 @@ pub struct PaymentLaneKey {
     pub epoch: u64,
 }
 
-
 pub fn verify_payment_intent_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     authorized: &PaymentIntentAuthorization,
@@ -368,7 +366,6 @@ pub fn verify_payment_intent_and_consume<V: ContextSignatureVerifier>(
         validation.expected_payer,
     )
 }
-
 
 pub fn verify_settlement_batch_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
@@ -520,14 +517,8 @@ mod tests {
         let mut rotated = auth.clone();
         rotated.evidence[1].public_key[0] ^= 1;
 
-        assert_eq!(
-            rotated.primary_account_identity_commitment(),
-            Some(account)
-        );
-        assert_ne!(
-            auth.keyset_commitment(),
-            rotated.keyset_commitment()
-        );
+        assert_eq!(rotated.primary_account_identity_commitment(), Some(account));
+        assert_ne!(auth.keyset_commitment(), rotated.keyset_commitment());
     }
 
     #[test]
@@ -541,15 +532,24 @@ mod tests {
 
         let mut changed = base.clone();
         changed.amount += 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("amount"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("amount")
+        );
 
         let mut changed = base.clone();
         changed.destination_rail = PaymentRail::Card;
-        assert_ne!(commitment, changed.authorization_commitment().expect("rail"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("rail")
+        );
 
         let mut changed = base;
         changed.compliance_commitment[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("compliance"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("compliance")
+        );
     }
 
     #[test]
@@ -605,19 +605,11 @@ mod tests {
             max_future_seconds: 200,
         };
 
-        assert!(verify_settlement_batch(
-            &verifier,
-            &authorized,
-            &validation,
-        ));
+        assert!(verify_settlement_batch(&verifier, &authorized, &validation,));
 
         let mut wrong = validation;
         wrong.expected_sequence = 8;
-        assert!(!verify_settlement_batch(
-            &verifier,
-            &authorized,
-            &wrong,
-        ));
+        assert!(!verify_settlement_batch(&verifier, &authorized, &wrong,));
     }
 
     #[test]
@@ -688,11 +680,17 @@ mod tests {
 
         let mut changed = base.clone();
         changed.accounting_root[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("accounting"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("accounting")
+        );
 
         let mut changed = base;
         changed.finality_proof_commitment[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("finality"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("finality")
+        );
     }
 
     #[test]

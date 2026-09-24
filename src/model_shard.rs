@@ -7,7 +7,8 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const MODEL_UPGRADE_DOMAIN: &[u8] = b"SYNERGY/MODEL-UPGRADE/V1\0";
@@ -275,7 +276,6 @@ pub(crate) fn verify_model_upgrade<V: ContextSignatureVerifier>(
     )
 }
 
-
 pub fn verify_model_upgrade_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
     upgrade: &ModelUpgradeAuthorization,
@@ -352,10 +352,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                second,
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), second],
             activation_epoch: 10,
         };
         assert!(transition.validate().is_err());
@@ -368,10 +365,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([10; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([10; 32]))],
             activation_epoch: 10,
         };
         assert!(transition.validate().is_err());
@@ -384,10 +378,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([9; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([9; 32]))],
             activation_epoch: 10,
         };
         assert_eq!(t.validate(), Ok(()));
@@ -414,10 +405,9 @@ mod tests {
 
     fn max_authorization() -> crate::pq::HybridAuthorization {
         use crate::pq::{
-            AuthScheme, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
-            ML_DSA_87_SIGNATURE_BYTES, SECP256K1_PUBLIC_KEY_BYTES,
-            SECP256K1_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
-            SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+            AuthScheme, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+            SECP256K1_PUBLIC_KEY_BYTES, SECP256K1_SIGNATURE_BYTES,
+            SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
         };
         let mut secp_key = vec![1u8; SECP256K1_PUBLIC_KEY_BYTES];
         secp_key[0] = 0x02;
@@ -453,10 +443,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([9; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([9; 32]))],
             activation_epoch: 10,
         };
         let upgrade = ModelUpgradeAuthorization {
@@ -502,10 +489,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([9; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([9; 32]))],
             activation_epoch: 10,
         };
         let upgrade = ModelUpgradeAuthorization {
@@ -549,10 +533,7 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([9; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([9; 32]))],
             activation_epoch: 10,
         };
         let upgrade = ModelUpgradeAuthorization {
@@ -598,21 +579,25 @@ mod tests {
             target_model_root: [1; 32],
             generation: 1,
             consumed_shards: vec![[8; 32], [9; 32]],
-            created_shards: vec![
-                shard(1, 0, Some([8; 32])),
-                shard(1, 1, Some([9; 32])),
-            ],
+            created_shards: vec![shard(1, 0, Some([8; 32])), shard(1, 1, Some([9; 32]))],
             activation_epoch: 10,
         };
         let commitment = base.authorization_commitment().expect("commitment");
 
         let mut changed = base.clone();
         changed.activation_epoch += 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("changed commitment"));
+        assert_ne!(
+            commitment,
+            changed
+                .authorization_commitment()
+                .expect("changed commitment")
+        );
 
         let mut changed = base;
         changed.created_shards[0].content_hash[0] ^= 1;
-        assert_ne!(commitment, changed.authorization_commitment().expect("changed content"));
+        assert_ne!(
+            commitment,
+            changed.authorization_commitment().expect("changed content")
+        );
     }
-
 }

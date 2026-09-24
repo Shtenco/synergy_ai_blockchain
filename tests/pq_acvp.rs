@@ -1,8 +1,6 @@
 #![cfg(feature = "reference-pq")]
 
 use serde::Deserialize;
-use synergy_pq_evm_core::{AuthScheme, ReferencePqSignatureVerifier};
-use synergy_pq_evm_core::pq::SignatureVerifier;
 
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
@@ -23,7 +21,7 @@ struct Provenance {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
+#[allow(dead_code, non_snake_case)]
 struct KemEncapsulationCase {
     tgId: u64,
     tcId: u64,
@@ -38,7 +36,7 @@ struct KemEncapsulationCase {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
+#[allow(dead_code, non_snake_case)]
 struct KemDecapsulationCase {
     tgId: u64,
     tcId: u64,
@@ -59,7 +57,7 @@ struct DsaFixture {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
+#[allow(dead_code, non_snake_case)]
 struct DsaGroup {
     tgId: u64,
     testType: String,
@@ -76,7 +74,6 @@ struct DsaCase {
     signature: String,
     reason: String,
 }
-
 
 #[derive(Debug, Deserialize)]
 struct SlhFixture {
@@ -151,10 +148,7 @@ fn decode_hex(input: &str) -> Vec<u8> {
 
 #[test]
 fn ml_kem_1024_acvp_encapsulation_tc51_matches_exact_ciphertext_and_shared_key() {
-    use ml_kem::{
-        ml_kem_1024::EncapsulationKey as MlKem1024EncapsulationKey,
-        B32, Key,
-    };
+    use ml_kem::{ml_kem_1024::EncapsulationKey as MlKem1024EncapsulationKey, Key, B32};
 
     let fixture: KemFixture =
         serde_json::from_str(include_str!("vectors/ml-kem-1024-acvp-subset.json"))
@@ -168,8 +162,8 @@ fn ml_kem_1024_acvp_encapsulation_tc51_matches_exact_ciphertext_and_shared_key()
     assert_eq!(fixture.encapsulation.function, "encapsulation");
 
     let ek_bytes = decode_hex(&fixture.encapsulation.ek);
-    let encoded_ek =
-        Key::<MlKem1024EncapsulationKey>::try_from(ek_bytes.as_slice()).expect("encoded ML-KEM key");
+    let encoded_ek = Key::<MlKem1024EncapsulationKey>::try_from(ek_bytes.as_slice())
+        .expect("encoded ML-KEM key");
     let ek = MlKem1024EncapsulationKey::new(&encoded_ek).expect("validated ML-KEM key");
 
     let m_bytes = decode_hex(&fixture.encapsulation.m);
@@ -177,11 +171,11 @@ fn ml_kem_1024_acvp_encapsulation_tc51_matches_exact_ciphertext_and_shared_key()
     let (ciphertext, shared_key) = ek.encapsulate_deterministic(&m);
 
     assert_eq!(
-        hex::encode_upper(ciphertext.as_ref()),
+        hex::encode_upper(ciphertext.as_slice()),
         fixture.encapsulation.c
     );
     assert_eq!(
-        hex::encode_upper(shared_key.as_ref()),
+        hex::encode_upper(shared_key.as_slice()),
         fixture.encapsulation.k
     );
 
@@ -206,8 +200,12 @@ fn ml_dsa_87_acvp_valid_and_invalid_signature_cases_are_enforced() {
     assert_eq!(fixture.group.tgId, 3);
     assert_eq!(fixture.group.parameterSet, "ML-DSA-87");
 
+    use ml_dsa::{MlDsa87, Signature, VerifyingKey};
+
     let public_key = decode_hex(&fixture.group.pk);
-    let verifier = ReferencePqSignatureVerifier;
+    let encoded_key = ml_dsa::EncodedVerifyingKey::<MlDsa87>::try_from(public_key.as_slice())
+        .expect("encoded ML-DSA-87 public key");
+    let verifying_key = VerifyingKey::<MlDsa87>::decode(&encoded_key);
 
     let valid = fixture
         .tests
@@ -216,12 +214,12 @@ fn ml_dsa_87_acvp_valid_and_invalid_signature_cases_are_enforced() {
         .expect("ACVP ML-DSA valid tcId=31");
     assert!(valid.testPassed);
     assert_eq!(valid.reason, "no modification");
-    assert!(verifier.verify(
-        AuthScheme::MlDsa87,
-        &public_key,
-        &decode_hex(&valid.message),
-        &decode_hex(&valid.signature),
-    ));
+    let valid_signature = Signature::<MlDsa87>::try_from(decode_hex(&valid.signature).as_slice())
+        .expect("encoded ML-DSA-87 signature");
+    assert_eq!(
+        verifying_key.verify_internal(&decode_hex(&valid.message), &valid_signature),
+        valid.testPassed,
+    );
 
     let invalid = fixture
         .tests
@@ -230,12 +228,13 @@ fn ml_dsa_87_acvp_valid_and_invalid_signature_cases_are_enforced() {
         .expect("ACVP ML-DSA invalid tcId=39");
     assert!(!invalid.testPassed);
     assert_eq!(invalid.reason, "modify signature");
-    assert!(!verifier.verify(
-        AuthScheme::MlDsa87,
-        &public_key,
-        &decode_hex(&invalid.message),
-        &decode_hex(&invalid.signature),
-    ));
+    let invalid_signature =
+        Signature::<MlDsa87>::try_from(decode_hex(&invalid.signature).as_slice())
+            .expect("encoded invalid ML-DSA-87 signature");
+    assert_eq!(
+        verifying_key.verify_internal(&decode_hex(&invalid.message), &invalid_signature),
+        invalid.testPassed,
+    );
 }
 
 #[test]
@@ -276,7 +275,10 @@ fn slh_dsa_shake_256s_fips205_acvp_valid_and_invalid_cases_are_enforced() {
 
     assert_eq!(fixture.provenance.standard, "FIPS 205");
     assert_eq!(fixture.provenance.algorithm, "SLH-DSA-SHAKE-256s");
-    assert_eq!(fixture.provenance.source_repository, "usnistgov/ACVP-Server");
+    assert_eq!(
+        fixture.provenance.source_repository,
+        "usnistgov/ACVP-Server"
+    );
     assert_eq!(
         fixture.provenance.source_commit,
         "975de31eb83d87039ec88934fdc47d8c312b892d"
@@ -302,7 +304,7 @@ fn slh_dsa_shake_256s_fips205_acvp_valid_and_invalid_cases_are_enforced() {
     assert_eq!(fixture.group.parameterSet, "SLH-DSA-SHAKE-256s");
     assert_eq!(fixture.group.signatureInterface, "internal");
 
-    let verifier = ReferencePqSignatureVerifier;
+    use slh_dsa::{Shake256s, Signature, VerifyingKey};
 
     let valid = fixture
         .tests
@@ -310,12 +312,16 @@ fn slh_dsa_shake_256s_fips205_acvp_valid_and_invalid_cases_are_enforced() {
         .find(|case| case.tcId == 491)
         .expect("FIPS 205 valid tcId=491");
     assert!(valid.testPassed);
-    assert!(verifier.verify(
-        AuthScheme::SlhDsaShake256s,
-        &decode_hex(&valid.pk),
-        &decode_hex(&valid.message),
-        &decode_hex(&valid.signature),
-    ));
+    let valid_key = VerifyingKey::<Shake256s>::try_from(decode_hex(&valid.pk).as_slice())
+        .expect("encoded SLH-DSA-SHAKE-256s public key");
+    let valid_signature = Signature::<Shake256s>::try_from(decode_hex(&valid.signature).as_slice())
+        .expect("encoded SLH-DSA-SHAKE-256s signature");
+    assert_eq!(
+        valid_key
+            .slh_verify_internal(&decode_hex(&valid.message), &valid_signature)
+            .is_ok(),
+        valid.testPassed,
+    );
 
     let invalid = fixture
         .tests
@@ -323,22 +329,28 @@ fn slh_dsa_shake_256s_fips205_acvp_valid_and_invalid_cases_are_enforced() {
         .find(|case| case.tcId == 492)
         .expect("FIPS 205 invalid tcId=492");
     assert!(!invalid.testPassed);
-    assert!(!verifier.verify(
-        AuthScheme::SlhDsaShake256s,
-        &decode_hex(&invalid.pk),
-        &decode_hex(&invalid.message),
-        &decode_hex(&invalid.signature),
-    ));
+    let invalid_key = VerifyingKey::<Shake256s>::try_from(decode_hex(&invalid.pk).as_slice())
+        .expect("encoded invalid-case SLH-DSA-SHAKE-256s public key");
+    let invalid_signature =
+        Signature::<Shake256s>::try_from(decode_hex(&invalid.signature).as_slice())
+            .expect("encoded invalid-case SLH-DSA-SHAKE-256s signature");
+    assert_eq!(
+        invalid_key
+            .slh_verify_internal(&decode_hex(&invalid.message), &invalid_signature)
+            .is_ok(),
+        invalid.testPassed,
+    );
 }
 
 #[test]
 fn ml_kem_1024_wycheproof_rejects_incorrect_ciphertext_lengths() {
-    use synergy_pq_evm_core::ReferenceMlKem1024Provider;
     use synergy_pq_evm_core::network::MlKem1024Provider;
+    use synergy_pq_evm_core::ReferenceMlKem1024Provider;
 
-    let fixture: WycheproofKemFixture =
-        serde_json::from_str(include_str!("vectors/ml-kem-1024-wycheproof-negative-subset.json"))
-            .expect("ML-KEM Wycheproof fixture JSON");
+    let fixture: WycheproofKemFixture = serde_json::from_str(include_str!(
+        "vectors/ml-kem-1024-wycheproof-negative-subset.json"
+    ))
+    .expect("ML-KEM Wycheproof fixture JSON");
 
     assert_eq!(fixture.provenance.suite, "Wycheproof");
     assert_eq!(fixture.provenance.algorithm, "ML-KEM");
@@ -369,7 +381,10 @@ fn ml_kem_1024_wycheproof_rejects_incorrect_ciphertext_lengths() {
     assert_eq!(fixture.tests.len(), 2);
     for case in &fixture.tests {
         assert_eq!(case.result, "invalid");
-        assert!(case.flags.iter().any(|flag| flag == "IncorrectCiphertextLength"));
+        assert!(case
+            .flags
+            .iter()
+            .any(|flag| flag == "IncorrectCiphertextLength"));
         assert!(case.comment.contains("Ciphertext"));
         assert!(matches!(case.tcId, 2 | 3));
         assert!(

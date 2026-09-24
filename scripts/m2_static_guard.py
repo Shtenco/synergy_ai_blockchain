@@ -350,7 +350,10 @@ require(
 
 require(
     "secp256k1 public key must use compressed encoding" in pq
-    and "secp256k1 signature recovery id must be canonical" in pq
+    and "secp256k1 signature must use canonical low-S encoding" in pq
+    and "fn is_canonical_secp256k1_signature" in pq
+    and "(recovery[0] == 0 || recovery[0] == 1)" in pq
+    and "scalar_is_nonzero_and_at_most(s, &SECP256K1_HALF_ORDER)" in pq
     and "authorization evidence must not be all-zero" in pq,
     "canonical classical evidence prefilter missing",
 )
@@ -475,7 +478,7 @@ require(
 
 require(
     "pub trait TransportReplayGuard" in network
-    and "pub fn establish_shared_secret" in network
+    and "pub(crate) fn establish_shared_secret" in network
     and "pub(crate) fn from_transcript" in network
     and "replay_guard.consume_session" in network,
     "one-shot transport replay guard boundary missing",
@@ -486,7 +489,7 @@ require(
     "pub struct TransportSessionKey([u8; TRANSPORT_SESSION_KEY_BYTES]);" in network
     and "impl Drop for TransportSessionKey" in network
     and "TransportSessionKey(<redacted>)" in network
-    and "pub fn derive_transport_session_key" in network
+    and "fn derive_transport_session_key" in network
     and "Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm)" in network
     and "ikm.zeroize();" in network,
     "transcript-bound zeroizing HKDF transport session key missing",
@@ -772,10 +775,13 @@ require(
 
 require(
     "AuthorizationDomain::PaymentIntent" in payments
-    and "authorized.authorization.keyset_commitment() != Some(authorized.intent.payer)" in payments
+    and ".primary_account_identity_commitment()" in payments
+    and "!= Some(authorized.intent.payer)" in payments
+    and "expected_payer_keyset_commitment" in payments
+    and ".keyset_commitment()" in payments
     and "required_policy" in payments
     and "authorization_commitment" in payments,
-    "payment intents must remain payer-keyset-bound and state-aware",
+    "payment intents must remain payer-identity/keyset-bound and state-aware",
 )
 
 require(
@@ -929,30 +935,36 @@ require(
 require(
     "pub owner_account: [u8; 32]" in autopilot_budget
     and "reservation.owner_account != validation.expected_owner_account" in autopilot_budget
-    and "authorized.authorization.keyset_commitment() != Some(reservation.owner_account)" in autopilot_budget
+    and ".primary_account_identity_commitment()" in autopilot_budget
+    and "!= Some(reservation.owner_account)" in autopilot_budget
+    and "expected_owner_keyset_commitment" in autopilot_budget
+    and "authorized.authorization.keyset_commitment()" in autopilot_budget
     and "hasher.update(reservation.owner_account)" in autopilot_budget,
-    "Autopilot budget reservation ownership must remain keyset-bound",
+    "Autopilot budget reservation ownership must remain identity/keyset-bound",
 )
 
 
 require(
     "pub struct AuthorizationReplayState" in pq
-    and "pub fn verify_and_consume" in pq
+    and "pub(crate) fn verify_and_consume_for_subject" in pq
+    and "consume_verified_for_subject" in pq
     and "self.next_nonce.checked_add(1)" in pq
     and "self.next_nonce = advanced_nonce" in pq
     and "pub fn rotate_epoch" in pq
     and "if new_epoch <= self.epoch" in pq,
-    "authorization replay state must consume nonce exactly once and rotate epoch forward only",
+    "authorization replay state must remain subject-bound, one-shot, and forward-epoch-only",
 )
 
 
 reference_prod = pq_ref.split("\n#[cfg(test)]\nmod tests", 1)[0]
 require(
     "SigningKey::<MlDsa87>::try_generate().ok()?" in reference_prod
-    and "if scheme != AuthScheme::MlDsa87" in reference_prod
-    and "SigningKey<Shake256s>" not in reference_prod
-    and "SigningKey::<Shake256s>" not in reference_prod,
-    "reference signer must remain ML-DSA-only; stable SLH signing is external-provider-only",
+    and "fips205::slh_dsa_shake_256s::try_keygen().ok()?" in reference_prod
+    and "fips205::traits::Signer" in reference_prod
+    and ".try_sign(message, context, true)" in reference_prod
+    and "slh_dsa_keys" in reference_prod
+    and "SlhDsaSigningMaterial" in reference_prod,
+    "reference signer must provide both ML-DSA-87 and zeroizing SLH-DSA-SHAKE-256s",
 )
 
 
@@ -1026,12 +1038,12 @@ require(
 
 require(
     "pub fn validate(&self) -> Result<(), NexusError>" in nexus
-    and "self.nodes == 0" in nexus
+    and "self.nodes != 16" in nexus
     and "request.mode != NexusMode::Score" in nexus
     and "NexusError::UnsupportedMode" in nexus
     and "fn qadd_saturating" in nexus
     and ".expect(" not in nexus.split("\n#[cfg(test)]\nmod tests", 1)[0],
-    "NEXUS v1 must reject invalid manifests/modes and keep production arithmetic panic-free",
+    "NEXUS v1 must pin the exact manifest, reject unsupported modes, and remain panic-free",
 )
 
 require(

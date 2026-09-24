@@ -110,16 +110,11 @@ pub fn reward_breakdown(
     }
 
     let base = receipt.paid_amount;
-    let positive_utility =
-        u128::try_from(receipt.realized_utility_micros.max(0))
-            .map_err(|_| "positive utility conversion failed")?;
+    let positive_utility = u128::try_from(receipt.realized_utility_micros.max(0))
+        .map_err(|_| "positive utility conversion failed")?;
     let utility_factor = positive_utility.min(MICROS);
     let utility_rate = u128::from(policy.utility_bonus_bps);
-    let utility_bonus = mul_div(
-        mul_div(base, utility_rate, BPS)?,
-        utility_factor,
-        MICROS,
-    )?;
+    let utility_bonus = mul_div(mul_div(base, utility_rate, BPS)?, utility_factor, MICROS)?;
 
     let corr = u128::from(contribution.mean_positive_error_corr_micros);
     let diversity_eligible = contribution.newly_solved_cases > 0

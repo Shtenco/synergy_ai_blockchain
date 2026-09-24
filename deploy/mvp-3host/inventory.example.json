@@ -1,0 +1,27 @@
+{
+  "schema": "synergy.mvp-3host-inventory/v1",
+  "network_id": "REPLACE_64_HEX",
+  "nodes": [
+    {
+      "node_id": "REPLACE_NODE_A_64_HEX",
+      "role": "provider",
+      "host": "HOST_A_DNS_OR_IP",
+      "content_port": 7791,
+      "persistent_state_dir": "/var/lib/synergy/provider"
+    },
+    {
+      "node_id": "REPLACE_NODE_B_64_HEX",
+      "role": "stage0-worker",
+      "host": "HOST_B_DNS_OR_IP",
+      "rpc_port": 7801,
+      "persistent_state_dir": "/var/lib/synergy/worker-b"
+    },
+    {
+      "node_id": "REPLACE_NODE_C_64_HEX",
+      "role": "stage1-verifier",
+      "host": "HOST_C_DNS_OR_IP",
+      "rpc_port": 7802,
+      "persistent_state_dir": "/var/lib/synergy/worker-c"
+    }
+  ]
+}

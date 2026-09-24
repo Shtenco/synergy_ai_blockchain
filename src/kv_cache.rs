@@ -107,7 +107,9 @@ impl KvReplicaReceipt {
         if self.lease_id != lease.lease_id || self.kv_root != lease.kv_root {
             return Err("kv replica/lease mismatch");
         }
-        if self.worker_id != lease.primary_worker && !lease.replica_workers.contains(&self.worker_id) {
+        if self.worker_id != lease.primary_worker
+            && !lease.replica_workers.contains(&self.worker_id)
+        {
             return Err("worker is not authorized for kv lease");
         }
         if self.stored_bytes == 0 || self.signature_commitment == [0; 32] {
@@ -308,9 +310,7 @@ mod tests {
     fn kv_replica_receipt_requires_registered_worker_and_consumes_nonce() {
         let mut l = lease();
         let authorization = pq_only_authorization();
-        let worker_keyset = authorization
-            .keyset_commitment()
-            .expect("worker keyset");
+        let worker_keyset = authorization.keyset_commitment().expect("worker keyset");
         let worker_id = [7; 32];
         l.replica_workers = vec![worker_id];
 

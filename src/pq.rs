@@ -19,28 +19,20 @@ pub const ML_DSA_87_SIGNATURE_BYTES: usize = 4627;
 pub const SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES: usize = 64;
 pub const SLH_DSA_SHAKE_256S_SIGNATURE_BYTES: usize = 29792;
 const SECP256K1_ORDER: [u8; 32] = [
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
-    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
-    0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
 ];
 const SECP256K1_HALF_ORDER: [u8; 32] = [
-    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
-    0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d, 0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
 ];
 
 fn scalar_is_nonzero_and_below(value: &[u8], upper_exclusive: &[u8; 32]) -> bool {
-    value.len() == 32
-        && value.iter().any(|byte| *byte != 0)
-        && value < upper_exclusive.as_slice()
+    value.len() == 32 && value.iter().any(|byte| *byte != 0) && value < upper_exclusive.as_slice()
 }
 
 fn scalar_is_nonzero_and_at_most(value: &[u8], upper_inclusive: &[u8; 32]) -> bool {
-    value.len() == 32
-        && value.iter().any(|byte| *byte != 0)
-        && value <= upper_inclusive.as_slice()
+    value.len() == 32 && value.iter().any(|byte| *byte != 0) && value <= upper_inclusive.as_slice()
 }
 
 fn is_canonical_secp256k1_signature(signature: &[u8]) -> bool {
@@ -55,8 +47,7 @@ fn is_canonical_secp256k1_signature(signature: &[u8]) -> bool {
         && (recovery[0] == 0 || recovery[0] == 1)
 }
 
-pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize =
-    SECP256K1_PUBLIC_KEY_BYTES
+pub const MAX_AUTHORIZATION_EVIDENCE_BYTES: usize = SECP256K1_PUBLIC_KEY_BYTES
     + SECP256K1_SIGNATURE_BYTES
     + ML_DSA_87_PUBLIC_KEY_BYTES
     + ML_DSA_87_SIGNATURE_BYTES
@@ -211,7 +202,6 @@ pub struct AuthorizationValidationContext {
     pub max_future_seconds: u64,
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthorizationReplayState {
     chain_id: [u8; 32],
@@ -273,7 +263,6 @@ impl AuthorizationReplayState {
         self.next_nonce
     }
 
-
     pub fn commitment(&self) -> [u8; 32] {
         const DOMAIN: &[u8] = b"SYNERGY/PQ-REPLAY-STATE/V1\0";
         let mut hasher = Sha256::new();
@@ -296,7 +285,6 @@ impl AuthorizationReplayState {
         self.next_nonce = next_nonce;
         true
     }
-
 
     pub fn rotate_epoch_and_subject(
         &mut self,
@@ -370,6 +358,7 @@ impl AuthorizationReplayState {
         true
     }
 
+    #[allow(dead_code)]
     pub(crate) fn verify_and_consume_for_subject<V: ContextSignatureVerifier>(
         &mut self,
         verifier: &V,
@@ -395,20 +384,11 @@ impl AuthorizationReplayState {
             max_future_seconds,
         };
 
-        if !verify_envelope_authorization(
-            verifier,
-            authorization,
-            envelope,
-            &validation,
-        ) {
+        if !verify_envelope_authorization(verifier, authorization, envelope, &validation) {
             return false;
         }
 
-        self.consume_verified_for_subject(
-            authorization,
-            envelope,
-            expected_subject_commitment,
-        )
+        self.consume_verified_for_subject(authorization, envelope, expected_subject_commitment)
     }
 
     #[cfg(test)]
@@ -435,12 +415,7 @@ impl AuthorizationReplayState {
             max_future_seconds,
         };
 
-        if !verify_envelope_authorization(
-            verifier,
-            authorization,
-            envelope,
-            &validation,
-        ) {
+        if !verify_envelope_authorization(verifier, authorization, envelope, &validation) {
             return false;
         }
 
@@ -533,10 +508,7 @@ impl AuthorizationEnvelope {
     /// chain, authorization domain and policy a second time. Epoch/nonce/expiry
     /// remain in the canonical message so the context stays a short protocol
     /// namespace rather than a per-signature transcript.
-    pub fn fips_signature_context(
-        &self,
-        policy: AuthPolicy,
-    ) -> Result<Vec<u8>, &'static str> {
+    pub fn fips_signature_context(&self, policy: AuthPolicy) -> Result<Vec<u8>, &'static str> {
         self.validate()?;
         Ok(fips_signature_context(&self.chain_id, self.domain, policy))
     }
@@ -571,9 +543,7 @@ pub struct HybridAuthorization {
     pub evidence: Vec<SignatureEvidence>,
 }
 
-pub fn primary_account_identity_commitment(
-    ml_dsa87_public_key: &[u8],
-) -> Option<[u8; 32]> {
+pub fn primary_account_identity_commitment(ml_dsa87_public_key: &[u8]) -> Option<[u8; 32]> {
     if ml_dsa87_public_key.len() != ML_DSA_87_PUBLIC_KEY_BYTES
         || ml_dsa87_public_key.iter().all(|byte| *byte == 0)
     {
@@ -591,10 +561,7 @@ pub fn primary_account_identity_commitment(
     Some(hasher.finalize().into())
 }
 
-pub fn authorization_keyset_commitment<'a, I>(
-    policy: AuthPolicy,
-    keys: I,
-) -> Option<[u8; 32]>
+pub fn authorization_keyset_commitment<'a, I>(policy: AuthPolicy, keys: I) -> Option<[u8; 32]>
 where
     I: IntoIterator<Item = (AuthScheme, &'a [u8])>,
 {
@@ -622,9 +589,7 @@ where
         if public_key.len() != expected || public_key.iter().all(|byte| *byte == 0) {
             return None;
         }
-        if scheme == AuthScheme::Secp256k1
-            && !matches!(public_key.first(), Some(0x02 | 0x03))
-        {
+        if scheme == AuthScheme::Secp256k1 && !matches!(public_key.first(), Some(0x02 | 0x03)) {
             return None;
         }
 
@@ -746,7 +711,13 @@ impl HybridAuthorization {
 }
 
 pub trait SignatureVerifier {
-    fn verify(&self, scheme: AuthScheme, public_key: &[u8], message: &[u8], signature: &[u8]) -> bool;
+    fn verify(
+        &self,
+        scheme: AuthScheme,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> bool;
 }
 
 /// Context-aware verification boundary for FIPS 204/205 signature lanes.
@@ -764,7 +735,6 @@ pub trait ContextSignatureVerifier {
         signature: &[u8],
     ) -> bool;
 }
-
 
 /// Opaque handle used by post-quantum signing providers.
 ///
@@ -799,10 +769,7 @@ impl Drop for PqSigningKeyHandle {
 /// Implementations own private-key custody. Callers receive only public keys,
 /// signatures and opaque handles.
 pub trait ContextSignatureSigner {
-    fn generate_keypair(
-        &mut self,
-        scheme: AuthScheme,
-    ) -> Option<(PqSigningKeyHandle, Vec<u8>)>;
+    fn generate_keypair(&mut self, scheme: AuthScheme) -> Option<(PqSigningKeyHandle, Vec<u8>)>;
 
     fn public_key(
         &self,
@@ -818,11 +785,7 @@ pub trait ContextSignatureSigner {
         context: &[u8],
     ) -> Option<Vec<u8>>;
 
-    fn remove_key(
-        &mut self,
-        scheme: AuthScheme,
-        secret_key_handle: &PqSigningKeyHandle,
-    ) -> bool;
+    fn remove_key(&mut self, scheme: AuthScheme, secret_key_handle: &PqSigningKeyHandle) -> bool;
 }
 
 /// Produce one PQ signature-evidence lane from an authorization envelope without
@@ -845,12 +808,7 @@ pub fn sign_envelope_evidence<S: ContextSignatureSigner>(
 
     let message = envelope.canonical_message(policy).ok()?;
     let context = envelope.fips_signature_context(policy).ok()?;
-    let signature = signer.sign_with_context(
-        scheme,
-        secret_key_handle,
-        &message,
-        &context,
-    )?;
+    let signature = signer.sign_with_context(scheme, secret_key_handle, &message, &context)?;
 
     if signature.is_empty() {
         return None;
@@ -881,9 +839,9 @@ impl<C: SignatureVerifier, P: SignatureVerifier> SignatureVerifier for SchemeRou
         signature: &[u8],
     ) -> bool {
         match scheme {
-            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => {
-                self.classical.verify(scheme, public_key, message, signature)
-            }
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => self
+                .classical
+                .verify(scheme, public_key, message, signature),
             AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s => {
                 self.pq.verify(scheme, public_key, message, signature)
             }
@@ -903,34 +861,14 @@ impl<C: SignatureVerifier, P: ContextSignatureVerifier> ContextSignatureVerifier
         signature: &[u8],
     ) -> bool {
         match scheme {
-            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => {
-                self.classical.verify(scheme, public_key, message, signature)
-            }
-            AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s => {
-                self.pq
-                    .verify_with_context(scheme, public_key, message, context, signature)
-            }
+            AuthScheme::Secp256k1 | AuthScheme::Ed25519 => self
+                .classical
+                .verify(scheme, public_key, message, signature),
+            AuthScheme::MlDsa87 | AuthScheme::SlhDsaShake256s => self
+                .pq
+                .verify_with_context(scheme, public_key, message, context, signature),
         }
     }
-}
-
-#[cfg(test)]
-pub(crate) fn verify_authorization<V: SignatureVerifier>(
-    verifier: &V,
-    authorization: &HybridAuthorization,
-    message: &[u8],
-) -> bool {
-    if authorization.validate_structure().is_err() {
-        return false;
-    }
-    authorization.required_schemes().iter().all(|required| {
-        authorization
-            .evidence
-            .iter()
-            .find(|e| &e.scheme == required)
-            .map(|e| verifier.verify(e.scheme, &e.public_key, message, &e.signature))
-            .unwrap_or(false)
-    })
 }
 
 pub(crate) fn verify_authorization_with_context<V: ContextSignatureVerifier>(
@@ -981,12 +919,7 @@ pub(crate) fn verify_envelope_authorization<V: ContextSignatureVerifier>(
         Err(_) => return false,
     };
 
-    verify_authorization_with_context(
-        verifier,
-        authorization,
-        &message,
-        &context,
-    )
+    verify_authorization_with_context(verifier, authorization, &message, &context)
 }
 
 #[cfg(test)]
@@ -1011,7 +944,6 @@ mod tests {
             message == self.message && context == self.context
         }
     }
-
 
     fn evidence(scheme: AuthScheme) -> SignatureEvidence {
         let mut public_key = vec![1; scheme.expected_public_key_bytes().unwrap_or(1)];
@@ -1114,7 +1046,10 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(direct, auth.keyset_commitment().expect("authorization keyset"));
+        assert_eq!(
+            direct,
+            auth.keyset_commitment().expect("authorization keyset")
+        );
     }
 
     #[test]
@@ -1178,7 +1113,9 @@ mod tests {
         changed.evidence[0].public_key[0] ^= 1;
         assert_ne!(
             base,
-            changed.keyset_commitment().expect("changed keyset commitment")
+            changed
+                .keyset_commitment()
+                .expect("changed keyset commitment")
         );
 
         let mut reordered = auth;
@@ -1190,10 +1127,7 @@ mod tests {
     fn duplicate_scheme_is_rejected() {
         let auth = HybridAuthorization {
             policy: AuthPolicy::PqOnly,
-            evidence: vec![
-                evidence(AuthScheme::MlDsa87),
-                evidence(AuthScheme::MlDsa87),
-            ],
+            evidence: vec![evidence(AuthScheme::MlDsa87), evidence(AuthScheme::MlDsa87)],
         };
         assert!(auth.validate_structure().is_err());
     }
@@ -1255,7 +1189,7 @@ mod tests {
             evidence: vec![
                 SignatureEvidence {
                     scheme: AuthScheme::Secp256k1,
-                    public_key: vec![1; MAX_CLASSICAL_PUBLIC_KEY_BYTES + 1],
+                    public_key: vec![1; SECP256K1_PUBLIC_KEY_BYTES + 1],
                     signature: vec![2; 64],
                 },
                 evidence(AuthScheme::MlDsa87),
@@ -1358,8 +1292,7 @@ mod tests {
             .map(|byte| format!("{byte:02x}"))
             .collect::<Vec<_>>()
             .join("");
-        let expected_hex =
-            include_str!("../tests/fixtures/evm_fips_context_v1.hex").trim();
+        let expected_hex = include_str!("../tests/fixtures/evm_fips_context_v1.hex").trim();
 
         assert_eq!(actual_hex, expected_hex);
         assert_eq!(context.len(), 63);
@@ -1495,8 +1428,12 @@ mod tests {
         let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
         let version = CRYPTO_PROFILE_VERSION.to_be_bytes();
 
-        assert!(message.windows(version.len()).any(|window| window == version));
-        assert!(context.windows(version.len()).any(|window| window == version));
+        assert!(message
+            .windows(version.len())
+            .any(|window| window == version));
+        assert!(context
+            .windows(version.len())
+            .any(|window| window == version));
     }
 
     #[test]
@@ -1541,14 +1478,18 @@ mod tests {
         other_domain.domain = AuthorizationDomain::Governance;
         assert_ne!(
             tx_online,
-            other_domain.fips_signature_context(AuthPolicy::Online).unwrap()
+            other_domain
+                .fips_signature_context(AuthPolicy::Online)
+                .unwrap()
         );
 
         let mut other_chain = base.clone();
         other_chain.chain_id = [0xA6; 32];
         assert_ne!(
             tx_online,
-            other_chain.fips_signature_context(AuthPolicy::Online).unwrap()
+            other_chain
+                .fips_signature_context(AuthPolicy::Online)
+                .unwrap()
         );
 
         // Dynamic replay fields remain message-bound, not context-bound.
@@ -1556,7 +1497,9 @@ mod tests {
         next_nonce.nonce += 1;
         assert_eq!(
             tx_online,
-            next_nonce.fips_signature_context(AuthPolicy::Online).unwrap()
+            next_nonce
+                .fips_signature_context(AuthPolicy::Online)
+                .unwrap()
         );
         assert_ne!(
             base.canonical_message(AuthPolicy::Online).unwrap(),
@@ -1777,22 +1720,10 @@ mod tests {
         )
         .expect("replay state");
 
-        assert!(replay.verify_and_consume(
-            &verifier,
-            &auth,
-            &envelope,
-            999,
-            60,
-        ));
+        assert!(replay.verify_and_consume(&verifier, &auth, &envelope, 999, 60,));
         assert_eq!(replay.next_nonce(), 45);
 
-        assert!(!replay.verify_and_consume(
-            &verifier,
-            &auth,
-            &envelope,
-            999,
-            60,
-        ));
+        assert!(!replay.verify_and_consume(&verifier, &auth, &envelope, 999, 60,));
 
         assert!(!replay.rotate_epoch(12, 0));
         assert!(!replay.rotate_epoch(11, 0));
@@ -1959,13 +1890,7 @@ mod tests {
         )
         .expect("replay state");
 
-        assert!(!replay.verify_and_consume(
-            &verifier,
-            &auth,
-            &envelope,
-            50,
-            60,
-        ));
+        assert!(!replay.verify_and_consume(&verifier, &auth, &envelope, 50, 60,));
         assert_eq!(replay.next_nonce(), u64::MAX);
     }
 

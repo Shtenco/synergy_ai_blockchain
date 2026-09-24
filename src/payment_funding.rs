@@ -13,7 +13,6 @@ const FUNDING_CONSUMPTION_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-CONSUMPTION/
 const FUNDING_RELEASE_DOMAIN: &[u8] = b"SYNERGY/PAYMENT-FUNDING-RELEASE/V1\0";
 const FUNDED_SETTLEMENT_DOMAIN: &[u8] = b"SYNERGY/FUNDED-SETTLEMENT/V1\0";
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FundingStatus {
     Reserved,
@@ -122,9 +121,7 @@ pub struct PaymentFundingConsumptionReceipt {
 }
 
 impl PaymentFundingConsumptionReceipt {
-    pub fn canonical_root(
-        reservation: &PaymentFundingReservation,
-    ) -> Option<[u8; 32]> {
+    pub fn canonical_root(reservation: &PaymentFundingReservation) -> Option<[u8; 32]> {
         reservation.validate_reserved().ok()?;
         let mut hasher = Sha256::new();
         hasher.update(FUNDING_CONSUMPTION_DOMAIN);
@@ -173,7 +170,6 @@ impl PaymentFundingConsumptionReceipt {
         Ok(())
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaymentFundingReleaseReceipt {
@@ -259,7 +255,9 @@ impl FundedSettlementCommitment {
         if self.settlement_batch_root == [0; 32] || self.funding_consumption_root == [0; 32] {
             return Err("settlement/funding roots required");
         }
-        if self.settlement_item_count == 0 || self.settlement_item_count != self.funding_receipt_count {
+        if self.settlement_item_count == 0
+            || self.settlement_item_count != self.funding_receipt_count
+        {
             return Err("every settled item requires one funding receipt");
         }
         Ok(())
@@ -283,10 +281,7 @@ impl FundedSettlementCommitment {
         Ok(())
     }
 
-    pub fn canonical_root(
-        &self,
-        authorized: &SettlementBatchAuthorization,
-    ) -> Option<[u8; 32]> {
+    pub fn canonical_root(&self, authorized: &SettlementBatchAuthorization) -> Option<[u8; 32]> {
         self.validate_against_batch(authorized).ok()?;
 
         let mut hasher = Sha256::new();
@@ -472,9 +467,11 @@ mod tests {
 
     #[test]
     fn funded_settlement_root_binds_exact_authorized_batch_and_funding() {
-        use crate::pq::{AuthPolicy, AuthScheme, HybridAuthorization, SignatureEvidence,
+        use crate::pq::{
+            AuthPolicy, AuthScheme, HybridAuthorization, SignatureEvidence,
             ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
-            SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES};
+            SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        };
 
         let batch = SettlementBatchAuthorization {
             chain_id: [0xA1; 32],
@@ -515,7 +512,9 @@ mod tests {
             settlement_item_count: 2,
             funding_receipt_count: 2,
         };
-        let root = funded.canonical_root(&batch).expect("funded settlement root");
+        let root = funded
+            .canonical_root(&batch)
+            .expect("funded settlement root");
 
         let mut changed = funded.clone();
         changed.funding_consumption_root[0] ^= 1;
@@ -538,7 +537,10 @@ mod tests {
             funding_receipt_count: 10,
         };
         assert_eq!(good.validate(), Ok(()));
-        let bad = FundedSettlementCommitment { funding_receipt_count: 9, ..good };
+        let bad = FundedSettlementCommitment {
+            funding_receipt_count: 9,
+            ..good
+        };
         assert_eq!(
             bad.validate(),
             Err("every settled item requires one funding receipt")

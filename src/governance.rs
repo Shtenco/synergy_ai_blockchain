@@ -2,7 +2,8 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const GOVERNANCE_ACTION_DOMAIN: &[u8] = b"SYNERGY/GOVERNANCE-ACTION/V1\0";
@@ -115,7 +116,6 @@ pub(crate) fn verify_governance_action<V: ContextSignatureVerifier>(
         &auth_validation,
     )
 }
-
 
 pub fn verify_governance_action_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
@@ -265,7 +265,7 @@ mod tests {
                 .fips_signature_context(AuthPolicy::Max)
                 .expect("governance context"),
         };
-        let validation = validation_for(&authorized);
+        let validation = validation();
         let mut replay = AuthorizationReplayState::new(
             authorized.chain_id,
             AuthorizationDomain::Governance,

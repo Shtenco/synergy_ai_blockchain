@@ -8,11 +8,11 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const AUTOPILOT_EXECUTION_DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-EXECUTION/V1\0";
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutopilotBudgetReservation {
@@ -90,7 +90,6 @@ impl AutopilotBudgetBoundCall {
         Ok(())
     }
 }
-
 
 impl AutopilotBudgetBoundCall {
     pub fn authorization_commitment(
@@ -188,13 +187,18 @@ pub(crate) fn verify_autopilot_execution<V: ContextSignatureVerifier>(
 ) -> bool {
     if authorized.authorization.policy != AuthPolicy::Max
         || reservation.owner_account != validation.expected_owner_account
-        || authorized.authorization.primary_account_identity_commitment()
+        || authorized
+            .authorization
+            .primary_account_identity_commitment()
             != Some(reservation.owner_account)
         || authorized.authorization.keyset_commitment()
             != Some(validation.expected_owner_keyset_commitment)
         || reservation.reservation_root != validation.expected_reservation_root
         || reservation.policy_root != validation.expected_policy_root
-        || authorized.call.validate_against(reservation, validation.now).is_err()
+        || authorized
+            .call
+            .validate_against(reservation, validation.now)
+            .is_err()
     {
         return false;
     }
@@ -232,10 +236,7 @@ pub struct AutopilotRealizedExecutionReceipt {
 }
 
 impl AutopilotRealizedExecutionReceipt {
-    pub fn validate_against(
-        &self,
-        call: &AutopilotBudgetBoundCall,
-    ) -> Result<(), &'static str> {
+    pub fn validate_against(&self, call: &AutopilotBudgetBoundCall) -> Result<(), &'static str> {
         if self.budget_bound_call_root == [0; 32] || self.tx_hash == [0; 32] {
             return Err("execution and transaction commitments required");
         }
@@ -248,10 +249,7 @@ impl AutopilotRealizedExecutionReceipt {
         Ok(())
     }
 
-    pub fn commitment_against(
-        &self,
-        call: &AutopilotBudgetBoundCall,
-    ) -> Option<[u8; 32]> {
+    pub fn commitment_against(&self, call: &AutopilotBudgetBoundCall) -> Option<[u8; 32]> {
         self.validate_against(call).ok()?;
         const DOMAIN: &[u8] = b"SYNERGY/AUTOPILOT-REALIZED-EXECUTION/V1\0";
         let mut hasher = Sha256::new();
@@ -264,7 +262,6 @@ impl AutopilotRealizedExecutionReceipt {
         Some(hasher.finalize().into())
     }
 }
-
 
 pub(crate) fn verify_autopilot_execution_and_consume<V: ContextSignatureVerifier>(
     verifier: &V,
@@ -395,8 +392,12 @@ mod tests {
             .envelope(&reservation)
             .expect("autopilot envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = AutopilotExecutionValidationContext {
             expected_chain_id: [0xB1; 32],
@@ -437,10 +438,7 @@ mod tests {
         rotated.evidence[0].public_key[1] ^= 1;
         rotated.evidence[2].public_key[0] ^= 1;
 
-        assert_eq!(
-            rotated.primary_account_identity_commitment(),
-            Some(owner)
-        );
+        assert_eq!(rotated.primary_account_identity_commitment(), Some(owner));
         assert_ne!(auth.keyset_commitment(), rotated.keyset_commitment());
     }
 
@@ -467,8 +465,12 @@ mod tests {
             .envelope(&reservation)
             .expect("autopilot envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = AutopilotExecutionValidationContext {
             expected_chain_id: [0xB1; 32],
@@ -510,8 +512,12 @@ mod tests {
             .envelope(&reservation)
             .expect("autopilot envelope");
         let verifier = ExpectedVerifier {
-            message: envelope.canonical_message(AuthPolicy::Max).expect("message"),
-            context: envelope.fips_signature_context(AuthPolicy::Max).expect("context"),
+            message: envelope
+                .canonical_message(AuthPolicy::Max)
+                .expect("message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::Max)
+                .expect("context"),
         };
         let validation = AutopilotExecutionValidationContext {
             expected_chain_id: [0xB1; 32],

@@ -2,7 +2,8 @@ use sha2::{Digest, Sha256};
 
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
-    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
 };
 
 const MIGRATION_BINDING_DOMAIN: &[u8] = b"SYNERGY/BRIDGE-MIGRATION/V1\0";
@@ -64,13 +65,11 @@ impl LegacyIdentityBinding {
     pub fn payload_commitment(&self) -> Option<[u8; 32]> {
         self.validate().ok()?;
 
-        let mut encoded = Vec::with_capacity(
-            MIGRATION_BINDING_DOMAIN.len() + self.legacy_identifier.len() + 80,
-        );
+        let mut encoded =
+            Vec::with_capacity(MIGRATION_BINDING_DOMAIN.len() + self.legacy_identifier.len() + 80);
         encoded.extend_from_slice(MIGRATION_BINDING_DOMAIN);
         self.source_chain.append_canonical(&mut encoded);
-        let legacy_identifier_len =
-            u64::try_from(self.legacy_identifier.len()).ok()?;
+        let legacy_identifier_len = u64::try_from(self.legacy_identifier.len()).ok()?;
         encoded.extend_from_slice(&legacy_identifier_len.to_be_bytes());
         encoded.extend_from_slice(&self.legacy_identifier);
         encoded.extend_from_slice(&self.pq_identity_commitment);
@@ -139,8 +138,7 @@ pub(crate) fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier
     if binding.authorization.policy != AuthPolicy::PqOnly {
         return Err(MigrationError::PolicyMismatch);
     }
-    if binding.authorization.keyset_commitment()
-        != Some(binding.binding.pq_identity_commitment)
+    if binding.authorization.keyset_commitment() != Some(binding.binding.pq_identity_commitment)
         || binding.authorization.primary_account_identity_commitment()
             != Some(binding.binding.synergy_account_id)
     {
@@ -163,18 +161,12 @@ pub(crate) fn verify_binding<L: LegacyProofVerifier, P: ContextSignatureVerifier
         max_future_seconds: validation.max_future_seconds,
     };
 
-    if !verify_envelope_authorization(
-        pq,
-        &binding.authorization,
-        &envelope,
-        &auth_validation,
-    ) {
+    if !verify_envelope_authorization(pq, &binding.authorization, &envelope, &auth_validation) {
         return Err(MigrationError::InvalidPqAuthorization);
     }
 
     Ok(())
 }
-
 
 pub fn verify_binding_and_consume<L: LegacyProofVerifier, P: ContextSignatureVerifier>(
     binding: &MigrationAuthorization,
@@ -237,16 +229,16 @@ mod tests {
         let authorization = HybridAuthorization {
             policy: AuthPolicy::PqOnly,
             evidence: vec![
-                    SignatureEvidence {
-                        scheme: AuthScheme::MlDsa87,
-                        public_key: vec![0x44; ML_DSA_87_PUBLIC_KEY_BYTES],
-                        signature: vec![0x45; ML_DSA_87_SIGNATURE_BYTES],
-                    },
-                    SignatureEvidence {
-                        scheme: AuthScheme::SlhDsaShake256s,
-                        public_key: vec![0x46; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
-                        signature: vec![0x47; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
-                    },
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x44; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x45; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x46; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x47; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
             ],
         };
         let pq_identity_commitment = authorization
@@ -295,23 +287,11 @@ mod tests {
         };
 
         assert_eq!(
-            verify_binding(
-                &binding,
-                b"legacy-ok",
-                &LegacyOk,
-                &verifier,
-                &validation(),
-            ),
+            verify_binding(&binding, b"legacy-ok", &LegacyOk, &verifier, &validation(),),
             Ok(())
         );
         assert_eq!(
-            verify_binding(
-                &binding,
-                b"wrong",
-                &LegacyOk,
-                &verifier,
-                &validation(),
-            ),
+            verify_binding(&binding, b"wrong", &LegacyOk, &verifier, &validation(),),
             Err(MigrationError::InvalidLegacyProof)
         );
     }
@@ -417,13 +397,7 @@ mod tests {
 
         binding.authorization.evidence[0].public_key[0] ^= 1;
         assert_eq!(
-            verify_binding(
-                &binding,
-                b"legacy-ok",
-                &LegacyOk,
-                &verifier,
-                &validation(),
-            ),
+            verify_binding(&binding, b"legacy-ok", &LegacyOk, &verifier, &validation(),),
             Err(MigrationError::InvalidPqAuthorization)
         );
     }
@@ -437,14 +411,18 @@ mod tests {
         changed.synergy_account_id[0] ^= 1;
         assert_ne!(
             base,
-            changed.payload_commitment().expect("changed account identity")
+            changed
+                .payload_commitment()
+                .expect("changed account identity")
         );
 
         let mut changed = binding;
         changed.pq_identity_commitment[0] ^= 1;
         assert_ne!(
             base,
-            changed.payload_commitment().expect("changed authority keyset")
+            changed
+                .payload_commitment()
+                .expect("changed authority keyset")
         );
     }
 }

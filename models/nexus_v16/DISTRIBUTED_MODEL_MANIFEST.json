@@ -1,0 +1,25 @@
+{
+  "format": "nexus-v16-distributed-model-manifest/1",
+  "logical_name": "SHTENCO NEXUS V16 Distributed Weight Fusion",
+  "logical_parameters": 3109564,
+  "physical_shards": [
+    {"file":"checkpoints_v16/expert_0_generalist.pt","sha256":"79b7d4a2b2c1b8122ae43fa3d0cacf49cf575a2243f1180ae79d76cd4d203650","parameters":600000},
+    {"file":"checkpoints_v16/expert_1_symmetry.pt","sha256":"0ddd60f9d01fd873e8c7ed2719001869aaa2b890fc2e727952c7ab65bbc29847","parameters":600000},
+    {"file":"checkpoints_v16/expert_2_selection.pt","sha256":"3a35afc5a529adac4ee9eac9702b141b2d3fb754a5b928b52ec5dac0bbe10512","parameters":600000},
+    {"file":"checkpoints_v16/expert_3_gravity.pt","sha256":"46880bc8482edb534d938494c3e6ada9f4b6cb33322d16b4baaaccea90ac30bc","parameters":600000},
+    {"file":"checkpoints_v16/expert_4_growth_composition.pt","sha256":"3340da8853a074fe1820dcd8117da35e0aba6a1e6fbac51070e6bda0efdeff8b","parameters":600000}
+  ],
+  "fusion_components": [
+    {"file":"checkpoints_v16/NEXUS_V16_FUSION_ROUTER.pt","sha256":"2d1af8912b1ccd56686f6160e309be108f1a5abccd6fff0ad5898ad290097b28"},
+    {"file":"checkpoints_v16/V16_LARGE_QUERY_RANKER.joblib","sha256":"11dc54759bff2d75b9b7a10fb052557c38e9f8e014acf19085bd6d586dc6c1e9"},
+    {"file":"checkpoints_v16/V16_FINAL_SINGLE_600K.joblib","sha256":"99589b2b6eadba74595e3625dd0c7e4e23071bb92a2d9d89dc0576e745962e12"},
+    {"file":"checkpoints_v16/V16_FINAL_DISTRIBUTED_5X600K.joblib","sha256":"a0050a22ecf0e5b9cc07447a3cec64cafccfb68a5d4bfd064c7fd07012a89e17"}
+  ],
+  "rpc_evidence_sha256": "40c7a41fc76da5680d5a4e9b930857865d27ea55b3443290b97275096b509742",
+  "intelligence_claim": "NOT PROVEN",
+  "provenance": {
+    "repository": "Shtenco/synergy_agi_olga",
+    "branch": "nexus-v16-distributed-weight-fusion",
+    "path": "results_v16/NEXUS_V16_DISTRIBUTED_MODEL_MANIFEST.json"
+  }
+}
