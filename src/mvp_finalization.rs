@@ -31,7 +31,7 @@ pub fn finalize_mvp_checkpoint(
     challenge: &VerificationChallenge,
     receipts: &[VerifierReceipt],
     settlement: &ComputeSettlement,
-    slash: Option<&WorkerSlash>,
+    mut slash: Option<&mut WorkerSlash>,
 ) -> Result<MvpCheckpoint, &'static str> {
     challenge.validate()?;
     let aggregate = aggregate_verifier_receipts(challenge, receipts)?;
@@ -74,10 +74,10 @@ pub fn finalize_mvp_checkpoint(
             }
         }
         VerificationVerdict::Mismatch => {
-            let slash = slash.ok_or("mismatch requires slash")?;
+            let slash = slash.as_deref_mut().ok_or("mismatch requires slash")?;
             let slash_root = slash
-                .canonical_root(challenge, &aggregate)
-                .ok_or("invalid worker slash")?;
+                .consume_once(challenge, &aggregate)
+                .map_err(|_| "invalid or already-consumed worker slash")?;
             if settlement.slash_root != Some(slash_root) {
                 return Err("settlement slash root mismatch");
             }
@@ -230,7 +230,7 @@ mod tests {
             &c,
             &receipts,
             &s,
-            Some(&slash),
+            Some(&mut slash),
         )
         .is_ok());
     }
