@@ -1,11 +1,11 @@
 //! Canonical MVP finalization gate.
 //!
-//! This module joins already-validated cross-plane roots and refuses to produce
-//! a final checkpoint when verification/economics are inconsistent.
+//! Finalization recomputes the verification aggregate from the exact canonical
+//! verifier receipt set. A caller cannot finalize by supplying counters alone.
 
 use crate::{
-    ComputeSettlement, MvpCheckpoint, VerificationAggregate, VerificationChallenge,
-    VerificationVerdict, WorkerSlash,
+    aggregate_verifier_receipts, ComputeSettlement, MvpCheckpoint, VerificationChallenge,
+    VerificationVerdict, VerifierReceipt, WorkerSlash,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,12 +29,12 @@ pub struct MvpFinalizationInput {
 pub fn finalize_mvp_checkpoint(
     input: &MvpFinalizationInput,
     challenge: &VerificationChallenge,
-    aggregate: &VerificationAggregate,
+    receipts: &[VerifierReceipt],
     settlement: &ComputeSettlement,
     slash: Option<&WorkerSlash>,
 ) -> Result<MvpCheckpoint, &'static str> {
     challenge.validate()?;
-    aggregate.validate(challenge)?;
+    let aggregate = aggregate_verifier_receipts(challenge, receipts)?;
 
     if input.chain_id == [0; 32]
         || input.epoch == 0
@@ -53,6 +53,10 @@ pub fn finalize_mvp_checkpoint(
         return Err("MVP finalization input incomplete");
     }
 
+    if input.verification_root != aggregate.receipt_root {
+        return Err("verification root does not match canonical receipt set");
+    }
+
     if settlement.job_id != challenge.job_id
         || settlement.verifier_set_root != aggregate.receipt_root
     {
@@ -60,7 +64,7 @@ pub fn finalize_mvp_checkpoint(
     }
 
     let settlement_root = settlement
-        .canonical_root(challenge, aggregate, input.funded_amount)
+        .canonical_root(challenge, &aggregate, input.funded_amount)
         .ok_or("invalid compute settlement")?;
 
     match aggregate.final_verdict() {
@@ -72,7 +76,7 @@ pub fn finalize_mvp_checkpoint(
         VerificationVerdict::Mismatch => {
             let slash = slash.ok_or("mismatch requires slash")?;
             let slash_root = slash
-                .canonical_root(challenge, aggregate)
+                .canonical_root(challenge, &aggregate)
                 .ok_or("invalid worker slash")?;
             if settlement.slash_root != Some(slash_root) {
                 return Err("settlement slash root mismatch");
@@ -94,7 +98,7 @@ pub fn finalize_mvp_checkpoint(
         network_root: input.network_root,
         provider_root: input.provider_root,
         inference_root: input.inference_root,
-        verification_root: input.verification_root,
+        verification_root: aggregate.receipt_root,
         kv_root: input.kv_root,
         storage_root: input.storage_root,
         settlement_root,
@@ -108,6 +112,7 @@ pub fn finalize_mvp_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{SlashState, VerificationVerdict};
 
     fn challenge() -> VerificationChallenge {
         VerificationChallenge {
@@ -121,7 +126,23 @@ mod tests {
         }
     }
 
-    fn input() -> MvpFinalizationInput {
+    fn receipt(
+        verifier: u8,
+        verdict: VerificationVerdict,
+        recomputed: [u8; 32],
+    ) -> VerifierReceipt {
+        VerifierReceipt {
+            challenge_id: [1; 32],
+            verifier_id: [verifier; 32],
+            recomputed_output_commitment: recomputed,
+            trace_commitment: [10 + verifier; 32],
+            signature_commitment: [20 + verifier; 32],
+            verdict,
+            completed_at: 5,
+        }
+    }
+
+    fn base_input(verification_root: [u8; 32]) -> MvpFinalizationInput {
         MvpFinalizationInput {
             chain_id: [10; 32],
             epoch: 1,
@@ -131,7 +152,7 @@ mod tests {
             network_root: [12; 32],
             provider_root: [13; 32],
             inference_root: [14; 32],
-            verification_root: [15; 32],
+            verification_root,
             kv_root: [16; 32],
             storage_root: [17; 32],
             scheduler_root: [18; 32],
@@ -141,16 +162,13 @@ mod tests {
     }
 
     #[test]
-    fn match_finalizes_without_slash() {
+    fn match_finalizes_from_real_receipt_set_without_slash() {
         let c = challenge();
-        let a = VerificationAggregate {
-            challenge_id: c.challenge_id,
-            receipt_root: [5; 32],
-            distinct_verifiers: 2,
-            matches: 2,
-            mismatches: 0,
-            inconclusive: 0,
-        };
+        let receipts = vec![
+            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(6, VerificationVerdict::Match, c.challenged_output_commitment),
+        ];
+        let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
         let s = ComputeSettlement {
             job_id: c.job_id,
             funding_root: [6; 32],
@@ -164,21 +182,25 @@ mod tests {
             slash_root: None,
             refund_amount: 0,
         };
-        let cp = finalize_mvp_checkpoint(&input(), &c, &a, &s, None).expect("checkpoint");
+        let cp = finalize_mvp_checkpoint(
+            &base_input(a.receipt_root),
+            &c,
+            &receipts,
+            &s,
+            None,
+        )
+        .expect("checkpoint");
         assert!(cp.commitment().is_some());
     }
 
     #[test]
-    fn mismatch_requires_exact_slash_root() {
+    fn mismatch_requires_exact_slash_root_from_same_receipts() {
         let c = challenge();
-        let a = VerificationAggregate {
-            challenge_id: c.challenge_id,
-            receipt_root: [5; 32],
-            distinct_verifiers: 2,
-            matches: 1,
-            mismatches: 1,
-            inconclusive: 0,
-        };
+        let receipts = vec![
+            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(6, VerificationVerdict::Mismatch, [99; 32]),
+        ];
+        let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
         let slash = WorkerSlash {
             slash_id: [20; 32],
             job_id: c.job_id,
@@ -187,7 +209,7 @@ mod tests {
             verification_receipt_root: a.receipt_root,
             amount: 25,
             epoch: 1,
-            state: crate::SlashState::Open,
+            state: SlashState::Open,
         };
         let slash_root = slash.canonical_root(&c, &a).expect("slash root");
         let s = ComputeSettlement {
@@ -203,6 +225,44 @@ mod tests {
             slash_root: Some(slash_root),
             refund_amount: 60,
         };
-        assert!(finalize_mvp_checkpoint(&input(), &c, &a, &s, Some(&slash)).is_ok());
+        assert!(finalize_mvp_checkpoint(
+            &base_input(a.receipt_root),
+            &c,
+            &receipts,
+            &s,
+            Some(&slash),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn forged_verification_root_is_rejected() {
+        let c = challenge();
+        let receipts = vec![
+            receipt(5, VerificationVerdict::Match, c.challenged_output_commitment),
+            receipt(6, VerificationVerdict::Match, c.challenged_output_commitment),
+        ];
+        let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
+        let s = ComputeSettlement {
+            job_id: c.job_id,
+            funding_root: [6; 32],
+            worker_id: [7; 32],
+            storage_provider_id: [8; 32],
+            verifier_set_root: a.receipt_root,
+            worker_reward: 60,
+            storage_reward: 10,
+            verifier_reward: 20,
+            protocol_fee: 10,
+            slash_root: None,
+            refund_amount: 0,
+        };
+        assert!(finalize_mvp_checkpoint(
+            &base_input([88; 32]),
+            &c,
+            &receipts,
+            &s,
+            None,
+        )
+        .is_err());
     }
 }
