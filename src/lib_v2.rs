@@ -30,6 +30,7 @@ pub mod slashing;
 pub mod service_planes;
 pub mod storage;
 pub mod tx;
+pub mod transport_record;
 pub mod validator;
 pub mod verification;
 
@@ -149,12 +150,13 @@ pub use storage::{
     ProofOfStorageReceipt, StorageBid, StorageClass, StorageProofAuthorization,
     StorageProofValidationContext,
 };
+pub use transport_record::{decrypt_transport_record, encrypt_transport_record, EncryptedTransportRecord, MAX_TRANSPORT_RECORD_PLAINTEXT_BYTES, TRANSPORT_RECORD_AAD_DOMAIN};
 pub use tx::{PqEvmTransaction, TxError, TxValidationContext, MAX_TX_CALLDATA_BYTES};
 pub use validator::{
     verify_validator_vote_and_consume, ValidatorIdentity, ValidatorPolicy,
     ValidatorVoteAuthorization, ValidatorVoteValidationContext,
 };
-pub use verification::{
+pub use verification::{aggregate_verifier_receipts,
     verify_verifier_receipt_and_consume, VerificationAggregate, VerificationChallenge, VerificationVerdict,
     VerifierReceipt, VerifierReceiptAuthorization, VerifierReceiptValidationContext,
 };
