@@ -279,6 +279,26 @@ fn canonical_receipt_set(
     Ok((root, matches, mismatches, inconclusive))
 }
 
+pub fn aggregate_verifier_receipts(
+    challenge: &VerificationChallenge,
+    receipts: &[VerifierReceipt],
+) -> Result<VerificationAggregate, &'static str> {
+    let (receipt_root, matches, mismatches, inconclusive) =
+        canonical_receipt_set(challenge, receipts)?;
+    let distinct_verifiers =
+        u16::try_from(receipts.len()).map_err(|_| "too many verifier receipts")?;
+    let aggregate = VerificationAggregate {
+        challenge_id: challenge.challenge_id,
+        receipt_root,
+        distinct_verifiers,
+        matches,
+        mismatches,
+        inconclusive,
+    };
+    aggregate.validate(challenge)?;
+    Ok(aggregate)
+}
+
 impl VerificationAggregate {
     pub fn validate(&self, challenge: &VerificationChallenge) -> Result<(), &'static str> {
         if self.challenge_id != challenge.challenge_id || self.receipt_root == [0; 32] {
