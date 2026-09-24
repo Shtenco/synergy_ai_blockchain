@@ -696,6 +696,13 @@ impl TransportSessionKey {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn transport_session_key_from_test_bytes(
+    bytes: [u8; TRANSPORT_SESSION_KEY_BYTES],
+) -> TransportSessionKey {
+    TransportSessionKey(bytes)
+}
+
 impl fmt::Debug for TransportSessionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TransportSessionKey(<redacted>)")
