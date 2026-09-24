@@ -201,7 +201,7 @@ mod tests {
             receipt(6, VerificationVerdict::Mismatch, [99; 32]),
         ];
         let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
-        let slash = WorkerSlash {
+        let mut slash = WorkerSlash {
             slash_id: [20; 32],
             job_id: c.job_id,
             worker_id: [7; 32],
@@ -233,6 +233,15 @@ mod tests {
             Some(&mut slash),
         )
         .is_ok());
+        assert_eq!(slash.state, SlashState::Consumed);
+        assert!(finalize_mvp_checkpoint(
+            &base_input(a.receipt_root),
+            &c,
+            &receipts,
+            &s,
+            Some(&mut slash),
+        )
+        .is_err());
     }
 
     #[test]
