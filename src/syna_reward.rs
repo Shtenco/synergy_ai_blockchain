@@ -8,8 +8,9 @@ use std::collections::BTreeSet;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    aggregate_verifier_receipts, ComputeSettlement, MvpCheckpoint, SynaEmissionPolicy,
-    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceipt,
+    aggregate_verifier_receipts, ComputeSettlement, InferenceOutcome, MvpCheckpoint,
+    SynaEmissionPolicy, SynaSupplyState, VerificationChallenge, VerificationVerdict,
+    VerifierReceipt,
 };
 
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
@@ -127,6 +128,7 @@ pub struct SynaMintAuthorization {
 pub fn authorize_verified_inference_reward_and_mint(
     claim: &SynaRewardClaim,
     checkpoint: &MvpCheckpoint,
+    outcome: &InferenceOutcome,
     settlement: &ComputeSettlement,
     challenge: &VerificationChallenge,
     receipts: &[VerifierReceipt],
@@ -145,11 +147,21 @@ pub fn authorize_verified_inference_reward_and_mint(
     }
 
     let checkpoint_root = checkpoint.commitment().ok_or("invalid checkpoint")?;
+    let outcome_root = outcome
+        .commitment()
+        .ok_or("invalid canonical inference outcome")?;
     if claim.checkpoint_root != checkpoint_root
         || claim.chain_id != checkpoint.chain_id
         || claim.epoch != checkpoint.epoch
         || claim.model_root != checkpoint.model_root
         || claim.inference_root != checkpoint.inference_root
+        || claim.inference_root != outcome_root
+        || checkpoint.inference_root != outcome_root
+        || claim.useful_work_units != outcome.total_compute_units
+        || outcome.job_id != challenge.job_id
+        || outcome.model_root != checkpoint.model_root
+        || outcome.output_commitment != challenge.challenged_output_commitment
+        || outcome.verifier_evidence_root != aggregate.receipt_root
         || claim.verifier_set_root != aggregate.receipt_root
         || checkpoint.verification_root != aggregate.receipt_root
         || claim.job_id != challenge.job_id
@@ -268,6 +280,7 @@ mod tests {
     fn fixture() -> (
         VerificationChallenge,
         Vec<VerifierReceipt>,
+        InferenceOutcome,
         ComputeSettlement,
         MvpCheckpoint,
         SynaRewardClaim,
@@ -300,15 +313,26 @@ mod tests {
             refund_amount: 0,
         };
         let settlement_root = settlement.canonical_root(&c, &a, 100).unwrap();
+        let outcome = InferenceOutcome {
+            job_id: c.job_id,
+            model_root: [11; 32],
+            output_commitment: c.challenged_output_commitment,
+            receipt_root: [14; 32],
+            verifier_evidence_root: a.receipt_root,
+            total_compute_units: 100,
+            total_cost: 100,
+            output_tokens: 1,
+        };
+        let inference_root = outcome.commitment().unwrap();
         let cp = MvpCheckpoint {
             chain_id: [10; 32],
             epoch: 1,
             sequence: 1,
             previous_checkpoint: [0; 32],
-            model_root: [11; 32],
+            model_root: outcome.model_root,
             network_root: [12; 32],
             provider_root: [13; 32],
-            inference_root: [14; 32],
+            inference_root,
             verification_root: a.receipt_root,
             kv_root: [16; 32],
             storage_root: [17; 32],
@@ -327,16 +351,16 @@ mod tests {
             verifier_set_root: a.receipt_root,
             settlement_root,
             checkpoint_root: cp.commitment().unwrap(),
-            useful_work_units: 100,
+            useful_work_units: outcome.total_compute_units,
             reward_amount: 10,
             reward_policy_version: 1,
         };
-        (c, receipts, settlement, cp, claim)
+        (c, receipts, outcome, settlement, cp, claim)
     }
 
     #[test]
     fn verified_inference_mints_once_and_updates_supply() {
-        let (c, receipts, settlement, cp, claim) = fixture();
+        let (c, receipts, outcome, settlement, cp, claim) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -347,6 +371,7 @@ mod tests {
         let auth = authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -361,6 +386,7 @@ mod tests {
         assert!(authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -373,7 +399,7 @@ mod tests {
 
     #[test]
     fn mismatch_receipt_blocks_mint() {
-        let (c, mut receipts, settlement, cp, claim) = fixture();
+        let (c, mut receipts, outcome, settlement, cp, claim) = fixture();
         receipts[1].verdict = VerificationVerdict::Mismatch;
         receipts[1].recomputed_output_commitment = [99; 32];
         let mut rewards = SynaRewardState::default();
@@ -386,6 +412,7 @@ mod tests {
         assert!(authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -399,7 +426,7 @@ mod tests {
 
     #[test]
     fn inconclusive_receipt_blocks_mint() {
-        let (c, mut receipts, settlement, cp, claim) = fixture();
+        let (c, mut receipts, outcome, settlement, cp, claim) = fixture();
         receipts[1].verdict = VerificationVerdict::Inconclusive;
         receipts[1].recomputed_output_commitment = [0; 32];
         let mut rewards = SynaRewardState::default();
@@ -412,6 +439,7 @@ mod tests {
         assert!(authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -426,7 +454,7 @@ mod tests {
 
     #[test]
     fn changing_claim_id_cannot_double_mint_same_finalized_inference() {
-        let (c, receipts, settlement, cp, claim) = fixture();
+        let (c, receipts, outcome, settlement, cp, claim) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -438,6 +466,7 @@ mod tests {
         authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -452,6 +481,7 @@ mod tests {
         assert!(authorize_verified_inference_reward_and_mint(
             &replayed,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
@@ -464,8 +494,37 @@ mod tests {
     }
 
     #[test]
+    fn caller_cannot_inflate_useful_work_units() {
+        let (c, receipts, outcome, settlement, cp, mut claim) = fixture();
+        claim.useful_work_units += 10_000;
+        claim.reward_amount = 100;
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &outcome,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
     fn model_cannot_self_choose_reward_amount() {
-        let (c, receipts, settlement, cp, mut claim) = fixture();
+        let (c, receipts, outcome, settlement, cp, mut claim) = fixture();
         claim.reward_amount = 99;
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
@@ -477,6 +536,7 @@ mod tests {
         assert!(authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
+            &outcome,
             &settlement,
             &c,
             &receipts,
