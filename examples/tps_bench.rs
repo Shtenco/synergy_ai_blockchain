@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use synergy_pq_evm_core::{
+    agentic_economy::constants::EXACT_DQN_RUNTIME_SHA256,
     AgenticEconomyReplayState, AgenticEconomyState, AgenticEconomyTransitionReceipt, Asset,
     EconomyAccountingSnapshot, EconomyDecision,
 };
@@ -84,6 +85,7 @@ fn main() {
                 actor: (i % 6) as u16,
                 action: (i % 32) as u8,
             },
+            executor_runtime_root: EXACT_DQN_RUNTIME_SHA256,
             model_checkpoint_root: [7; 32],
             observation_root: [8; 32],
             pre_state_root: replay.state_root,
