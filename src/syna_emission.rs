@@ -26,10 +26,11 @@ impl SynaEmissionPolicy {
         {
             return Err("invalid SYNA emission policy");
         }
-        if let Some(cap) = self.max_supply {
-            if cap == 0 || cap < self.max_emission_per_epoch {
-                return Err("invalid SYNA supply cap");
-            }
+        if self
+            .max_supply
+            .is_some_and(|cap| cap == 0 || cap < self.max_emission_per_epoch)
+        {
+            return Err("invalid SYNA supply cap");
         }
         Ok(())
     }
@@ -97,10 +98,8 @@ impl SynaSupplyState {
             .total_supply
             .checked_add(amount)
             .ok_or("SYNA supply overflow")?;
-        if let Some(cap) = policy.max_supply {
-            if next_supply > cap {
-                return Err("SYNA max supply exceeded");
-            }
+        if policy.max_supply.is_some_and(|cap| next_supply > cap) {
+            return Err("SYNA max supply exceeded");
         }
         self.current_epoch = epoch;
         self.epoch_emission = next_epoch;
