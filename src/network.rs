@@ -740,6 +740,7 @@ fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<Transport
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
     let expand_result = hkdf.expand(&info, &mut output);
+    drop(hkdf);
     if expand_result.is_err() {
         info.zeroize();
         output.zeroize();
@@ -787,6 +788,7 @@ fn derive_transport_direction_key(
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
     let expand_result = hkdf.expand(&info, &mut output);
+    drop(hkdf);
 
     if expand_result.is_err() {
         info.zeroize();
