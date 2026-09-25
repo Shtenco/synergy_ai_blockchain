@@ -14,6 +14,7 @@ use crate::pq::{
 pub const MAX_INFERENCE_STAGES: usize = 65_536;
 
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
+pub const INFERENCE_OUTCOME_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-OUTCOME/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceStageKind {
@@ -296,20 +297,44 @@ pub struct InferenceOutcome {
 }
 
 impl InferenceOutcome {
-    pub fn validate_against(&self, job: &InferenceJob) -> Result<(), &'static str> {
-        if self.job_id != job.job_id || self.model_root != job.model_root {
-            return Err("outcome/job mismatch");
-        }
-        if self.output_commitment == [0; 32]
+    fn validate_fields(&self) -> Result<(), &'static str> {
+        if self.job_id == [0; 32]
+            || self.model_root == [0; 32]
+            || self.output_commitment == [0; 32]
             || self.receipt_root == [0; 32]
             || self.verifier_evidence_root == [0; 32]
+            || self.total_compute_units == 0
         {
-            return Err("outcome commitments required");
+            return Err("outcome commitments and metering required");
+        }
+        Ok(())
+    }
+
+    pub fn validate_against(&self, job: &InferenceJob) -> Result<(), &'static str> {
+        self.validate_fields()?;
+        if self.job_id != job.job_id || self.model_root != job.model_root {
+            return Err("outcome/job mismatch");
         }
         if self.output_tokens > job.max_output_tokens || self.total_cost > job.max_cost {
             return Err("outcome exceeds job bounds");
         }
         Ok(())
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate_fields().ok()?;
+        let mut hasher = Sha256::new();
+        hasher.update(INFERENCE_OUTCOME_DOMAIN);
+        hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update(self.job_id);
+        hasher.update(self.model_root);
+        hasher.update(self.output_commitment);
+        hasher.update(self.receipt_root);
+        hasher.update(self.verifier_evidence_root);
+        hasher.update(self.total_compute_units.to_be_bytes());
+        hasher.update(self.total_cost.to_be_bytes());
+        hasher.update(self.output_tokens.to_be_bytes());
+        Some(hasher.finalize().into())
     }
 }
 
@@ -409,6 +434,25 @@ mod tests {
             resource_limit_commitment: [40 + index as u8; 32],
             lease_expires_at: 90,
         }
+    }
+
+    #[test]
+    fn outcome_commitment_binds_compute_metering() {
+        let outcome = InferenceOutcome {
+            job_id: [1; 32],
+            model_root: [3; 32],
+            output_commitment: [50; 32],
+            receipt_root: [51; 32],
+            verifier_evidence_root: [52; 32],
+            total_compute_units: 100,
+            total_cost: 25,
+            output_tokens: 8,
+        };
+        let root = outcome.commitment().unwrap();
+
+        let mut changed = outcome;
+        changed.total_compute_units += 1;
+        assert_ne!(changed.commitment().unwrap(), root);
     }
 
     #[test]
