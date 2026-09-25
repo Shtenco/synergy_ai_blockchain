@@ -313,7 +313,99 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SynaEmissionPolicy, SynaSupplyState, VerificationVerdict};
+    use sha2::{Digest, Sha256};
+
+    use crate::pq::{
+        AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, HybridAuthorization,
+        SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+    use crate::{InferenceStageAssignment, InferenceStageKind};
+
+    #[derive(Clone, Copy)]
+    struct BindingTestVerifier;
+
+    fn scheme_tag(scheme: AuthScheme) -> u8 {
+        match scheme {
+            AuthScheme::MlDsa87 => 1,
+            AuthScheme::SlhDsaShake256s => 2,
+            AuthScheme::Ed25519 => 3,
+            AuthScheme::Secp256k1 => 4,
+        }
+    }
+
+    fn test_signature_digest(
+        scheme: AuthScheme,
+        public_key: &[u8],
+        message: &[u8],
+        context: &[u8],
+    ) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(b"SYNERGY/P4-TEST-SIGNATURE/V1\0");
+        h.update([scheme_tag(scheme)]);
+        h.update(public_key);
+        h.update(message);
+        h.update(context);
+        h.finalize().into()
+    }
+
+    impl ContextSignatureVerifier for BindingTestVerifier {
+        fn verify_with_context(
+            &self,
+            scheme: AuthScheme,
+            public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            signature: &[u8],
+        ) -> bool {
+            signature.len() >= 32
+                && signature[..32]
+                    == test_signature_digest(scheme, public_key, message, context)
+        }
+    }
+
+    fn signed_pq_authorization(
+        envelope: &AuthorizationEnvelope,
+        seed: u8,
+    ) -> HybridAuthorization {
+        let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
+        let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
+
+        let ml_pk = vec![seed; ML_DSA_87_PUBLIC_KEY_BYTES];
+        let slh_pk = vec![seed.wrapping_add(1); SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES];
+
+        let mut ml_sig = vec![0u8; ML_DSA_87_SIGNATURE_BYTES];
+        ml_sig[..32].copy_from_slice(&test_signature_digest(
+            AuthScheme::MlDsa87,
+            &ml_pk,
+            &message,
+            &context,
+        ));
+
+        let mut slh_sig = vec![0u8; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES];
+        slh_sig[..32].copy_from_slice(&test_signature_digest(
+            AuthScheme::SlhDsaShake256s,
+            &slh_pk,
+            &message,
+            &context,
+        ));
+
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: ml_pk,
+                    signature: ml_sig,
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: slh_pk,
+                    signature: slh_sig,
+                },
+            ],
+        }
+    }
 
     fn challenge() -> VerificationChallenge {
         VerificationChallenge {
@@ -327,7 +419,7 @@ mod tests {
         }
     }
 
-    fn receipt(
+    fn verifier_receipt(
         verifier: u8,
         verdict: VerificationVerdict,
         recomputed: [u8; 32],
@@ -343,6 +435,81 @@ mod tests {
         }
     }
 
+    fn authorize_stage(
+        receipt: InferenceStageReceipt,
+        chain_id: [u8; 32],
+        epoch: u64,
+        nonce: u64,
+    ) -> (InferenceReceiptAuthorization, InferenceReceiptValidationContext) {
+        let envelope = AuthorizationEnvelope {
+            chain_id,
+            domain: AuthorizationDomain::InferenceReceipt,
+            epoch,
+            nonce,
+            expires_at: 100,
+            payload_commitment: receipt.authorization_commitment().unwrap(),
+        };
+        let authorization = signed_pq_authorization(&envelope, receipt.worker_id[0]);
+        let validation = InferenceReceiptValidationContext {
+            expected_chain_id: chain_id,
+            expected_epoch: epoch,
+            expected_nonce: nonce,
+            expected_worker_id: receipt.worker_id,
+            expected_worker_keyset_commitment: authorization.keyset_commitment().unwrap(),
+            now: 50,
+            max_future_seconds: 60,
+        };
+        (
+            InferenceReceiptAuthorization {
+                chain_id,
+                epoch,
+                nonce,
+                expires_at: 100,
+                receipt,
+                authorization,
+            },
+            validation,
+        )
+    }
+
+    fn authorize_verifier(
+        receipt: VerifierReceipt,
+        challenge: &VerificationChallenge,
+        chain_id: [u8; 32],
+        epoch: u64,
+        nonce: u64,
+    ) -> (VerifierReceiptAuthorization, VerifierReceiptValidationContext) {
+        let envelope = AuthorizationEnvelope {
+            chain_id,
+            domain: AuthorizationDomain::VerificationReceipt,
+            epoch,
+            nonce,
+            expires_at: 100,
+            payload_commitment: receipt.authorization_commitment(challenge).unwrap(),
+        };
+        let authorization = signed_pq_authorization(&envelope, receipt.verifier_id[0]);
+        let validation = VerifierReceiptValidationContext {
+            expected_chain_id: chain_id,
+            expected_epoch: epoch,
+            expected_nonce: nonce,
+            expected_verifier_id: receipt.verifier_id,
+            expected_verifier_keyset_commitment: authorization.keyset_commitment().unwrap(),
+            now: 50,
+            max_future_seconds: 60,
+        };
+        (
+            VerifierReceiptAuthorization {
+                chain_id,
+                epoch,
+                nonce,
+                expires_at: 100,
+                receipt,
+                authorization,
+            },
+            validation,
+        )
+    }
+
     fn policy() -> SynaEmissionPolicy {
         SynaEmissionPolicy {
             version: 1,
@@ -353,37 +520,42 @@ mod tests {
         }
     }
 
-    fn fixture() -> (
-        VerificationChallenge,
-        Vec<VerifierReceipt>,
-        InferenceJob,
-        InferenceExecutionPlan,
-        Vec<InferenceStageReceipt>,
-        InferenceOutcome,
-        ComputeSettlement,
-        MvpCheckpoint,
-        SynaRewardClaim,
-    ) {
-        let c = challenge();
-        let receipts = vec![
-            receipt(
+    struct Fixture {
+        challenge: VerificationChallenge,
+        job: InferenceJob,
+        plan: InferenceExecutionPlan,
+        stage_authorizations: Vec<InferenceReceiptAuthorization>,
+        stage_validations: Vec<InferenceReceiptValidationContext>,
+        outcome: InferenceOutcome,
+        settlement: ComputeSettlement,
+        checkpoint: MvpCheckpoint,
+        verifier_authorizations: Vec<VerifierReceiptAuthorization>,
+        verifier_validations: Vec<VerifierReceiptValidationContext>,
+        claim: SynaRewardClaim,
+    }
+
+    fn fixture() -> Fixture {
+        let challenge = challenge();
+        let raw_verifiers = vec![
+            verifier_receipt(
                 5,
                 VerificationVerdict::Match,
-                c.challenged_output_commitment,
+                challenge.challenged_output_commitment,
             ),
-            receipt(
+            verifier_receipt(
                 6,
                 VerificationVerdict::Match,
-                c.challenged_output_commitment,
+                challenge.challenged_output_commitment,
             ),
         ];
-        let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
+        let aggregate = aggregate_verifier_receipts(&challenge, &raw_verifiers).unwrap();
+
         let settlement = ComputeSettlement {
-            job_id: c.job_id,
+            job_id: challenge.job_id,
             funding_root: [6; 32],
             worker_id: [7; 32],
             storage_provider_id: [8; 32],
-            verifier_set_root: a.receipt_root,
+            verifier_set_root: aggregate.receipt_root,
             worker_reward: 60,
             storage_reward: 10,
             verifier_reward: 20,
@@ -391,9 +563,12 @@ mod tests {
             slash_root: None,
             refund_amount: 0,
         };
-        let settlement_root = settlement.canonical_root(&c, &a, 100).unwrap();
+        let settlement_root = settlement
+            .canonical_root(&challenge, &aggregate, 100)
+            .unwrap();
+
         let mut job = InferenceJob {
-            job_id: c.job_id,
+            job_id: challenge.job_id,
             requester_id: [30; 32],
             model_root: [11; 32],
             input_commitment: [31; 32],
@@ -403,10 +578,11 @@ mod tests {
             created_at: 1,
             deadline: 100,
         };
-        let stages = vec![crate::InferenceStageAssignment {
+
+        let stages = vec![InferenceStageAssignment {
             job_id: job.job_id,
             stage_index: 0,
-            kind: crate::InferenceStageKind::Decode,
+            kind: InferenceStageKind::Decode,
             worker_id: settlement.worker_id,
             model_shard_commitment: [33; 32],
             input_commitment: [34; 32],
@@ -421,31 +597,34 @@ mod tests {
             plan_root,
             stages,
         };
-        let stage_receipts = vec![InferenceStageReceipt {
+
+        let raw_stage = InferenceStageReceipt {
             job_id: job.job_id,
             stage_index: 0,
             worker_id: settlement.worker_id,
             model_shard_commitment: plan.stages[0].model_shard_commitment,
             input_commitment: plan.stages[0].input_commitment,
-            output_commitment: c.challenged_output_commitment,
+            output_commitment: challenge.challenged_output_commitment,
             execution_trace_commitment: [36; 32],
             worker_signature_commitment: [37; 32],
             compute_units: 100,
             bytes_read: 1_000,
             bytes_written: 100,
             elapsed_micros: 500,
-        }];
+        };
+
         let outcome = build_inference_outcome(
             &job,
             &plan,
-            &stage_receipts,
-            a.receipt_root,
+            std::slice::from_ref(&raw_stage),
+            aggregate.receipt_root,
             100,
             1,
         )
         .unwrap();
         let inference_root = outcome.commitment().unwrap();
-        let cp = MvpCheckpoint {
+
+        let checkpoint = MvpCheckpoint {
             chain_id: [10; 32],
             epoch: 1,
             sequence: 1,
@@ -454,72 +633,110 @@ mod tests {
             network_root: [12; 32],
             provider_root: [13; 32],
             inference_root,
-            verification_root: a.receipt_root,
+            verification_root: aggregate.receipt_root,
             kv_root: [16; 32],
             storage_root: [17; 32],
             settlement_root,
             scheduler_root: [19; 32],
             node_set_root: [20; 32],
         };
+
+        let (stage_authorization, stage_validation) =
+            authorize_stage(raw_stage, checkpoint.chain_id, checkpoint.epoch, 1);
+
+        let mut verifier_authorizations = Vec::new();
+        let mut verifier_validations = Vec::new();
+        for (i, receipt) in raw_verifiers.into_iter().enumerate() {
+            let nonce = 10 + u64::try_from(i).unwrap();
+            let (authorized, validation) = authorize_verifier(
+                receipt,
+                &challenge,
+                checkpoint.chain_id,
+                checkpoint.epoch,
+                nonce,
+            );
+            verifier_authorizations.push(authorized);
+            verifier_validations.push(validation);
+        }
+
         let claim = SynaRewardClaim {
             claim_id: [21; 32],
-            chain_id: cp.chain_id,
-            epoch: cp.epoch,
-            job_id: c.job_id,
+            chain_id: checkpoint.chain_id,
+            epoch: checkpoint.epoch,
+            job_id: challenge.job_id,
             worker_id: settlement.worker_id,
-            model_root: cp.model_root,
-            inference_root: cp.inference_root,
-            verifier_set_root: a.receipt_root,
+            model_root: checkpoint.model_root,
+            inference_root: checkpoint.inference_root,
+            verifier_set_root: aggregate.receipt_root,
             settlement_root,
-            checkpoint_root: cp.commitment().unwrap(),
+            checkpoint_root: checkpoint.commitment().unwrap(),
             useful_work_units: outcome.total_compute_units,
             reward_amount: 10,
             reward_policy_version: 1,
         };
-        (
-            c,
-            receipts,
+
+        Fixture {
+            challenge,
             job,
             plan,
-            stage_receipts,
+            stage_authorizations: vec![stage_authorization],
+            stage_validations: vec![stage_validation],
             outcome,
             settlement,
-            cp,
+            checkpoint,
+            verifier_authorizations,
+            verifier_validations,
             claim,
+        }
+    }
+
+    fn mint(
+        fixture: &Fixture,
+        claim: &SynaRewardClaim,
+        stage_authorizations: &[InferenceReceiptAuthorization],
+        verifier_authorizations: &[VerifierReceiptAuthorization],
+        rewards: &mut SynaRewardState,
+        supply: &mut SynaSupplyState,
+    ) -> Result<SynaMintAuthorization, &'static str> {
+        authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            claim,
+            &fixture.checkpoint,
+            &fixture.outcome,
+            &fixture.job,
+            &fixture.plan,
+            stage_authorizations,
+            &fixture.stage_validations,
+            &fixture.settlement,
+            &fixture.challenge,
+            verifier_authorizations,
+            &fixture.verifier_validations,
+            &policy(),
+            rewards,
+            supply,
         )
     }
 
-    #[test]
-    fn verified_inference_mints_once_and_updates_supply() {
-        let (
-            c,
-            receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            claim,
-        ) = fixture();
-        let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
+    fn empty_supply() -> SynaSupplyState {
+        SynaSupplyState {
             policy_version: 1,
             current_epoch: 1,
             total_supply: 0,
             epoch_emission: 0,
-        };
-        let auth = authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+        }
+    }
+
+    #[test]
+    fn verified_pq_inference_mints_once_and_updates_supply() {
+        let fixture = fixture();
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+
+        let auth = mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
@@ -527,17 +744,12 @@ mod tests {
         assert_eq!(auth.amount, 10);
         assert_eq!(supply.total_supply, 10);
         assert_eq!(auth.supply_state_root, supply.commitment().unwrap());
-        assert!(authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
@@ -545,38 +757,18 @@ mod tests {
     }
 
     #[test]
-    fn mismatch_receipt_blocks_mint() {
-        let (
-            c,
-            mut receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            claim,
-        ) = fixture();
-        receipts[1].verdict = VerificationVerdict::Mismatch;
-        receipts[1].recomputed_output_commitment = [99; 32];
+    fn tampered_worker_receipt_signature_binding_blocks_mint() {
+        let fixture = fixture();
+        let mut stage_authorizations = fixture.stage_authorizations.clone();
+        stage_authorizations[0].receipt.compute_units += 1;
+
         let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
-        assert!(authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
@@ -585,107 +777,117 @@ mod tests {
     }
 
     #[test]
-    fn inconclusive_receipt_blocks_mint() {
-        let (
-            c,
-            mut receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            claim,
-        ) = fixture();
-        receipts[1].verdict = VerificationVerdict::Inconclusive;
-        receipts[1].recomputed_output_commitment = [0; 32];
+    fn authenticated_but_changed_stage_metering_cannot_match_finalized_outcome() {
+        let fixture = fixture();
+        let mut changed = fixture.stage_authorizations[0].receipt.clone();
+        changed.compute_units = 10_000;
+        let (resigned, _) = authorize_stage(
+            changed,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            1,
+        );
+        let stage_authorizations = vec![resigned];
+
         let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
-        assert!(authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
         .is_err());
         assert_eq!(supply.total_supply, 0);
-        assert!(!rewards.is_consumed(&claim.mining_replay_key().unwrap()));
     }
 
     #[test]
-    fn policy_upgrade_does_not_change_one_shot_mining_identity() {
-        let (_, _, _, _, _, _, _, _, claim) = fixture();
-        let key = claim.mining_replay_key().unwrap();
+    fn mismatch_verifier_receipt_blocks_mint() {
+        let fixture = fixture();
+        let mut receipt = fixture.verifier_authorizations[1].receipt.clone();
+        receipt.verdict = VerificationVerdict::Mismatch;
+        receipt.recomputed_output_commitment = [99; 32];
+        let (resigned, _) = authorize_verifier(
+            receipt,
+            &fixture.challenge,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            11,
+        );
+        let mut verifier_authorizations = fixture.verifier_authorizations.clone();
+        verifier_authorizations[1] = resigned;
 
-        let mut upgraded = claim;
-        upgraded.reward_policy_version += 1;
-        assert_eq!(upgraded.mining_replay_key().unwrap(), key);
-        assert_ne!(upgraded.canonical_root().unwrap(), key);
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn inconclusive_verifier_receipt_blocks_mint() {
+        let fixture = fixture();
+        let mut receipt = fixture.verifier_authorizations[1].receipt.clone();
+        receipt.verdict = VerificationVerdict::Inconclusive;
+        receipt.recomputed_output_commitment = [0; 32];
+        let (resigned, _) = authorize_verifier(
+            receipt,
+            &fixture.challenge,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            11,
+        );
+        let mut verifier_authorizations = fixture.verifier_authorizations.clone();
+        verifier_authorizations[1] = resigned;
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+        assert!(!rewards.is_consumed(
+            &fixture.claim.mining_replay_key().unwrap()
+        ));
     }
 
     #[test]
     fn changing_claim_id_cannot_double_mint_same_finalized_inference() {
-        let (
-            c,
-            receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            claim,
-        ) = fixture();
+        let fixture = fixture();
         let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
+        let mut supply = empty_supply();
 
-        authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+        mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
         .unwrap();
 
-        let mut replayed = claim.clone();
+        let mut replayed = fixture.claim.clone();
         replayed.claim_id = [42; 32];
-        assert!(authorize_verified_inference_reward_and_mint(
+        assert!(mint(
+            &fixture,
             &replayed,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
@@ -694,81 +896,30 @@ mod tests {
     }
 
     #[test]
-    fn forged_stage_compute_units_cannot_mint() {
-        let (
-            c,
-            receipts,
-            job,
-            plan,
-            mut stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            claim,
-        ) = fixture();
-        stage_receipts[0].compute_units = 10_000;
+    fn policy_upgrade_does_not_change_one_shot_mining_identity() {
+        let fixture = fixture();
+        let key = fixture.claim.mining_replay_key().unwrap();
 
-        let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
-
-        assert!(authorize_verified_inference_reward_and_mint(
-            &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
-            &mut rewards,
-            &mut supply,
-        )
-        .is_err());
-        assert_eq!(supply.total_supply, 0);
+        let mut upgraded = fixture.claim;
+        upgraded.reward_policy_version += 1;
+        assert_eq!(upgraded.mining_replay_key().unwrap(), key);
+        assert_ne!(upgraded.canonical_root().unwrap(), key);
     }
 
     #[test]
     fn caller_cannot_inflate_useful_work_units() {
-        let (
-            c,
-            receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            mut claim,
-        ) = fixture();
+        let fixture = fixture();
+        let mut claim = fixture.claim.clone();
         claim.useful_work_units += 10_000;
         claim.reward_amount = 100;
 
         let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
-
-        assert!(authorize_verified_inference_reward_and_mint(
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
             &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
-            &policy(),
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
             &mut rewards,
             &mut supply,
         )
@@ -777,36 +928,45 @@ mod tests {
     }
 
     #[test]
-    fn model_cannot_self_choose_reward_amount() {
-        let (
-            c,
-            receipts,
-            job,
-            plan,
-            stage_receipts,
-            outcome,
-            settlement,
-            cp,
-            mut claim,
-        ) = fixture();
+    fn caller_cannot_self_choose_reward_amount() {
+        let fixture = fixture();
+        let mut claim = fixture.claim.clone();
         claim.reward_amount = 99;
+
         let mut rewards = SynaRewardState::default();
-        let mut supply = SynaSupplyState {
-            policy_version: 1,
-            current_epoch: 1,
-            total_supply: 0,
-            epoch_emission: 0,
-        };
-        assert!(authorize_verified_inference_reward_and_mint(
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
             &claim,
-            &cp,
-            &outcome,
-            &job,
-            &plan,
-            &stage_receipts,
-            &settlement,
-            &c,
-            &receipts,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn wrong_registered_worker_keyset_blocks_mint() {
+        let fixture = fixture();
+        let mut validations = fixture.stage_validations.clone();
+        validations[0].expected_worker_keyset_commitment[0] ^= 1;
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            &fixture.claim,
+            &fixture.checkpoint,
+            &fixture.outcome,
+            &fixture.job,
+            &fixture.plan,
+            &fixture.stage_authorizations,
+            &validations,
+            &fixture.settlement,
+            &fixture.challenge,
+            &fixture.verifier_authorizations,
+            &fixture.verifier_validations,
             &policy(),
             &mut rewards,
             &mut supply,
