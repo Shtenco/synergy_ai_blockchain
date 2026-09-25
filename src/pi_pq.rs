@@ -46,9 +46,17 @@ impl PiPqEvidence {
         Some(h.finalize().into())
     }
 
-    pub const fn may_authorize_consensus(&self) -> bool { false }
-    pub const fn may_authorize_assets(&self) -> bool { false }
-    pub const fn may_authorize_syna_mint(&self) -> bool { false }
+    pub const fn may_authorize_consensus(&self) -> bool {
+        false
+    }
+
+    pub const fn may_authorize_assets(&self) -> bool {
+        false
+    }
+
+    pub const fn may_authorize_syna_mint(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
