@@ -66,7 +66,13 @@ pub fn encrypt_mesh_end_to_end_directional(
 ) -> Option<MeshPacket> {
     let flow_root = mesh_flow_root(route.source, route.destination, flow_id, session_root)?;
     let record = encrypt_transport_record(
-        key, record_sequence, now, session_root, sender, flow_root, plaintext,
+        key,
+        record_sequence,
+        now,
+        session_root,
+        sender,
+        flow_root,
+        plaintext,
     )?;
     let opaque_payload = encode_record(&record)?;
     MeshPacket::new(route, flow_id, sequence, session_root, opaque_payload)
@@ -84,8 +90,15 @@ pub fn encrypt_mesh_end_to_end(
     plaintext: &[u8],
 ) -> Option<MeshPacket> {
     encrypt_mesh_end_to_end_directional(
-        route, flow_id, sequence, session_root, TransportRole::Initiator,
-        key, record_sequence, now, plaintext,
+        route,
+        flow_id,
+        sequence,
+        session_root,
+        TransportRole::Initiator,
+        key,
+        record_sequence,
+        now,
+        plaintext,
     )
 }
 
@@ -127,7 +140,12 @@ pub fn decrypt_mesh_end_to_end(
     now: u64,
 ) -> Option<Vec<u8>> {
     decrypt_mesh_end_to_end_directional(
-        packet, route, TransportRole::Initiator, key, record_sequence, now,
+        packet,
+        route,
+        TransportRole::Initiator,
+        key,
+        record_sequence,
+        now,
     )
 }
 
@@ -157,7 +175,13 @@ pub fn encrypt_mesh_hop_directional(
     let app_root = header.application_root(route)?;
     let bytes = encode_packet(packet)?;
     let record = encrypt_transport_record(
-        key, record_sequence, now, hop_session_root, sender, app_root, &bytes,
+        key,
+        record_sequence,
+        now,
+        hop_session_root,
+        sender,
+        app_root,
+        &bytes,
     )?;
     Some(EncryptedMeshHop { header, record })
 }
@@ -174,8 +198,15 @@ pub fn encrypt_mesh_hop(
     now: u64,
 ) -> Option<EncryptedMeshHop> {
     encrypt_mesh_hop_directional(
-        packet, route, current, next, hop_session_root, TransportRole::Initiator,
-        key, record_sequence, now,
+        packet,
+        route,
+        current,
+        next,
+        hop_session_root,
+        TransportRole::Initiator,
+        key,
+        record_sequence,
+        now,
     )
 }
 
@@ -222,8 +253,13 @@ pub fn decrypt_mesh_hop(
     now: u64,
 ) -> Option<MeshPacket> {
     decrypt_mesh_hop_directional(
-        wrapped, route, hop_session_root, TransportRole::Initiator,
-        key, record_sequence, now,
+        wrapped,
+        route,
+        hop_session_root,
+        TransportRole::Initiator,
+        key,
+        record_sequence,
+        now,
     )
 }
 
