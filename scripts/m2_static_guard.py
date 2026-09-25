@@ -1283,7 +1283,7 @@ require(
 
 
 require(
-    "pub fn finalize_once(" in autopilot_execution_lease
+    "pub(crate) fn finalize_once(" in autopilot_execution_lease
     and "execution lease already terminal" in autopilot_execution_lease
     and "terminal receipt lease mismatch" in autopilot_execution_lease
     and "AUTOPILOT_LEASE_TERMINAL_DOMAIN" in autopilot_execution_lease
