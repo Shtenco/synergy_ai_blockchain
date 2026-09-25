@@ -152,7 +152,7 @@ pub use service_planes::{
 };
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
 pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState};
-pub use syna_reward::{SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN};
+pub use syna_reward::{authorize_verified_inference_reward_and_mint, SynaMintAuthorization, SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN};
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope,
     ErasurePlacementReceipt, ProofOfStorageReceipt, StorageBid, StorageClass,
