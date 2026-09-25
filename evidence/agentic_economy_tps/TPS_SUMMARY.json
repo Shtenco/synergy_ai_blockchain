@@ -1,0 +1,80 @@
+{
+  "benchmark": "SYNERGY execution TPS v2",
+  "git_commit": "082592b4df2ce5651f60be52a9831990b74c94d9",
+  "runner": "DESKTOP-C8GUE41",
+  "cpu": "Intel Core i7-3610QM @ 2.30GHz, 4C/8T",
+  "os": "Windows 11 Pro x64",
+  "rust": "1.85.0",
+  "transactions_per_run": 1000000,
+  "runs": [
+    {
+      "transfer_tps": 41316167.84,
+      "agent_action_tps": 30026062.62,
+      "committed_seconds": 11.236044,
+      "committed_tps": 88999.29,
+      "receipt_seconds": 9.111494,
+      "receipt_tps": 109751.49
+    },
+    {
+      "transfer_tps": 42154606.23,
+      "agent_action_tps": 30052321.09,
+      "committed_seconds": 12.323467,
+      "committed_tps": 81145.99,
+      "receipt_seconds": 8.799054,
+      "receipt_tps": 113648.58
+    },
+    {
+      "transfer_tps": 38906267.02,
+      "agent_action_tps": 26321677.22,
+      "committed_seconds": 11.559333,
+      "committed_tps": 86510.18,
+      "receipt_seconds": 9.168484,
+      "receipt_tps": 109069.28
+    },
+    {
+      "transfer_tps": 43124266.89,
+      "agent_action_tps": 30896428.99,
+      "committed_seconds": 11.157145,
+      "committed_tps": 89628.66,
+      "receipt_seconds": 8.741765,
+      "receipt_tps": 114393.37
+    },
+    {
+      "transfer_tps": 37355387.95,
+      "agent_action_tps": 24939583.86,
+      "committed_seconds": 11.308685,
+      "committed_tps": 88427.61,
+      "receipt_seconds": 9.210372,
+      "receipt_tps": 108573.24
+    }
+  ],
+  "summary": {
+    "transfer_tps": {
+      "median": 41316167.84,
+      "min": 37355387.95,
+      "max": 43124266.89
+    },
+    "agent_action_tps": {
+      "median": 30026062.62,
+      "min": 24939583.86,
+      "max": 30896428.99
+    },
+    "state_committed_tps": {
+      "median": 88427.61,
+      "min": 81145.99,
+      "max": 89628.66
+    },
+    "receipt_replay_tps": {
+      "median": 109751.49,
+      "min": 108573.24,
+      "max": 114393.37
+    },
+    "end_to_end_single_node_execution_tps": {
+      "median": 48735.183103200114,
+      "mean": 48744.47357902142,
+      "min": 47342.83374602871,
+      "max": 50254.00888792401
+    }
+  },
+  "scope_note": "Single-node execution-layer benchmark. Excludes network propagation, multi-validator consensus, PQ signature verification per transaction, storage fsync, and public-testnet finality."
+}
