@@ -94,6 +94,46 @@ impl PeerDirectory {
     pub fn live_nodes(&self, now: u64) -> Vec<&NodeRecord> {
         self.records.values().filter(|r| r.live(now)).collect()
     }
+
+    pub fn get_at_epoch(&self, id: &[u8; 32], epoch: u64) -> Option<&NodeRecord> {
+        if epoch == 0 {
+            return None;
+        }
+        self.records
+            .get(id)
+            .filter(|record| record.epoch == epoch && record.validate().is_ok())
+    }
+
+    pub fn epoch_nodes(&self, epoch: u64) -> Vec<&NodeRecord> {
+        if epoch == 0 {
+            return Vec::new();
+        }
+        self.records
+            .values()
+            .filter(|record| record.epoch == epoch && record.validate().is_ok())
+            .collect()
+    }
+
+    pub fn commitment_for_epoch(&self, epoch: u64) -> Option<[u8; 32]> {
+        if epoch == 0 {
+            return None;
+        }
+        let nodes = self.epoch_nodes(epoch);
+        if nodes.is_empty() {
+            return None;
+        }
+        let count = u64::try_from(nodes.len()).ok()?;
+        let mut h = Sha256::new();
+        h.update(NODE_SET_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(epoch.to_be_bytes());
+        h.update(count.to_be_bytes());
+        for record in nodes {
+            h.update(record.commitment()?);
+        }
+        Some(h.finalize().into())
+    }
+
     pub fn commitment(&self, now: u64) -> Option<[u8; 32]> {
         let live = self.live_nodes(now);
         let count = u64::try_from(live.len()).ok()?;
@@ -154,6 +194,21 @@ mod tests {
             Err("PQ identity commitment already registered to another node")
         );
         assert_eq!(d.records.len(), 1);
+    }
+
+    #[test]
+    fn finalized_epoch_commitment_is_stable_after_liveness_expiry() {
+        let mut d = PeerDirectory::default();
+        d.upsert(r(1), 10).unwrap();
+
+        let epoch_root_before = d.commitment_for_epoch(1).unwrap();
+        assert!(d.commitment(10).is_some());
+        assert!(d.commitment(101).is_some());
+        let epoch_root_after = d.commitment_for_epoch(1).unwrap();
+
+        assert_eq!(epoch_root_before, epoch_root_after);
+        assert!(d.get_at_epoch(&[1; 32], 1).is_some());
+        assert!(d.get_at_epoch(&[1; 32], 2).is_none());
     }
 
     #[test]
