@@ -429,7 +429,17 @@ mod tests {
 
     #[test]
     fn verified_inference_mints_once_and_updates_supply() {
-        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
+        let (
+            c,
+            receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        ) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -474,7 +484,17 @@ mod tests {
 
     #[test]
     fn mismatch_receipt_blocks_mint() {
-        let (c, mut receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
+        let (
+            c,
+            mut receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        ) = fixture();
         receipts[1].verdict = VerificationVerdict::Mismatch;
         receipts[1].recomputed_output_commitment = [99; 32];
         let mut rewards = SynaRewardState::default();
@@ -504,7 +524,17 @@ mod tests {
 
     #[test]
     fn inconclusive_receipt_blocks_mint() {
-        let (c, mut receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
+        let (
+            c,
+            mut receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        ) = fixture();
         receipts[1].verdict = VerificationVerdict::Inconclusive;
         receipts[1].recomputed_output_commitment = [0; 32];
         let mut rewards = SynaRewardState::default();
@@ -535,7 +565,17 @@ mod tests {
 
     #[test]
     fn changing_claim_id_cannot_double_mint_same_finalized_inference() {
-        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
+        let (
+            c,
+            receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        ) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -623,7 +663,17 @@ mod tests {
 
     #[test]
     fn caller_cannot_inflate_useful_work_units() {
-        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, mut claim) = fixture();
+        let (
+            c,
+            receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            mut claim,
+        ) = fixture();
         claim.useful_work_units += 10_000;
         claim.reward_amount = 100;
 
@@ -655,7 +705,17 @@ mod tests {
 
     #[test]
     fn model_cannot_self_choose_reward_amount() {
-        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, mut claim) = fixture();
+        let (
+            c,
+            receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            mut claim,
+        ) = fixture();
         claim.reward_amount = 99;
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
