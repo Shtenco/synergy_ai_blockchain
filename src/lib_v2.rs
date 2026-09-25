@@ -160,8 +160,8 @@ pub use service_planes::{
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
 pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_DOMAIN};
 pub use syna_reward::{
-    authorize_verified_inference_reward_and_mint, SynaMintAuthorization, SynaRewardClaim,
-    SynaRewardState, SYNA_REWARD_DOMAIN,
+    authorize_verified_inference_reward_and_mint, SynaInferenceMintContext,
+    SynaMintAuthorization, SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN,
 };
 pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use storage::{
