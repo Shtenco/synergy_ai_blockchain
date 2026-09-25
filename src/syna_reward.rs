@@ -9,10 +9,14 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     aggregate_verifier_receipts, build_inference_outcome, ComputeSettlement,
-    InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceStageReceipt, MvpCheckpoint,
-    SynaEmissionPolicy, SynaSupplyState, VerificationChallenge, VerificationVerdict,
-    VerifierReceipt,
+    InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
+    InferenceReceiptValidationContext, InferenceStageReceipt, MvpCheckpoint, SynaEmissionPolicy,
+    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceipt,
+    VerifierReceiptAuthorization, VerifierReceiptValidationContext,
 };
+use crate::inference::verify_inference_receipt;
+use crate::pq::ContextSignatureVerifier;
+use crate::verification::verify_verifier_receipt;
 
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
 pub const SYNA_MINING_REPLAY_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINING-REPLAY/V1\0";
@@ -126,16 +130,19 @@ pub struct SynaMintAuthorization {
     pub supply_state_root: [u8; 32],
 }
 
-pub fn authorize_verified_inference_reward_and_mint(
+pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>(
+    signature_verifier: &V,
     claim: &SynaRewardClaim,
     checkpoint: &MvpCheckpoint,
     outcome: &InferenceOutcome,
     job: &InferenceJob,
     plan: &InferenceExecutionPlan,
-    stage_receipts: &[InferenceStageReceipt],
+    stage_authorizations: &[InferenceReceiptAuthorization],
+    stage_validations: &[InferenceReceiptValidationContext],
     settlement: &ComputeSettlement,
     challenge: &VerificationChallenge,
-    receipts: &[VerifierReceipt],
+    verifier_authorizations: &[VerifierReceiptAuthorization],
+    verifier_validations: &[VerifierReceiptValidationContext],
     policy: &SynaEmissionPolicy,
     reward_state: &mut SynaRewardState,
     supply_state: &mut SynaSupplyState,
@@ -145,7 +152,53 @@ pub fn authorize_verified_inference_reward_and_mint(
     challenge.validate()?;
     policy.validate()?;
 
-    let aggregate = aggregate_verifier_receipts(challenge, receipts)?;
+    if stage_authorizations.len() != plan.stages.len()
+        || stage_validations.len() != plan.stages.len()
+    {
+        return Err("every inference stage requires PQ authorization context");
+    }
+
+    let mut stage_receipts = Vec::with_capacity(stage_authorizations.len());
+    for ((assignment, authorized), validation) in plan
+        .stages
+        .iter()
+        .zip(stage_authorizations.iter())
+        .zip(stage_validations.iter())
+    {
+        if !verify_inference_receipt(
+            signature_verifier,
+            assignment,
+            authorized,
+            validation,
+        ) {
+            return Err("invalid PQ-authorized inference stage receipt");
+        }
+        stage_receipts.push(authorized.receipt.clone());
+    }
+
+    if verifier_authorizations.len() != verifier_validations.len()
+        || verifier_authorizations.is_empty()
+    {
+        return Err("verifier PQ authorization contexts required");
+    }
+
+    let mut receipts = Vec::with_capacity(verifier_authorizations.len());
+    for (authorized, validation) in verifier_authorizations
+        .iter()
+        .zip(verifier_validations.iter())
+    {
+        if !verify_verifier_receipt(
+            signature_verifier,
+            challenge,
+            authorized,
+            validation,
+        ) {
+            return Err("invalid PQ-authorized verifier receipt");
+        }
+        receipts.push(authorized.receipt.clone());
+    }
+
+    let aggregate = aggregate_verifier_receipts(challenge, &receipts)?;
     if aggregate.final_verdict() != VerificationVerdict::Match {
         return Err("SYNA worker reward requires canonical MATCH verdict");
     }
@@ -154,7 +207,7 @@ pub fn authorize_verified_inference_reward_and_mint(
     let canonical_outcome = build_inference_outcome(
         job,
         plan,
-        stage_receipts,
+        &stage_receipts,
         aggregate.receipt_root,
         outcome.total_cost,
         outcome.output_tokens,
