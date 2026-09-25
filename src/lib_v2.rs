@@ -86,7 +86,7 @@ pub use governance::{
 pub use inference::{
     verify_inference_receipt_and_consume, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
-    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
+    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, INFERENCE_OUTCOME_DOMAIN,
 };
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
