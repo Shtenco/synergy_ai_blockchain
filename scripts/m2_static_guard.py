@@ -1617,7 +1617,8 @@ require(
 
 require(
     "current_epoch: u64" in storage
-    and "archive.expires_at_epoch.checked_sub(current_epoch)" in storage
+    and ".expires_at_epoch" in storage
+    and ".checked_sub(current_epoch)" in storage
     and "storage bid term exceeds archive lifetime" in storage
     and "storage bid starts after archive expiry" in storage,
     "storage provider bids must remain bounded by archive lifetime",
