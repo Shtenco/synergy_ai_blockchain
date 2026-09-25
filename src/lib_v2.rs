@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent_execution;
+pub mod agent_mesh;
 pub mod agentic_economy;
 
 pub mod autopilot;
