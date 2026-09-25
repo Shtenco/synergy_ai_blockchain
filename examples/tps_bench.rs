@@ -30,7 +30,7 @@ fn main() {
     for i in 0..n {
         let actor = (i as usize) % 6;
         let action = safe_actions[(i as usize) % safe_actions.len()];
-        a.apply_consensus_action(actor, action)
+        a.apply_benchmark_action(actor, action)
             .expect("agent action");
         if i % 10_000 == 0 {
             a.advance_block();
@@ -46,7 +46,7 @@ fn main() {
         let actor = (i as usize) % 6;
         let action = safe_actions[(i as usize) % safe_actions.len()];
         cstate
-            .apply_consensus_action(actor, action)
+            .apply_benchmark_action(actor, action)
             .expect("committed action");
         rolling = cstate.commitment();
         if i % 10_000 == 0 {
