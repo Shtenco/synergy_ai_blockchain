@@ -220,26 +220,21 @@ impl SynaMintAuthorization {
 
     #[cfg(test)]
     pub(crate) fn test_only(
-        claim_root: [u8; 32],
-        claim_id: [u8; 32],
         worker_id: [u8; 32],
         amount: u128,
         epoch: u64,
-        checkpoint_root: [u8; 32],
-        verifier_set_root: [u8; 32],
-        settlement_root: [u8; 32],
         pre_supply_state_root: [u8; 32],
         supply_state_root: [u8; 32],
     ) -> Self {
         Self {
-            claim_root,
-            claim_id,
+            claim_root: [1; 32],
+            claim_id: [2; 32],
             worker_id,
             amount,
             epoch,
-            checkpoint_root,
-            verifier_set_root,
-            settlement_root,
+            checkpoint_root: [4; 32],
+            verifier_set_root: [5; 32],
+            settlement_root: [6; 32],
             pre_supply_state_root,
             supply_state_root,
         }
