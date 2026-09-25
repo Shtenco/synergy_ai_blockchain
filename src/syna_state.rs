@@ -20,6 +20,7 @@ pub struct SynaMintTransition {
     pub account_balance_after: u128,
     pub total_supply_before: u128,
     pub total_supply_after: u128,
+    pub pre_supply_state_root: [u8; 32],
     pub supply_state_root: [u8; 32],
     pub checkpoint_root: [u8; 32],
 }
@@ -28,6 +29,7 @@ impl SynaMintTransition {
     pub fn validate(
         &self,
         authorization: &SynaMintAuthorization,
+        pre_supply: &SynaSupplyState,
         post_supply: &SynaSupplyState,
     ) -> Result<(), &'static str> {
         if self.claim_id != authorization.claim_id
@@ -35,6 +37,7 @@ impl SynaMintTransition {
             || self.amount != authorization.amount
             || self.epoch != authorization.epoch
             || self.checkpoint_root != authorization.checkpoint_root
+            || self.pre_supply_state_root != authorization.pre_supply_state_root
             || self.supply_state_root != authorization.supply_state_root
             || self.amount == 0
         {
@@ -52,6 +55,8 @@ impl SynaMintTransition {
 
         if self.account_balance_after != expected_balance
             || self.total_supply_after != expected_supply
+            || pre_supply.total_supply != self.total_supply_before
+            || pre_supply.commitment() != Some(self.pre_supply_state_root)
             || post_supply.total_supply != self.total_supply_after
             || post_supply.current_epoch != self.epoch
             || post_supply.commitment() != Some(self.supply_state_root)
@@ -64,9 +69,10 @@ impl SynaMintTransition {
     pub fn commitment(
         &self,
         authorization: &SynaMintAuthorization,
+        pre_supply: &SynaSupplyState,
         post_supply: &SynaSupplyState,
     ) -> Option<[u8; 32]> {
-        self.validate(authorization, post_supply).ok()?;
+        self.validate(authorization, pre_supply, post_supply).ok()?;
         let mut h = Sha256::new();
         h.update(SYNA_MINT_TRANSITION_DOMAIN);
         h.update(self.claim_id);
@@ -77,6 +83,7 @@ impl SynaMintTransition {
         h.update(self.account_balance_after.to_be_bytes());
         h.update(self.total_supply_before.to_be_bytes());
         h.update(self.total_supply_after.to_be_bytes());
+        h.update(self.pre_supply_state_root);
         h.update(self.supply_state_root);
         h.update(self.checkpoint_root);
         Some(h.finalize().into())
@@ -86,9 +93,10 @@ impl SynaMintTransition {
 pub fn build_syna_mint_transition(
     authorization: &SynaMintAuthorization,
     account_balance_before: u128,
-    total_supply_before: u128,
+    pre_supply: &SynaSupplyState,
     post_supply: &SynaSupplyState,
 ) -> Result<SynaMintTransition, &'static str> {
+    let total_supply_before = pre_supply.total_supply;
     let account_balance_after = account_balance_before
         .checked_add(authorization.amount)
         .ok_or("SYNA account balance overflow")?;
@@ -105,10 +113,11 @@ pub fn build_syna_mint_transition(
         account_balance_after,
         total_supply_before,
         total_supply_after,
+        pre_supply_state_root: authorization.pre_supply_state_root,
         supply_state_root: authorization.supply_state_root,
         checkpoint_root: authorization.checkpoint_root,
     };
-    transition.validate(authorization, post_supply)?;
+    transition.validate(authorization, pre_supply, post_supply)?;
     Ok(transition)
 }
 
@@ -116,7 +125,16 @@ pub fn build_syna_mint_transition(
 mod tests {
     use super::*;
 
-    fn supply() -> SynaSupplyState {
+    fn pre_supply() -> SynaSupplyState {
+        SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 7,
+            total_supply: 1_000,
+            epoch_emission: 0,
+        }
+    }
+
+    fn post_supply() -> SynaSupplyState {
         SynaSupplyState {
             policy_version: 1,
             current_epoch: 7,
@@ -125,7 +143,7 @@ mod tests {
         }
     }
 
-    fn authorization(s: &SynaSupplyState) -> SynaMintAuthorization {
+    fn authorization(pre: &SynaSupplyState, post: &SynaSupplyState) -> SynaMintAuthorization {
         SynaMintAuthorization {
             claim_root: [1; 32],
             claim_id: [2; 32],
@@ -135,18 +153,20 @@ mod tests {
             checkpoint_root: [4; 32],
             verifier_set_root: [5; 32],
             settlement_root: [6; 32],
-            supply_state_root: s.commitment().unwrap(),
+            pre_supply_state_root: pre.commitment().unwrap(),
+            supply_state_root: post.commitment().unwrap(),
         }
     }
 
     #[test]
     fn mint_transition_credits_exact_worker_and_supply() {
-        let s = supply();
-        let a = authorization(&s);
-        let t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        let pre = pre_supply();
+        let post = post_supply();
+        let a = authorization(&pre, &post);
+        let t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
         assert_eq!(t.account_balance_after, 35);
         assert_eq!(t.total_supply_after, 1_010);
-        assert!(t.commitment(&a, &s).is_some());
+        assert!(t.commitment(&a, &pre, &post).is_some());
     }
 
     #[test]
@@ -155,16 +175,29 @@ mod tests {
         let a = authorization(&s);
         let mut t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
         t.account_balance_after += 1;
-        assert!(t.commitment(&a, &s).is_none());
+        assert!(t.commitment(&a, &pre, &post).is_none());
+    }
+
+    #[test]
+    fn fabricated_previous_supply_state_is_rejected() {
+        let pre = pre_supply();
+        let post = post_supply();
+        let a = authorization(&pre, &post);
+        let t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
+
+        let mut forged_pre = pre.clone();
+        forged_pre.total_supply -= 1;
+        assert!(t.validate(&a, &forged_pre, &post).is_err());
     }
 
     #[test]
     fn different_worker_authorization_is_rejected() {
-        let s = supply();
-        let a = authorization(&s);
-        let t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        let pre = pre_supply();
+        let post = post_supply();
+        let a = authorization(&pre, &post);
+        let t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
         let mut wrong = a;
         wrong.worker_id = [9; 32];
-        assert!(t.validate(&wrong, &s).is_err());
+        assert!(t.validate(&wrong, &pre, &post).is_err());
     }
 }
