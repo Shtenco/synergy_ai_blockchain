@@ -48,17 +48,18 @@ Run-Gate "07_test_core" "cargo" @("test","--frozen","--all-targets")
 Run-Gate "08_test_reference_pq" "cargo" @("test","--frozen","--all-targets","--features","reference-pq")
 Run-Gate "09_doctest" "cargo" @("test","--frozen","--doc","--features","reference-pq")
 Run-Gate "10_release_reference_pq" "cargo" @("test","--frozen","--release","--lib","--features","reference-pq")
-Run-Gate "11_pi_pq" "cargo" @("test","--frozen","pi_pq::tests")
-Run-Gate "12_evm_compat" "cargo" @("test","--frozen","evm_compat::tests")
-Run-Gate "13_syna_emission" "cargo" @("test","--frozen","syna_emission::tests")
-Run-Gate "14_syna_reward" "cargo" @("test","--frozen","syna_reward::tests")
-Run-Gate "15_syna_state" "cargo" @("test","--frozen","syna_state::tests")
+Run-Gate "11_inference" "cargo" @("test","--frozen","inference::tests")
+Run-Gate "12_pi_pq" "cargo" @("test","--frozen","pi_pq::tests")
+Run-Gate "13_evm_compat" "cargo" @("test","--frozen","evm_compat::tests")
+Run-Gate "14_syna_emission" "cargo" @("test","--frozen","syna_emission::tests")
+Run-Gate "15_syna_reward" "cargo" @("test","--frozen","syna_reward::tests")
+Run-Gate "16_syna_state" "cargo" @("test","--frozen","syna_state::tests")
 
 $SolcOut = Join-Path $Out "solc"
 if (Test-Path $SolcOut) { Remove-Item -Recurse -Force $SolcOut }
 New-Item -ItemType Directory -Force -Path $SolcOut | Out-Null
 $SolArgs = @("--base-path",".","--include-path",".","--bin","--abi","--metadata-hash","none","--overwrite","--output-dir",$SolcOut,"contracts/IPQVerifier.sol","contracts/PQSmartAccount.sol","contracts/INexusAI.sol")
-Run-Gate "16_solidity" $Solc $SolArgs
+Run-Gate "17_solidity" $Solc $SolArgs
 
 $SolidityManifest = Join-Path $Out "solidity_sha256.txt"
 Get-ChildItem -File -Recurse $SolcOut | Sort-Object FullName | ForEach-Object {
