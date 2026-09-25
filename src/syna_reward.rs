@@ -116,6 +116,20 @@ impl SynaRewardState {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SynaInferenceMintContext<'a> {
+    pub checkpoint: &'a MvpCheckpoint,
+    pub outcome: &'a InferenceOutcome,
+    pub job: &'a InferenceJob,
+    pub plan: &'a InferenceExecutionPlan,
+    pub stage_authorizations: &'a [InferenceReceiptAuthorization],
+    pub stage_validations: &'a [InferenceReceiptValidationContext],
+    pub settlement: &'a ComputeSettlement,
+    pub challenge: &'a VerificationChallenge,
+    pub verifier_authorizations: &'a [VerifierReceiptAuthorization],
+    pub verifier_validations: &'a [VerifierReceiptValidationContext],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaMintAuthorization {
     pub claim_root: [u8; 32],
@@ -133,37 +147,28 @@ pub struct SynaMintAuthorization {
 pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>(
     signature_verifier: &V,
     claim: &SynaRewardClaim,
-    checkpoint: &MvpCheckpoint,
-    outcome: &InferenceOutcome,
-    job: &InferenceJob,
-    plan: &InferenceExecutionPlan,
-    stage_authorizations: &[InferenceReceiptAuthorization],
-    stage_validations: &[InferenceReceiptValidationContext],
-    settlement: &ComputeSettlement,
-    challenge: &VerificationChallenge,
-    verifier_authorizations: &[VerifierReceiptAuthorization],
-    verifier_validations: &[VerifierReceiptValidationContext],
+    context: &SynaInferenceMintContext<'_>,
     policy: &SynaEmissionPolicy,
     reward_state: &mut SynaRewardState,
     supply_state: &mut SynaSupplyState,
 ) -> Result<SynaMintAuthorization, &'static str> {
     claim.validate_fields()?;
-    checkpoint.validate()?;
-    challenge.validate()?;
+    context.checkpoint.validate()?;
+    context.challenge.validate()?;
     policy.validate()?;
 
-    if stage_authorizations.len() != plan.stages.len()
-        || stage_validations.len() != plan.stages.len()
+    if context.stage_authorizations.len() != context.plan.stages.len()
+        || context.stage_validations.len() != context.plan.stages.len()
     {
         return Err("every inference stage requires PQ authorization context");
     }
 
-    let mut stage_receipts = Vec::with_capacity(stage_authorizations.len());
-    for ((assignment, authorized), validation) in plan
+    let mut stage_receipts = Vec::with_capacity(context.stage_authorizations.len());
+    for ((assignment, authorized), validation) in context.plan
         .stages
         .iter()
-        .zip(stage_authorizations.iter())
-        .zip(stage_validations.iter())
+        .zip(context.stage_authorizations.iter())
+        .zip(context.stage_validations.iter())
     {
         if !verify_inference_receipt(
             signature_verifier,
@@ -176,20 +181,20 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         stage_receipts.push(authorized.receipt.clone());
     }
 
-    if verifier_authorizations.len() != verifier_validations.len()
-        || verifier_authorizations.is_empty()
+    if context.verifier_authorizations.len() != context.verifier_validations.len()
+        || context.verifier_authorizations.is_empty()
     {
         return Err("verifier PQ authorization contexts required");
     }
 
-    let mut receipts = Vec::with_capacity(verifier_authorizations.len());
-    for (authorized, validation) in verifier_authorizations
+    let mut receipts = Vec::with_capacity(context.verifier_authorizations.len());
+    for (authorized, validation) in context.verifier_authorizations
         .iter()
-        .zip(verifier_validations.iter())
+        .zip(context.verifier_validations.iter())
     {
         if !verify_verifier_receipt(
             signature_verifier,
-            challenge,
+            context.challenge,
             authorized,
             validation,
         ) {
@@ -198,64 +203,64 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         receipts.push(authorized.receipt.clone());
     }
 
-    let aggregate = aggregate_verifier_receipts(challenge, &receipts)?;
+    let aggregate = aggregate_verifier_receipts(context.challenge, &receipts)?;
     if aggregate.final_verdict() != VerificationVerdict::Match {
         return Err("SYNA worker reward requires canonical MATCH verdict");
     }
 
-    let checkpoint_root = checkpoint.commitment().ok_or("invalid checkpoint")?;
+    let checkpoint_root = context.checkpoint.commitment().ok_or("invalid context.checkpoint")?;
     let canonical_outcome = build_inference_outcome(
-        job,
-        plan,
+        context.job,
+        context.plan,
         &stage_receipts,
         aggregate.receipt_root,
-        outcome.total_cost,
-        outcome.output_tokens,
+        context.outcome.total_cost,
+        context.outcome.output_tokens,
     )
     .map_err(|_| "invalid canonical inference work evidence")?;
-    if canonical_outcome != *outcome {
-        return Err("inference outcome does not match canonical stage receipts");
+    if canonical_outcome != *context.outcome {
+        return Err("inference context.outcome does not match canonical stage receipts");
     }
     let outcome_root = canonical_outcome
         .commitment()
-        .ok_or("invalid canonical inference outcome")?;
+        .ok_or("invalid canonical inference context.outcome")?;
     if claim.checkpoint_root != checkpoint_root
-        || claim.chain_id != checkpoint.chain_id
-        || claim.epoch != checkpoint.epoch
-        || claim.model_root != checkpoint.model_root
-        || claim.inference_root != checkpoint.inference_root
+        || claim.chain_id != context.checkpoint.chain_id
+        || claim.epoch != context.checkpoint.epoch
+        || claim.model_root != context.checkpoint.model_root
+        || claim.inference_root != context.checkpoint.inference_root
         || claim.inference_root != outcome_root
-        || checkpoint.inference_root != outcome_root
-        || claim.useful_work_units != outcome.total_compute_units
-        || job.job_id != challenge.job_id
-        || job.model_root != checkpoint.model_root
-        || outcome.job_id != challenge.job_id
-        || outcome.model_root != checkpoint.model_root
-        || outcome.output_commitment != challenge.challenged_output_commitment
-        || outcome.verifier_evidence_root != aggregate.receipt_root
+        || context.checkpoint.inference_root != outcome_root
+        || claim.useful_work_units != context.outcome.total_compute_units
+        || context.job.job_id != context.challenge.job_id
+        || context.job.model_root != context.checkpoint.model_root
+        || context.outcome.job_id != context.challenge.job_id
+        || context.outcome.model_root != context.checkpoint.model_root
+        || context.outcome.output_commitment != context.challenge.challenged_output_commitment
+        || context.outcome.verifier_evidence_root != aggregate.receipt_root
         || claim.verifier_set_root != aggregate.receipt_root
-        || checkpoint.verification_root != aggregate.receipt_root
-        || claim.job_id != challenge.job_id
-        || settlement.job_id != challenge.job_id
-        || settlement.worker_id != claim.worker_id
-        || settlement.verifier_set_root != aggregate.receipt_root
-        || settlement.worker_reward == 0
-        || settlement.slash_root.is_some()
+        || context.checkpoint.verification_root != aggregate.receipt_root
+        || claim.job_id != context.challenge.job_id
+        || context.settlement.job_id != context.challenge.job_id
+        || context.settlement.worker_id != claim.worker_id
+        || context.settlement.verifier_set_root != aggregate.receipt_root
+        || context.settlement.worker_reward == 0
+        || context.settlement.slash_root.is_some()
     {
         return Err("SYNA reward claim binding mismatch");
     }
 
-    let funded_amount = settlement
+    let funded_amount = context.settlement
         .total_debit()
-        .ok_or("compute settlement debit overflow")?;
-    let settlement_root = settlement
-        .canonical_root(challenge, &aggregate, funded_amount)
-        .ok_or("invalid compute settlement")?;
+        .ok_or("compute context.settlement debit overflow")?;
+    let settlement_root = context.settlement
+        .canonical_root(context.challenge, &aggregate, funded_amount)
+        .ok_or("invalid compute context.settlement")?;
 
     if claim.settlement_root != settlement_root
-        || checkpoint.settlement_root != settlement_root
+        || context.checkpoint.settlement_root != settlement_root
     {
-        return Err("SYNA settlement root mismatch");
+        return Err("SYNA context.settlement root mismatch");
     }
 
     if claim.reward_policy_version != policy.version {
