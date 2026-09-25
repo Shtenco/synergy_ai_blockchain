@@ -70,7 +70,11 @@ pub use consensus::{
     verify_consensus_activation_and_consume, ConsensusActivation, ConsensusActivationAuthorization,
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
-pub use evm_compat::{EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN, EVM_VERIFIED_PROFILE_DOMAIN};
+pub use evm_compat::{
+    EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence,
+    EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
+    EVM_VERIFIED_PROFILE_DOMAIN,
+};
 pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
@@ -153,7 +157,10 @@ pub use service_planes::{
 };
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
 pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_DOMAIN};
-pub use syna_reward::{authorize_verified_inference_reward_and_mint, SynaMintAuthorization, SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN};
+pub use syna_reward::{
+    authorize_verified_inference_reward_and_mint, SynaMintAuthorization, SynaRewardClaim,
+    SynaRewardState, SYNA_REWARD_DOMAIN,
+};
 pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope,
