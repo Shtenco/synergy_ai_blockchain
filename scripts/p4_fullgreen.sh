@@ -57,15 +57,16 @@ run_gate 10_release_reference_pq cargo test --frozen --release --lib --features 
 # P4-specific regression gates. These are intentionally repeated as named
 # evidence even though the full suite above already executes them.
 run_gate 11_inference cargo test --frozen inference::tests
-run_gate 12_pi_pq cargo test --frozen pi_pq::tests
-run_gate 13_evm_compat cargo test --frozen evm_compat::tests
-run_gate 14_syna_emission cargo test --frozen syna_emission::tests
-run_gate 15_syna_reward cargo test --frozen syna_reward::tests
-run_gate 16_syna_state cargo test --frozen syna_state::tests
+run_gate 12_peer_discovery cargo test --frozen peer_discovery::tests
+run_gate 13_pi_pq cargo test --frozen pi_pq::tests
+run_gate 14_evm_compat cargo test --frozen evm_compat::tests
+run_gate 15_syna_emission cargo test --frozen syna_emission::tests
+run_gate 16_syna_reward cargo test --frozen syna_reward::tests
+run_gate 17_syna_state cargo test --frozen syna_state::tests
 
 rm -rf "$OUT/solc"
 mkdir -p "$OUT/solc"
-run_gate 17_solidity "$SOLC_BIN"   --base-path .   --include-path .   --bin   --abi   --metadata-hash none   --overwrite   --output-dir "$OUT/solc"   contracts/IPQVerifier.sol   contracts/PQSmartAccount.sol   contracts/INexusAI.sol
+run_gate 18_solidity "$SOLC_BIN"   --base-path .   --include-path .   --bin   --abi   --metadata-hash none   --overwrite   --output-dir "$OUT/solc"   contracts/IPQVerifier.sol   contracts/PQSmartAccount.sol   contracts/INexusAI.sol
 
 find "$OUT/solc" -type f -print0 | sort -z | xargs -0 sha256sum > "$OUT/solidity_sha256.txt"
 
