@@ -270,5 +270,4 @@ mod tests {
         a.id = "c".into();
         assert!(s.lease_until(&a, 12, 20).is_none());
     }
-
 }
