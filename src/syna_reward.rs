@@ -376,6 +376,33 @@ mod tests {
     }
 
     #[test]
+    fn inconclusive_receipt_blocks_mint() {
+        let (c, mut receipts, settlement, cp, claim) = fixture();
+        receipts[1].verdict = VerificationVerdict::Inconclusive;
+        receipts[1].recomputed_output_commitment = [0; 32];
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+        assert!(!rewards.is_consumed(&claim.claim_id));
+    }
+
+    #[test]
     fn model_cannot_self_choose_reward_amount() {
         let (c, receipts, settlement, cp, mut claim) = fixture();
         claim.reward_amount = 99;
