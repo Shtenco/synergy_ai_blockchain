@@ -39,12 +39,29 @@ fn main() {
     let agent_secs = t2.elapsed().as_secs_f64();
     let agent_commitment = a.commitment();
 
+    let mut cstate = AgenticEconomyState::genesis(10_000).expect("genesis");
+    let t3 = Instant::now();
+    let mut rolling = [0u8; 32];
+    for i in 0..n {
+        let actor = (i as usize) % 6;
+        let action = safe_actions[(i as usize) % safe_actions.len()];
+        cstate.apply_consensus_action(actor, action).expect("committed action");
+        rolling = cstate.commitment();
+        if i % 10_000 == 0 {
+            cstate.advance_block();
+        }
+    }
+    let committed_secs = t3.elapsed().as_secs_f64();
+
     println!("benchmark=synergy_execution_tps_v1");
     println!("transactions={n}");
     println!("transfer_seconds={transfer_secs:.6}");
     println!("transfer_tps={:.2}", rate(n, transfer_secs));
     println!("agent_action_seconds={agent_secs:.6}");
     println!("agent_action_tps={:.2}", rate(n, agent_secs));
+    println!("committed_action_seconds={committed_secs:.6}");
+    println!("committed_action_tps={:.2}", rate(n, committed_secs));
+    println!("committed_rolling={}", hex::encode(rolling));
     println!("transfer_commitment={}", hex::encode(transfer_commitment));
     println!("agent_commitment={}", hex::encode(agent_commitment));
 }
