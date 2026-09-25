@@ -15,6 +15,11 @@ pub mod evm_compat;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
+pub mod mesh_node;
+pub mod mesh_overlay;
+pub mod mesh_routing;
+pub mod mesh_transport;
+pub mod mesh_tunnel;
 pub mod migration;
 pub mod model_shard;
 pub mod mvp;
@@ -100,6 +105,24 @@ pub use inference::{
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
     KvReplicaReceiptAuthorization, KvReplicaReceiptValidationContext, MAX_KV_REPLICAS,
+};
+pub use mesh_node::{MeshNode, MeshNodeCapabilities, MeshService, MAX_MESH_SERVICES};
+pub use mesh_overlay::{
+    mesh_flow_root, mesh_hop_application_root, MeshAddress, MeshPacket, MeshReplayState, MeshRoute,
+    MeshRoutingTable, MAX_MESH_HOPS, MAX_MESH_PACKET_BYTES, MAX_MESH_ROUTES,
+};
+pub use mesh_routing::{MeshLinkAdvertisement, MeshLinkStateDb, MAX_LINK_COST, MAX_MESH_LINKS};
+pub use mesh_transport::{
+    decode_mesh_hop, decode_packet as decode_mesh_packet, decode_record as decode_mesh_record,
+    decrypt_mesh_end_to_end, decrypt_mesh_hop, encode_mesh_hop,
+    encode_packet as encode_mesh_packet, encode_record as encode_mesh_record,
+    encrypt_mesh_end_to_end, encrypt_mesh_hop, read_mesh_hop_frame, write_mesh_hop_frame,
+    EncryptedMeshHop, MeshHopHeader, MAX_MESH_HOP_FRAME_BYTES, MESH_HOP_FRAME_MAGIC,
+};
+pub use mesh_tunnel::{
+    classify_tunnel_packet, MemoryTunnelDevice, MeshTunnelDevice, MeshTunnelPolicy,
+    MeshTunnelRouting, TunnelIpAddress, TunnelIpPacket, TunnelRouteTarget,
+    MAX_TUNNEL_IP_PACKET_BYTES, MAX_TUNNEL_ROUTES,
 };
 pub use migration::{
     verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,
