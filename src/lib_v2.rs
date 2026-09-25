@@ -70,7 +70,7 @@ pub use consensus::{
     verify_consensus_activation_and_consume, ConsensusActivation, ConsensusActivationAuthorization,
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
-pub use evm_compat::{EvmBridgeProofReceipt, EvmCompatibilityEvidence, EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN, EVM_VERIFIED_PROFILE_DOMAIN};
+pub use evm_compat::{EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN, EVM_VERIFIED_PROFILE_DOMAIN};
 pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
