@@ -110,6 +110,30 @@ impl SynaRewardState {
     }
 }
 
+fn validate_verifier_diversity(
+    worker_id: [u8; 32],
+    validations: &[VerifierReceiptValidationContext],
+) -> Result<(), &'static str> {
+    if validations.is_empty() {
+        return Err("verifier validation set required");
+    }
+
+    let mut verifier_ids = BTreeSet::new();
+    let mut keysets = BTreeSet::new();
+    for validation in validations {
+        if validation.expected_verifier_id == worker_id {
+            return Err("worker cannot verify its own inference");
+        }
+        if !verifier_ids.insert(validation.expected_verifier_id) {
+            return Err("duplicate verifier identity");
+        }
+        if !keysets.insert(validation.expected_verifier_keyset_commitment) {
+            return Err("duplicate verifier PQ keyset");
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SynaInferenceMintContext<'a> {
     pub checkpoint: &'a MvpCheckpoint,
@@ -288,6 +312,7 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     {
         return Err("verifier PQ authorization contexts required");
     }
+    validate_verifier_diversity(claim.worker_id, context.verifier_validations)?;
 
     let mut receipts = Vec::with_capacity(context.verifier_authorizations.len());
     for (authorized, validation) in context.verifier_authorizations
@@ -904,6 +929,23 @@ mod tests {
             total_supply: 0,
             epoch_emission: 0,
         }
+    }
+
+    #[test]
+    fn worker_cannot_count_as_its_own_verifier() {
+        let fixture = fixture();
+        let mut validations = fixture.verifier_validations.clone();
+        validations[0].expected_verifier_id = fixture.claim.worker_id;
+        assert!(validate_verifier_diversity(fixture.claim.worker_id, &validations).is_err());
+    }
+
+    #[test]
+    fn duplicate_verifier_keyset_is_not_independent_quorum() {
+        let fixture = fixture();
+        let mut validations = fixture.verifier_validations.clone();
+        validations[1].expected_verifier_keyset_commitment =
+            validations[0].expected_verifier_keyset_commitment;
+        assert!(validate_verifier_diversity(fixture.claim.worker_id, &validations).is_err());
     }
 
     #[test]
