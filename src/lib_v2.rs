@@ -21,6 +21,7 @@ pub mod nexus;
 pub mod payment_funding;
 pub mod payments;
 pub mod peer_discovery;
+pub mod pi_pq;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
@@ -29,6 +30,7 @@ pub mod scheduling;
 pub mod service_planes;
 pub mod slashing;
 pub mod storage;
+pub mod syna_reward;
 pub mod transport_record;
 pub mod transport_wire;
 pub mod tx;
@@ -117,6 +119,7 @@ pub use payments::{
     SettlementBatch, SettlementBatchAuthorization, SettlementBatchValidationContext,
     SettlementState,
 };
+pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use peer_discovery::{
     NodeRecord, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
 };
@@ -145,6 +148,7 @@ pub use service_planes::{
     ServicePlaneRoots, MAX_SERVICE_FINALITY_ITEMS,
 };
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
+pub use syna_reward::{SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN};
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope,
     ErasurePlacementReceipt, ProofOfStorageReceipt, StorageBid, StorageClass,
