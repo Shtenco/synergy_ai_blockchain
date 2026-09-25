@@ -5,6 +5,8 @@
 //! hash-pinned transaction/receipt/gas/RPC/ABI/precompile/client vectors.
 //! An RPC response is never treated as bridge finality.
 
+use std::collections::BTreeSet;
+
 use sha2::{Digest, Sha256};
 
 pub const EVM_COMPAT_DOMAIN: &[u8] = b"SYNERGY/EVM-COMPAT/V1\0";
@@ -177,6 +179,50 @@ impl EvmBridgeProofReceipt {
     }
 }
 
+
+#[derive(Debug, Default, Clone)]
+pub struct EvmBridgeReplayState {
+    consumed_message_ids: BTreeSet<[u8; 32]>,
+}
+
+impl EvmBridgeReplayState {
+    pub fn is_consumed(&self, id: &[u8; 32]) -> bool {
+        self.consumed_message_ids.contains(id)
+    }
+
+    pub fn verify_and_consume(
+        &mut self,
+        receipt: &EvmBridgeProofReceipt,
+        source: &EvmCompatibilityProfile,
+        evidence: &EvmCompatibilityEvidence,
+    ) -> Result<[u8; 32], &'static str> {
+        receipt.validate(source)?;
+        let verified_profile_root = source
+            .verified_commitment(evidence)
+            .ok_or("source EVM profile lacks verified compatibility evidence")?;
+        if self.is_consumed(&receipt.deposit_or_withdrawal_id) {
+            return Err("EVM bridge proof already consumed");
+        }
+
+        let mut h = Sha256::new();
+        h.update(EVM_VERIFIED_PROFILE_DOMAIN);
+        h.update(b"BRIDGE-AUTH\0");
+        h.update(verified_profile_root);
+        h.update(receipt.source_chain_id.to_be_bytes());
+        h.update(receipt.destination_chain_id.to_be_bytes());
+        h.update(receipt.source_block_hash);
+        h.update(receipt.source_block_number.to_be_bytes());
+        h.update(receipt.event_or_state_root);
+        h.update(receipt.proof_root);
+        h.update(receipt.deposit_or_withdrawal_id);
+        let authorization_root: [u8; 32] = h.finalize().into();
+
+        self.consumed_message_ids
+            .insert(receipt.deposit_or_withdrawal_id);
+        Ok(authorization_root)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +285,25 @@ mod tests {
             p.verified_commitment(&e1),
             p.verified_commitment(&e2)
         );
+    }
+
+    #[test]
+    fn finalized_bridge_proof_is_one_shot() {
+        let p = eth();
+        let e = evidence();
+        let r = EvmBridgeProofReceipt {
+            source_chain_id: 1,
+            destination_chain_id: 8453,
+            source_block_hash: [2; 32],
+            source_block_number: 10,
+            event_or_state_root: [3; 32],
+            proof_root: [4; 32],
+            deposit_or_withdrawal_id: [5; 32],
+            finalized: true,
+        };
+        let mut state = EvmBridgeReplayState::default();
+        assert!(state.verify_and_consume(&r, &p, &e).is_ok());
+        assert!(state.verify_and_consume(&r, &p, &e).is_err());
     }
 
     #[test]
