@@ -739,6 +739,98 @@ mod tests {
     }
 
     #[test]
+    fn bidirectional_request_response_uses_separate_direction_domains() {
+        let forward = MeshRoute {
+            source: addr(1),
+            destination: addr(3),
+            hops: vec![addr(1), addr(2), addr(3)],
+            epoch: 1,
+        };
+        let reverse = MeshRoute {
+            source: addr(3),
+            destination: addr(1),
+            hops: vec![addr(3), addr(2), addr(1)],
+            epoch: 1,
+        };
+        let rekey = RekeyPolicy {
+            max_messages: 100,
+            max_seconds: 300,
+        };
+
+        let mut request_send =
+            TransportRecordSequence::new_initiator_to_responder(rekey, 10).unwrap();
+        let request = encrypt_mesh_end_to_end_directional(
+            &forward,
+            [50; 32],
+            1,
+            [51; 32],
+            TransportRole::Initiator,
+            &key(52),
+            &mut request_send,
+            11,
+            b"request",
+        )
+        .unwrap()
+        .forward(&forward, addr(1))
+        .unwrap()
+        .forward(&forward, addr(2))
+        .unwrap();
+
+        let mut request_recv =
+            TransportRecordSequence::new_initiator_to_responder(rekey, 10).unwrap();
+        assert_eq!(
+            decrypt_mesh_end_to_end_directional(
+                &request,
+                &forward,
+                TransportRole::Initiator,
+                &key(52),
+                &mut request_recv,
+                11,
+            )
+            .unwrap(),
+            b"request"
+        );
+
+        let mut response_send =
+            TransportRecordSequence::new_responder_to_initiator(rekey, 10).unwrap();
+        let response = encrypt_mesh_end_to_end_directional(
+            &reverse,
+            [53; 32],
+            1,
+            [51; 32],
+            TransportRole::Responder,
+            &key(54),
+            &mut response_send,
+            11,
+            b"response",
+        )
+        .unwrap()
+        .forward(&reverse, addr(3))
+        .unwrap()
+        .forward(&reverse, addr(2))
+        .unwrap();
+
+        let mut response_recv =
+            TransportRecordSequence::new_responder_to_initiator(rekey, 10).unwrap();
+        assert_eq!(
+            decrypt_mesh_end_to_end_directional(
+                &response,
+                &reverse,
+                TransportRole::Responder,
+                &key(54),
+                &mut response_recv,
+                11,
+            )
+            .unwrap(),
+            b"response"
+        );
+
+        assert_ne!(request.opaque_payload, response.opaque_payload);
+        assert_eq!(request_send.next_sequence(), 1);
+        assert_eq!(response_send.next_sequence(), 1);
+    }
+
+    #[test]
     fn wrong_hop_key_or_header_tamper_cannot_decrypt() {
         let route = MeshRoute {
             source: addr(1),
