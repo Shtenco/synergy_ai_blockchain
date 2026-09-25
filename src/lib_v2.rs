@@ -17,6 +17,7 @@ pub mod inference;
 pub mod kv_cache;
 pub mod mesh_node;
 pub mod mesh_overlay;
+pub mod mesh_transport;
 pub mod migration;
 pub mod model_shard;
 pub mod mvp;
@@ -107,6 +108,11 @@ pub use mesh_node::{MeshNode, MeshNodeCapabilities, MeshService, MAX_MESH_SERVIC
 pub use mesh_overlay::{
     mesh_flow_root, mesh_hop_application_root, MeshAddress, MeshPacket, MeshReplayState, MeshRoute,
     MeshRoutingTable, MAX_MESH_HOPS, MAX_MESH_PACKET_BYTES, MAX_MESH_ROUTES,
+};
+pub use mesh_transport::{
+    decode_packet as decode_mesh_packet, decode_record as decode_mesh_record,
+    decrypt_mesh_end_to_end, decrypt_mesh_hop, encode_packet as encode_mesh_packet,
+    encode_record as encode_mesh_record, encrypt_mesh_end_to_end, encrypt_mesh_hop,
 };
 pub use migration::{
     verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,
