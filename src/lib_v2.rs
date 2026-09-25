@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod agent_execution;
 pub mod agentic_economy;
 
 pub mod autopilot;
@@ -47,6 +48,10 @@ pub mod tx;
 pub mod validator;
 pub mod verification;
 
+pub use agent_execution::{
+    AgentExecutionReceipt, AgentReceiptError, AgentTaskCommitment,
+    AGENT_EXECUTION_RECEIPT_DOMAIN, AGENT_TASK_DOMAIN,
+};
 pub use agentic_economy::{
     decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
     AgenticEconomyTransitionReceipt, Asset, CbPolicy, EconomyAccount, EconomyAccountingSnapshot,
