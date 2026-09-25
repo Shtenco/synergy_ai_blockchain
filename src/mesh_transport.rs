@@ -547,8 +547,9 @@ mod tests {
         let (responder_handle, responder_public) =
             provider.try_generate_keypair().expect("responder ML-KEM");
 
-        let (ciphertext, sender_shared) =
-            provider.encapsulate(&responder_public).expect("ML-KEM encapsulate");
+        let (ciphertext, sender_shared) = provider
+            .encapsulate(&responder_public)
+            .expect("ML-KEM encapsulate");
         let receiver_shared = provider
             .decapsulate(&responder_handle, &ciphertext)
             .expect("ML-KEM decapsulate");
