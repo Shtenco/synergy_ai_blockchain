@@ -13,8 +13,12 @@ function Run-Gate {
   Write-Host ""
   Write-Host "===== P4 GATE: $Name ====="
   $Log = Join-Path $Logs "$Name.log"
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
   & $Exe @CommandArgs 2>&1 | Tee-Object -FilePath $Log
-  if ($LASTEXITCODE -ne 0) { throw "P4 gate failed: $Name (exit $LASTEXITCODE)" }
+  $ExitCode = $LASTEXITCODE
+  $ErrorActionPreference = $PreviousErrorActionPreference
+  if ($ExitCode -ne 0) { throw "P4 gate failed: $Name (exit $ExitCode)" }
 }
 
 foreach ($cmd in @("cargo","rustc","rustfmt","python","git",$Solc)) {
