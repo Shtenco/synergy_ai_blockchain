@@ -152,7 +152,6 @@ fn validate_verifier_diversity(
 pub struct SynaInferenceMintContext<'a> {
     pub checkpoint: &'a MvpCheckpoint,
     pub peer_directory: &'a PeerDirectory,
-    pub identity_now: u64,
     pub outcome: &'a InferenceOutcome,
     pub job: &'a InferenceJob,
     pub plan: &'a InferenceExecutionPlan,
@@ -270,8 +269,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
 
     let node_set_root = context
         .peer_directory
-        .commitment(context.identity_now)
-        .ok_or("live PQ identity node set required")?;
+        .commitment_for_epoch(context.checkpoint.epoch)
+        .ok_or("finalized PQ identity epoch snapshot required")?;
     if node_set_root != context.checkpoint.node_set_root {
         return Err("PQ identity node set does not match finalized checkpoint");
     }
@@ -291,8 +290,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     {
         let registered = context
             .peer_directory
-            .get(&authorized.receipt.worker_id, context.identity_now)
-            .ok_or("inference worker is not in finalized live node set")?;
+            .get_at_epoch(&authorized.receipt.worker_id, context.checkpoint.epoch)
+            .ok_or("inference worker is not in finalized epoch node set")?;
         let authorization_keyset = authorized
             .authorization
             .keyset_commitment()
@@ -344,8 +343,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
 
         let registered = context
             .peer_directory
-            .get(&authorized.receipt.verifier_id, context.identity_now)
-            .ok_or("verifier is not in finalized live node set")?;
+            .get_at_epoch(&authorized.receipt.verifier_id, context.checkpoint.epoch)
+            .ok_or("verifier is not in finalized epoch node set")?;
         let authorization_keyset = authorized
             .authorization
             .keyset_commitment()
@@ -892,7 +891,7 @@ mod tests {
                 .unwrap();
         }
 
-        let node_set_root = peer_directory.commitment(identity_now).unwrap();
+        let node_set_root = peer_directory.commitment_for_epoch(epoch).unwrap();
         let checkpoint = MvpCheckpoint {
             chain_id,
             epoch,
@@ -954,7 +953,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -985,7 +983,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1204,7 +1201,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1278,7 +1274,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1548,7 +1543,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1585,7 +1579,6 @@ mod tests {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
             peer_directory: &fixture.peer_directory,
-            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
