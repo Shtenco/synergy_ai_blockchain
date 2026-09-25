@@ -1,0 +1,22 @@
+name: economic-testnet-loopback-3node-v1
+
+on:
+  pull_request:
+    paths:
+      - 'testnet/economic_testnet_loopback_v1.py'
+      - 'registry/economic_testnet_loopback_execution_evidence_v1.json'
+      - 'tests/test_economic_testnet_loopback_v1.py'
+      - 'docs/ECONOMIC_TESTNET_LOOPBACK_3NODE_EVIDENCE_V1_20260828.md'
+      - '.github/workflows/economic-testnet-loopback-3node-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  loopback-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - run: pytest -q tests/test_economic_testnet_v1.py tests/test_economic_testnet_execution_evidence_v1.py tests/test_economic_testnet_loopback_v1.py

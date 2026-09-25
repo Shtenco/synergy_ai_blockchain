@@ -1,0 +1,22 @@
+{
+  "schema": "synergy.ai-blockchain-node-commitment-registry/v1",
+  "node_id": "synergy-autopilot-v5-ai-node",
+  "source_repository": "Shtenco/agi_autopilot",
+  "source_commit": "c39f6f0ee0e37c08366a63ec160c580b9ae954ba",
+  "integration_manifest_digest": "a793250aaa2299fdaf1661e985423c2b62687a19395ceabcc7bb63c005defe54",
+  "release_roots_digest": "224e6c43bfccb3b0db7acf92f243dace0ee5228a7ab31a0be140328e692f3630",
+  "local_verification_digest": "d43d44a4f71b5052996366663ad3c20f7fd702885213fa08dbb1c06c3de2e7e1",
+  "nexus_artifact_sha256": "e87d00809ff976c76655b892166ec1cf1f13a893927ead156295b6814fcd9325",
+  "knowledge_digest": "7b6d3f9bd07247c97cfec7ba532341c126c111d5e8c4a973e28810107736c899",
+  "router_model_digest": "66363afa3a63155774435aeb6649022ba166684274739709d229bcde6f64a5ea",
+  "payload_digest": "3b96f1715c1244a3fa7ca406c6c5ceb06a01560fe9bbbdd0f0d046c4dba66975",
+  "commitment_candidate_digest": "1d33a7c7da14cdb7543d4723a69e1b1842d215a43ba97fda4c25ff12cdb2d666",
+  "submission_status": "NOT_SUBMITTED_CANDIDATE_ONLY",
+  "signing_authority": "NONE",
+  "blockchain_submission_authority": "NONE",
+  "financial_authority": "NONE",
+  "payment_authority": "NONE",
+  "accounting_authority": "NONE",
+  "execution_authority": "NONE",
+  "registry_digest": "77473234fbf50804f87597adf8d1415d043fd678a1e10c56a36ad5bf2f9275b0"
+}
