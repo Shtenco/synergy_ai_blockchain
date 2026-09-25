@@ -90,7 +90,6 @@ impl SynaRewardClaim {
         h.update(self.verifier_set_root);
         h.update(self.settlement_root);
         h.update(self.checkpoint_root);
-        h.update(self.reward_policy_version.to_be_bytes());
         Some(h.finalize().into())
     }
 }
@@ -561,6 +560,17 @@ mod tests {
         .is_err());
         assert_eq!(supply.total_supply, 0);
         assert!(!rewards.is_consumed(&claim.mining_replay_key().unwrap()));
+    }
+
+    #[test]
+    fn policy_upgrade_does_not_change_one_shot_mining_identity() {
+        let (_, _, _, _, _, _, _, _, claim) = fixture();
+        let key = claim.mining_replay_key().unwrap();
+
+        let mut upgraded = claim;
+        upgraded.reward_policy_version += 1;
+        assert_eq!(upgraded.mining_replay_key().unwrap(), key);
+        assert_ne!(upgraded.canonical_root().unwrap(), key);
     }
 
     #[test]
