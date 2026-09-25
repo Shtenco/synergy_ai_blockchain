@@ -1,0 +1,170 @@
+//! Native SYNA mint state-transition receipt.
+//!
+//! The useful-inference reward module authorizes issuance. This module binds
+//! that authorization to an explicit account/supply transition so a block can
+//! commit who received the newly issued SYNA and which monetary state resulted.
+
+use sha2::{Digest, Sha256};
+
+use crate::{SynaMintAuthorization, SynaSupplyState};
+
+pub const SYNA_MINT_TRANSITION_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINT-TRANSITION/V1\0";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynaMintTransition {
+    pub claim_id: [u8; 32],
+    pub worker_id: [u8; 32],
+    pub amount: u128,
+    pub epoch: u64,
+    pub account_balance_before: u128,
+    pub account_balance_after: u128,
+    pub total_supply_before: u128,
+    pub total_supply_after: u128,
+    pub supply_state_root: [u8; 32],
+    pub checkpoint_root: [u8; 32],
+}
+
+impl SynaMintTransition {
+    pub fn validate(
+        &self,
+        authorization: &SynaMintAuthorization,
+        post_supply: &SynaSupplyState,
+    ) -> Result<(), &'static str> {
+        if self.claim_id != authorization.claim_id
+            || self.worker_id != authorization.worker_id
+            || self.amount != authorization.amount
+            || self.epoch != authorization.epoch
+            || self.checkpoint_root != authorization.checkpoint_root
+            || self.supply_state_root != authorization.supply_state_root
+            || self.amount == 0
+        {
+            return Err("SYNA mint transition authorization mismatch");
+        }
+
+        let expected_balance = self
+            .account_balance_before
+            .checked_add(self.amount)
+            .ok_or("SYNA account balance overflow")?;
+        let expected_supply = self
+            .total_supply_before
+            .checked_add(self.amount)
+            .ok_or("SYNA total supply transition overflow")?;
+
+        if self.account_balance_after != expected_balance
+            || self.total_supply_after != expected_supply
+            || post_supply.total_supply != self.total_supply_after
+            || post_supply.current_epoch != self.epoch
+            || post_supply.commitment() != Some(self.supply_state_root)
+        {
+            return Err("invalid SYNA mint state transition");
+        }
+        Ok(())
+    }
+
+    pub fn commitment(
+        &self,
+        authorization: &SynaMintAuthorization,
+        post_supply: &SynaSupplyState,
+    ) -> Option<[u8; 32]> {
+        self.validate(authorization, post_supply).ok()?;
+        let mut h = Sha256::new();
+        h.update(SYNA_MINT_TRANSITION_DOMAIN);
+        h.update(self.claim_id);
+        h.update(self.worker_id);
+        h.update(self.amount.to_be_bytes());
+        h.update(self.epoch.to_be_bytes());
+        h.update(self.account_balance_before.to_be_bytes());
+        h.update(self.account_balance_after.to_be_bytes());
+        h.update(self.total_supply_before.to_be_bytes());
+        h.update(self.total_supply_after.to_be_bytes());
+        h.update(self.supply_state_root);
+        h.update(self.checkpoint_root);
+        Some(h.finalize().into())
+    }
+}
+
+pub fn build_syna_mint_transition(
+    authorization: &SynaMintAuthorization,
+    account_balance_before: u128,
+    total_supply_before: u128,
+    post_supply: &SynaSupplyState,
+) -> Result<SynaMintTransition, &'static str> {
+    let account_balance_after = account_balance_before
+        .checked_add(authorization.amount)
+        .ok_or("SYNA account balance overflow")?;
+    let total_supply_after = total_supply_before
+        .checked_add(authorization.amount)
+        .ok_or("SYNA total supply transition overflow")?;
+
+    let transition = SynaMintTransition {
+        claim_id: authorization.claim_id,
+        worker_id: authorization.worker_id,
+        amount: authorization.amount,
+        epoch: authorization.epoch,
+        account_balance_before,
+        account_balance_after,
+        total_supply_before,
+        total_supply_after,
+        supply_state_root: authorization.supply_state_root,
+        checkpoint_root: authorization.checkpoint_root,
+    };
+    transition.validate(authorization, post_supply)?;
+    Ok(transition)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn supply() -> SynaSupplyState {
+        SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 7,
+            total_supply: 1_010,
+            epoch_emission: 10,
+        }
+    }
+
+    fn authorization(s: &SynaSupplyState) -> SynaMintAuthorization {
+        SynaMintAuthorization {
+            claim_root: [1; 32],
+            claim_id: [2; 32],
+            worker_id: [3; 32],
+            amount: 10,
+            epoch: 7,
+            checkpoint_root: [4; 32],
+            verifier_set_root: [5; 32],
+            settlement_root: [6; 32],
+            supply_state_root: s.commitment().unwrap(),
+        }
+    }
+
+    #[test]
+    fn mint_transition_credits_exact_worker_and_supply() {
+        let s = supply();
+        let a = authorization(&s);
+        let t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        assert_eq!(t.account_balance_after, 35);
+        assert_eq!(t.total_supply_after, 1_010);
+        assert!(t.commitment(&a, &s).is_some());
+    }
+
+    #[test]
+    fn fabricated_balance_transition_is_rejected() {
+        let s = supply();
+        let a = authorization(&s);
+        let mut t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        t.account_balance_after += 1;
+        assert!(t.commitment(&a, &s).is_none());
+    }
+
+    #[test]
+    fn different_worker_authorization_is_rejected() {
+        let s = supply();
+        let a = authorization(&s);
+        let t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        let mut wrong = a;
+        wrong.worker_id = [9; 32];
+        assert!(t.validate(&wrong, &s).is_err());
+    }
+}
