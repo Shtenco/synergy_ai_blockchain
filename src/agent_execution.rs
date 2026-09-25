@@ -111,7 +111,6 @@ impl AgentExecutionReceipt {
     }
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentExecutionAuthorization {
     pub chain_id: [u8; 32],
@@ -394,5 +393,4 @@ mod tests {
             &validation,
         ));
     }
-
 }
