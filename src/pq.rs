@@ -145,6 +145,7 @@ pub enum AuthorizationDomain {
     KvReplicaReceipt,
     TransportHandshake,
     AutopilotLeaseTerminal,
+    AgentExecutionReceipt,
 }
 
 impl AuthorizationDomain {
@@ -172,6 +173,7 @@ impl AuthorizationDomain {
             Self::KvReplicaReceipt => 15,
             Self::TransportHandshake => 16,
             Self::AutopilotLeaseTerminal => 17,
+            Self::AgentExecutionReceipt => 18,
         }
     }
 }

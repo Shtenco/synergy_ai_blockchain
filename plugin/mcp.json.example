@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "synergy-node": {
+      "command": "synergy-node",
+      "args": ["mcp", "--stdio"],
+      "env": {
+        "SYNERGY_WORKSPACE": "/absolute/path/to/workspace"
+      }
+    }
+  }
+}
