@@ -122,6 +122,7 @@ pub struct SynaMintAuthorization {
     pub checkpoint_root: [u8; 32],
     pub verifier_set_root: [u8; 32],
     pub settlement_root: [u8; 32],
+    pub pre_supply_state_root: [u8; 32],
     pub supply_state_root: [u8; 32],
 }
 
@@ -222,6 +223,10 @@ pub fn authorize_verified_inference_reward_and_mint(
         return Err("SYNA finalized inference already mined");
     }
 
+    let pre_supply_state_root = supply_state
+        .commitment()
+        .ok_or("invalid pre-mint SYNA supply state")?;
+
     // Transactional preflight: mutate clones first so failure cannot partially
     // consume the one-shot claim or partially advance supply accounting.
     let mut next_supply = supply_state.clone();
@@ -247,6 +252,7 @@ pub fn authorize_verified_inference_reward_and_mint(
         checkpoint_root,
         verifier_set_root: aggregate.receipt_root,
         settlement_root,
+        pre_supply_state_root,
         supply_state_root,
     })
 }
