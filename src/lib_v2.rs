@@ -16,6 +16,8 @@ pub mod governance;
 pub mod inference;
 pub mod kv_cache;
 pub mod migration;
+pub mod mesh_node;
+pub mod mesh_overlay;
 pub mod model_shard;
 pub mod mvp;
 pub mod mvp_finalization;
@@ -100,6 +102,11 @@ pub use inference::{
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
     KvReplicaReceiptAuthorization, KvReplicaReceiptValidationContext, MAX_KV_REPLICAS,
+};
+pub use mesh_node::{MeshNode, MeshNodeCapabilities, MeshService, MAX_MESH_SERVICES};
+pub use mesh_overlay::{
+    mesh_flow_root, mesh_hop_application_root, MeshAddress, MeshPacket, MeshReplayState,
+    MeshRoute, MeshRoutingTable, MAX_MESH_HOPS, MAX_MESH_PACKET_BYTES, MAX_MESH_ROUTES,
 };
 pub use migration::{
     verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,
