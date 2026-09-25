@@ -597,11 +597,15 @@ mod tests {
 
     #[test]
     fn stage_receipt_aggregate_derives_metering_and_final_output() {
-        let j = job();
+        let mut j = job();
+        let stages = vec![stage(0), stage(1)];
+        let plan_root =
+            InferenceExecutionPlan::canonical_root_for_stages(j.job_id, &stages).unwrap();
+        j.execution_plan_root = plan_root;
         let plan = InferenceExecutionPlan {
             job_id: j.job_id,
-            plan_root: j.execution_plan_root,
-            stages: vec![stage(0), stage(1)],
+            plan_root,
+            stages,
         };
         let receipts = vec![
             InferenceStageReceipt {
