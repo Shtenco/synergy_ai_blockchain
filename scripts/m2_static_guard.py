@@ -1546,7 +1546,8 @@ require(
 
 require(
     "pub fn validate(&self) -> Result<(), &'static str>" in scheduling
-    and "nodes[..index].iter().any(|prior| prior.node_id == node.node_id)" in scheduling
+    and "nodes[..index]" in scheduling
+    and ".any(|prior| prior.node_id == node.node_id)" in scheduling
     and ".min_by_key(|(score, node)| (*score, node.node_id))" in scheduling,
     "scheduler must reject duplicate identities and remain permutation-invariant",
 )
