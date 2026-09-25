@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
+pub const SYNA_MINING_REPLAY_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINING-REPLAY/V1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaRewardClaim {
@@ -72,21 +73,39 @@ impl SynaRewardClaim {
         h.update(self.reward_policy_version.to_be_bytes());
         Some(h.finalize().into())
     }
+
+    pub fn mining_replay_key(&self) -> Option<[u8; 32]> {
+        self.validate_fields().ok()?;
+        let mut h = Sha256::new();
+        h.update(SYNA_MINING_REPLAY_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(self.chain_id);
+        h.update(self.epoch.to_be_bytes());
+        h.update(self.job_id);
+        h.update(self.worker_id);
+        h.update(self.model_root);
+        h.update(self.inference_root);
+        h.update(self.verifier_set_root);
+        h.update(self.settlement_root);
+        h.update(self.checkpoint_root);
+        h.update(self.reward_policy_version.to_be_bytes());
+        Some(h.finalize().into())
+    }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct SynaRewardState {
-    consumed_claims: BTreeSet<[u8; 32]>,
+    consumed_mining_keys: BTreeSet<[u8; 32]>,
 }
 
 impl SynaRewardState {
-    pub fn is_consumed(&self, claim_id: &[u8; 32]) -> bool {
-        self.consumed_claims.contains(claim_id)
+    pub fn is_consumed(&self, mining_replay_key: &[u8; 32]) -> bool {
+        self.consumed_mining_keys.contains(mining_replay_key)
     }
 
-    fn consume(&mut self, claim_id: [u8; 32]) -> Result<(), &'static str> {
-        if !self.consumed_claims.insert(claim_id) {
-            return Err("SYNA reward claim already consumed");
+    fn consume(&mut self, mining_replay_key: [u8; 32]) -> Result<(), &'static str> {
+        if !self.consumed_mining_keys.insert(mining_replay_key) {
+            return Err("SYNA finalized inference already mined");
         }
         Ok(())
     }
@@ -167,8 +186,11 @@ pub fn authorize_verified_inference_reward_and_mint(
         return Err("SYNA reward amount is not policy-derived");
     }
 
-    if reward_state.is_consumed(&claim.claim_id) {
-        return Err("SYNA reward claim already consumed");
+    let mining_replay_key = claim
+        .mining_replay_key()
+        .ok_or("invalid SYNA mining replay key")?;
+    if reward_state.is_consumed(&mining_replay_key) {
+        return Err("SYNA finalized inference already mined");
     }
 
     // Transactional preflight: mutate clones first so failure cannot partially
@@ -178,7 +200,7 @@ pub fn authorize_verified_inference_reward_and_mint(
 
     let claim_root = claim.canonical_root().ok_or("invalid SYNA claim root")?;
     let mut next_rewards = reward_state.clone();
-    next_rewards.consume(claim.claim_id)?;
+    next_rewards.consume(mining_replay_key)?;
 
     let supply_state_root = next_supply
         .commitment()
@@ -399,7 +421,46 @@ mod tests {
         )
         .is_err());
         assert_eq!(supply.total_supply, 0);
-        assert!(!rewards.is_consumed(&claim.claim_id));
+        assert!(!rewards.is_consumed(&claim.mining_replay_key().unwrap()));
+    }
+
+    #[test]
+    fn changing_claim_id_cannot_double_mint_same_finalized_inference() {
+        let (c, receipts, settlement, cp, claim) = fixture();
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+
+        authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .unwrap();
+
+        let mut replayed = claim.clone();
+        replayed.claim_id = [42; 32];
+        assert!(authorize_verified_inference_reward_and_mint(
+            &replayed,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 10);
     }
 
     #[test]
