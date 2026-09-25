@@ -179,7 +179,6 @@ impl EvmBridgeProofReceipt {
     }
 }
 
-
 #[derive(Debug, Default, Clone)]
 pub struct EvmBridgeReplayState {
     consumed_message_ids: BTreeSet<[u8; 32]>,
