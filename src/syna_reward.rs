@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    aggregate_verifier_receipts, build_inference_outcome, ComputeSettlement,
+    aggregate_inference_stage_receipts, aggregate_verifier_receipts, build_inference_outcome,
+    ComputeSettlement,
     InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
     InferenceReceiptValidationContext, MvpCheckpoint, PeerDirectory, SynaEmissionPolicy,
     SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
@@ -315,6 +316,16 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         stage_receipts.push(authorized.receipt.clone());
     }
 
+    let canonical_work = aggregate_inference_stage_receipts(
+        context.job,
+        context.plan,
+        &stage_receipts,
+    )
+    .map_err(|_| "invalid canonical inference work aggregate")?;
+    let work_root = canonical_work
+        .commitment()
+        .ok_or("invalid canonical inference work commitment")?;
+
     if context.verifier_authorizations.len() != context.verifier_validations.len()
         || context.verifier_authorizations.is_empty()
     {
@@ -354,6 +365,9 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
             validation,
         ) {
             return Err("invalid PQ-authorized verifier receipt");
+        }
+        if authorized.receipt.work_commitment != work_root {
+            return Err("verifier useful-work commitment mismatch");
         }
         receipts.push(authorized.receipt.clone());
     }
