@@ -3,8 +3,7 @@
 use sha2::{Digest, Sha256};
 
 pub const AGENT_TASK_DOMAIN: &[u8] = b"SYNERGY/AGENT-TASK/V1";
-pub const AGENT_EXECUTION_RECEIPT_DOMAIN: &[u8] =
-    b"SYNERGY/AGENT-EXECUTION-RECEIPT/V1";
+pub const AGENT_EXECUTION_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/AGENT-EXECUTION-RECEIPT/V1";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentTaskCommitment {
@@ -78,10 +77,7 @@ impl AgentExecutionReceipt {
         h.finalize().into()
     }
 
-    pub fn validate_against(
-        &self,
-        task: &AgentTaskCommitment,
-    ) -> Result<(), AgentReceiptError> {
+    pub fn validate_against(&self, task: &AgentTaskCommitment) -> Result<(), AgentReceiptError> {
         if self.task_root != task.root() {
             return Err(AgentReceiptError::TaskRootMismatch);
         }

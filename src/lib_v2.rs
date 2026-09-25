@@ -49,8 +49,8 @@ pub mod validator;
 pub mod verification;
 
 pub use agent_execution::{
-    AgentExecutionReceipt, AgentReceiptError, AgentTaskCommitment,
-    AGENT_EXECUTION_RECEIPT_DOMAIN, AGENT_TASK_DOMAIN,
+    AgentExecutionReceipt, AgentReceiptError, AgentTaskCommitment, AGENT_EXECUTION_RECEIPT_DOMAIN,
+    AGENT_TASK_DOMAIN,
 };
 pub use agentic_economy::{
     decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
