@@ -65,6 +65,13 @@ impl PeerDirectory {
         if !r.live(now) {
             return Err("stale node record");
         }
+        if self.records.values().any(|existing| {
+            existing.node_id != r.node_id
+                && existing.live(now)
+                && existing.pq_identity_commitment == r.pq_identity_commitment
+        }) {
+            return Err("PQ identity commitment already registered to another node");
+        }
         match self.records.get(&r.node_id) {
             Some(old)
                 if r.epoch < old.epoch
@@ -128,6 +135,25 @@ mod tests {
         let mut changed_transport = record;
         changed_transport.transport_keyset_root[0] ^= 1;
         assert_ne!(changed_transport.commitment().unwrap(), root);
+    }
+
+    #[test]
+    fn rejects_same_pq_identity_under_different_node_ids() {
+        let mut d = PeerDirectory::default();
+        let first = r(1);
+        d.upsert(first.clone(), 1).unwrap();
+
+        let mut second = r(1);
+        second.node_id = [9; 32];
+        second.endpoint_root = [8; 32];
+        second.transport_keyset_root = [7; 32];
+        second.capability_root = [6; 32];
+
+        assert_eq!(
+            d.upsert(second, 1),
+            Err("PQ identity commitment already registered to another node")
+        );
+        assert_eq!(d.records.len(), 1);
     }
 
     #[test]
