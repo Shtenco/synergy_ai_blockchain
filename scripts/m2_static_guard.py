@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -9,6 +10,7 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(f"M2 static guard failed: {message}")
 
 cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+cargo_toml = tomllib.loads(cargo)
 pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
 lib_v2 = (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8")
 pq_sol = (ROOT / "contracts/IPQVerifier.sol").read_text(encoding="utf-8")
@@ -934,9 +936,18 @@ require(
 )
 
 
+deps = cargo_toml.get("dependencies", {})
+slh_cfg = deps.get("slh-dsa", {})
+rand_cfg = deps.get("rand", {})
 require(
-    'slh-dsa = { version = "=0.1.0", optional = true, default-features = false, features = ["alloc"] }' in cargo
-    and 'rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom", "std", "std_rng"] }' in cargo,
+    slh_cfg.get("version") == "=0.1.0"
+    and slh_cfg.get("optional") is True
+    and slh_cfg.get("default-features") is False
+    and slh_cfg.get("features") == ["alloc"]
+    and rand_cfg.get("version") == "=0.8.5"
+    and rand_cfg.get("optional") is True
+    and rand_cfg.get("default-features") is False
+    and rand_cfg.get("features") == ["getrandom", "std", "std_rng"],
     "SLH-DSA/rand feature surface must remain explicit and minimal",
 )
 
