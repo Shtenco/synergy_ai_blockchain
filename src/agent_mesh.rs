@@ -4,8 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::mesh_overlay::{MeshAddress, MeshPacket, MeshRoute};
 
-pub const AGENT_SERVICE_ADVERTISEMENT_DOMAIN: &[u8] =
-    b"SYNERGY/AGENT-MESH/SERVICE/V1";
+pub const AGENT_SERVICE_ADVERTISEMENT_DOMAIN: &[u8] = b"SYNERGY/AGENT-MESH/SERVICE/V1";
 pub const AGENT_DELEGATION_DOMAIN: &[u8] = b"SYNERGY/AGENT-MESH/DELEGATION/V1";
 pub const AGENT_MESH_SERVICE_ID: [u8; 32] = [0xA7; 32];
 
