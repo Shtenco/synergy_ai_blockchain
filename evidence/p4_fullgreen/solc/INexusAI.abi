@@ -1,0 +1,1 @@
+[{"inputs":[{"internalType":"bytes32","name":"modelRoot","type":"bytes32"},{"internalType":"int64[]","name":"inputQ16","type":"int64[]"},{"internalType":"uint16","name":"maxOutputs","type":"uint16"}],"name":"inferScore","outputs":[{"internalType":"int64[]","name":"outputQ16","type":"int64[]"}],"stateMutability":"view","type":"function"}]

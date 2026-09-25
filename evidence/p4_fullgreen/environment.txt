@@ -1,0 +1,6 @@
+﻿commit=bb75f6838578d9864899edb536705971ad5b11a5
+rustc=rustc 1.85.0 (4d91de4e4 2025-02-17)
+cargo=cargo 1.85.0 (d73d2caf9 2024-12-31)
+rustfmt=rustfmt 1.8.0-stable (4d91de4e48 2025-02-17)
+python=Python 3.11.9
+solc=solc, the solidity compiler commandline interface Version: 0.8.26+commit.8a97fa7a.Windows.msvc

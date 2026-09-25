@@ -1,0 +1,93 @@
+{
+  "environment_sha256": "6fd292e2c977218f0c142fd45977fbf6c1ec0c183dfa0a79a97ce79312535739",
+  "evidence_root": "eba758018ef5cd764c1f78c580c7f3fde333f86d89264571601496ca647150c2",
+  "gates": {
+    "01_fixture_manifest": {
+      "bytes": 112,
+      "sha256": "b3049cfbc39c5ffe3a1e4e972dd72f81943cf9a49a0a04a9c6cbcc615d328f65"
+    },
+    "02_static_security": {
+      "bytes": 48,
+      "sha256": "abc807fd9221fed730debc46c3727fd39d4ba0820a705325f04798a332e50856"
+    },
+    "03_fmt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "04_check_core": {
+      "bytes": 3244,
+      "sha256": "12b5c19d295a11266f767b2da40eb706110d3fa0b3affaf697b0c2aec151592d"
+    },
+    "05_check_reference_pq": {
+      "bytes": 822,
+      "sha256": "a6b299373a31d7d7986d5beb7423a169236dc271258ecea93cb6794fd501943c"
+    },
+    "06_clippy": {
+      "bytes": 822,
+      "sha256": "84694730d49c6126906c6cf9d66045bd7cfc527a9e1d9e12b3069a2989290176"
+    },
+    "07_test_core": {
+      "bytes": 52002,
+      "sha256": "594e4f02945772efd8fa6f5a6ea2c84ab7b015ac8c52ca42935ed5818e7edb33"
+    },
+    "08_test_reference_pq": {
+      "bytes": 53648,
+      "sha256": "db053b83c86ca53bcb5988615509c69b7f5e905b83776bb1ceefc2b74c70b2de"
+    },
+    "09_doctest": {
+      "bytes": 1124,
+      "sha256": "314e4f3cacd0220ed023fedf6abe95c60e5d1df84084559ccf00ec250f65cccd"
+    },
+    "10_release_reference_pq": {
+      "bytes": 51892,
+      "sha256": "e9e020c2676039a6b8f24b7720ebfcf2f71076f4d7485965aabeb9ee0c58e309"
+    },
+    "11_inference": {
+      "bytes": 6402,
+      "sha256": "07b237249fe196363a4e04c9b20cf534d95ecff30da12ae8891b835a05ef82d2"
+    },
+    "12_peer_discovery": {
+      "bytes": 5588,
+      "sha256": "2d77135637698d9b1bb3188a942301c0d2f5a9ea31c7478ff1219975fc5837b9"
+    },
+    "13_verification": {
+      "bytes": 5664,
+      "sha256": "969f50cc3d695eb8104fcffb64e0c7efdf273891f6a8f38b0e9ac9c6f2eb8504"
+    },
+    "14_pi_pq": {
+      "bytes": 4784,
+      "sha256": "3130702fe244bea0a1ec247581b3087414b32eed5c198da0863b9f75fed39f5c"
+    },
+    "15_evm_compat": {
+      "bytes": 5766,
+      "sha256": "7a2e8555b296a343386110e33419a723f8b5f48a11dd6c5abd3e4cd5ac85872b"
+    },
+    "16_syna_emission": {
+      "bytes": 5658,
+      "sha256": "9bb412766c498449fc6950c0303855a12f79717c50c2da514f817ace86b14af6"
+    },
+    "17_syna_reward": {
+      "bytes": 8254,
+      "sha256": "b674ec5b963768e2de6d411eac20427d82cff3f99fa2db00bb6c207b4c91ddea"
+    },
+    "18_syna_state": {
+      "bytes": 5264,
+      "sha256": "202c0e3ecafb66d260749891213df9882bdb4a8d40f4d5870f1332d37b3476d7"
+    },
+    "19_solidity": {
+      "bytes": 270,
+      "sha256": "6973c8c8a955be9832d6e36339df599085f505438b8a174883a7425c9bee4fdb"
+    }
+  },
+  "git_commit": "bb75f6838578d9864899edb536705971ad5b11a5",
+  "schema": "synergy.p4-fullgreen/v1",
+  "scope": [
+    "production-pq",
+    "pi-pq-fail-closed-shell",
+    "pq-evm-l1-l2-compatibility",
+    "bridge-replay-protection",
+    "syna-proof-of-useful-inference"
+  ],
+  "solidity_manifest_sha256": "e973361982f9eb35fbf931c640686a0eeb398aa701319693a29d41b9d67e83ae",
+  "status": "PASS"
+}
