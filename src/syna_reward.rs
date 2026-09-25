@@ -208,7 +208,7 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         return Err("SYNA worker reward requires canonical MATCH verdict");
     }
 
-    let checkpoint_root = context.checkpoint.commitment().ok_or("invalid context.checkpoint")?;
+    let checkpoint_root = context.checkpoint.commitment().ok_or("invalid checkpoint")?;
     let canonical_outcome = build_inference_outcome(
         context.job,
         context.plan,
@@ -219,11 +219,11 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     )
     .map_err(|_| "invalid canonical inference work evidence")?;
     if canonical_outcome != *context.outcome {
-        return Err("inference context.outcome does not match canonical stage receipts");
+        return Err("inference outcome does not match canonical stage receipts");
     }
     let outcome_root = canonical_outcome
         .commitment()
-        .ok_or("invalid canonical inference context.outcome")?;
+        .ok_or("invalid canonical inference outcome")?;
     if claim.checkpoint_root != checkpoint_root
         || claim.chain_id != context.checkpoint.chain_id
         || claim.epoch != context.checkpoint.epoch
@@ -252,15 +252,15 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
 
     let funded_amount = context.settlement
         .total_debit()
-        .ok_or("compute context.settlement debit overflow")?;
+        .ok_or("compute settlement debit overflow")?;
     let settlement_root = context.settlement
         .canonical_root(context.challenge, &aggregate, funded_amount)
-        .ok_or("invalid compute context.settlement")?;
+        .ok_or("invalid compute settlement")?;
 
     if claim.settlement_root != settlement_root
         || context.checkpoint.settlement_root != settlement_root
     {
-        return Err("SYNA context.settlement root mismatch");
+        return Err("SYNA settlement root mismatch");
     }
 
     if claim.reward_policy_version != policy.version {
