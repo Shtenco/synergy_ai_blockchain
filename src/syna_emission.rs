@@ -82,12 +82,12 @@ impl SynaSupplyState {
         if epoch < self.current_epoch {
             return Err("SYNA epoch cannot move backward");
         }
-        if epoch > self.current_epoch {
-            self.current_epoch = epoch;
-            self.epoch_emission = 0;
-        }
-        let next_epoch = self
-            .epoch_emission
+        let base_epoch_emission = if epoch > self.current_epoch {
+            0
+        } else {
+            self.epoch_emission
+        };
+        let next_epoch = base_epoch_emission
             .checked_add(amount)
             .ok_or("SYNA epoch emission overflow")?;
         if next_epoch > policy.max_emission_per_epoch {
@@ -102,6 +102,7 @@ impl SynaSupplyState {
                 return Err("SYNA max supply exceeded");
             }
         }
+        self.current_epoch = epoch;
         self.epoch_emission = next_epoch;
         self.total_supply = next_supply;
         Ok(())
@@ -139,6 +140,21 @@ mod tests {
         assert!(s.mint_bounded(&p, 1, 1).is_err());
         assert!(s.mint_bounded(&p, 2, 100).is_ok());
         assert!(s.commitment().is_some());
+    }
+
+    #[test]
+    fn failed_future_epoch_mint_does_not_partially_advance_state() {
+        let p = policy();
+        let mut s = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 900,
+            epoch_emission: 900,
+        };
+        let before = s.clone();
+
+        assert!(s.mint_bounded(&p, 2, 101).is_err());
+        assert_eq!(s, before);
     }
 
     #[test]
