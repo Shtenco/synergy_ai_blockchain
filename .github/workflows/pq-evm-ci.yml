@@ -207,3 +207,14 @@ jobs:
             m2-solidity-evidence-sha256.txt
           if-no-files-found: warn
           retention-days: 30
+
+
+  runner-probe-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner probe
+        shell: pwsh
+        run: |
+          Write-Host "WINDOWS_RUNNER_OK"
+          Get-Date -AsUTC
