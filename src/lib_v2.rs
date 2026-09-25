@@ -131,7 +131,8 @@ pub use payments::{
 };
 pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use peer_discovery::{
-    NodeRecord, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
+    NodeRecord, NodeSetSnapshot, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN,
+    NODE_SET_DOMAIN, NODE_SET_SNAPSHOT_DOMAIN,
 };
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
