@@ -1,11 +1,15 @@
 //! Ethereum/EVM interoperability profile for SYNERGY PQ-EVM.
 //!
-//! This module describes compatibility and bridge-proof requirements. It does
-//! not treat an RPC response as bridge finality.
+//! Compatibility is evidence-bound. Boolean capability flags describe the
+//! intended surface, while a verified compatibility claim additionally requires
+//! hash-pinned transaction/receipt/gas/RPC/ABI/precompile/client vectors.
+//! An RPC response is never treated as bridge finality.
 
 use sha2::{Digest, Sha256};
 
 pub const EVM_COMPAT_DOMAIN: &[u8] = b"SYNERGY/EVM-COMPAT/V1\0";
+pub const EVM_COMPAT_EVIDENCE_DOMAIN: &[u8] = b"SYNERGY/EVM-COMPAT-EVIDENCE/V1\0";
+pub const EVM_VERIFIED_PROFILE_DOMAIN: &[u8] = b"SYNERGY/EVM-VERIFIED-PROFILE/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvmNetworkClass {
@@ -15,7 +19,6 @@ pub enum EvmNetworkClass {
     Validium,
     Sidechain,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvmCompatibilityEvidence {
@@ -48,20 +51,6 @@ impl EvmCompatibilityEvidence {
             }
         }
         Ok(())
-    }
-
-    pub fn verified_commitment(
-        &self,
-        evidence: &EvmCompatibilityEvidence,
-    ) -> Option<[u8; 32]> {
-        let profile_root = self.commitment()?;
-        let evidence_root = evidence.commitment()?;
-        let mut h = Sha256::new();
-        h.update(EVM_COMPAT_DOMAIN);
-        h.update(b"VERIFIED\0");
-        h.update(profile_root);
-        h.update(evidence_root);
-        Some(h.finalize().into())
     }
 
     pub fn commitment(&self) -> Option<[u8; 32]> {
@@ -122,7 +111,13 @@ impl EvmCompatibilityProfile {
         let mut h = Sha256::new();
         h.update(EVM_COMPAT_DOMAIN);
         h.update(self.chain_id.to_be_bytes());
-        h.update([self.network_class as u8]);
+        h.update([match self.network_class {
+            EvmNetworkClass::EthereumL1 => 1,
+            EvmNetworkClass::OptimisticRollup => 2,
+            EvmNetworkClass::ZkRollup => 3,
+            EvmNetworkClass::Validium => 4,
+            EvmNetworkClass::Sidechain => 5,
+        }]);
         h.update(self.settlement_chain_id.to_be_bytes());
         h.update(self.bridge_contract);
         h.update(self.min_finality_blocks.to_be_bytes());
@@ -134,6 +129,19 @@ impl EvmCompatibilityProfile {
             self.pq_authorization_additive as u8,
             self.legacy_downgrade_for_pq_only as u8,
         ]);
+        Some(h.finalize().into())
+    }
+
+    pub fn verified_commitment(
+        &self,
+        evidence: &EvmCompatibilityEvidence,
+    ) -> Option<[u8; 32]> {
+        let profile_root = self.commitment()?;
+        let evidence_root = evidence.commitment()?;
+        let mut h = Sha256::new();
+        h.update(EVM_VERIFIED_PROFILE_DOMAIN);
+        h.update(profile_root);
+        h.update(evidence_root);
         Some(h.finalize().into())
     }
 }
@@ -189,6 +197,19 @@ mod tests {
         }
     }
 
+    fn evidence() -> EvmCompatibilityEvidence {
+        EvmCompatibilityEvidence {
+            transaction_vectors_root: [11; 32],
+            receipts_logs_vectors_root: [12; 32],
+            gas_vectors_root: [13; 32],
+            json_rpc_vectors_root: [14; 32],
+            abi_vectors_root: [15; 32],
+            precompile_registry_root: [16; 32],
+            client_matrix_root: [17; 32],
+            version: 1,
+        }
+    }
+
     #[test]
     fn pq_only_downgrade_is_never_compatible() {
         let mut p = eth();
@@ -200,21 +221,24 @@ mod tests {
     #[test]
     fn compatibility_claim_requires_hash_pinned_evidence() {
         let p = eth();
-        let e = EvmCompatibilityEvidence {
-            transaction_vectors_root: [11; 32],
-            receipts_logs_vectors_root: [12; 32],
-            gas_vectors_root: [13; 32],
-            json_rpc_vectors_root: [14; 32],
-            abi_vectors_root: [15; 32],
-            precompile_registry_root: [16; 32],
-            client_matrix_root: [17; 32],
-            version: 1,
-        };
+        let e = evidence();
         assert!(p.verified_commitment(&e).is_some());
 
-        let mut missing = e.clone();
+        let mut missing = e;
         missing.gas_vectors_root = [0; 32];
         assert!(p.verified_commitment(&missing).is_none());
+    }
+
+    #[test]
+    fn evidence_changes_verified_profile_root() {
+        let p = eth();
+        let e1 = evidence();
+        let mut e2 = e1.clone();
+        e2.json_rpc_vectors_root[0] ^= 1;
+        assert_ne!(
+            p.verified_commitment(&e1),
+            p.verified_commitment(&e2)
+        );
     }
 
     #[test]
