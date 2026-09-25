@@ -507,7 +507,7 @@ mod tests {
     };
     use crate::{
         InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, NodeRecord,
-        VerifierReceipt,
+        PeerDirectory, VerifierReceipt,
     };
 
     #[derive(Clone, Copy)]
