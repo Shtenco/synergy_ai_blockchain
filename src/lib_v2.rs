@@ -84,9 +84,11 @@ pub use governance::{
     GovernanceValidationContext,
 };
 pub use inference::{
+    aggregate_inference_stage_receipts, build_inference_outcome,
     verify_inference_receipt_and_consume, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
-    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, INFERENCE_OUTCOME_DOMAIN,
+    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, InferenceWorkAggregate,
+    INFERENCE_OUTCOME_DOMAIN, INFERENCE_WORK_SET_DOMAIN,
 };
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
