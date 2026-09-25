@@ -1,5 +1,5 @@
-use std::time::Instant;
 use sha2::{Digest, Sha256};
+use std::time::Instant;
 use synergy_pq_evm_core::{
     AgenticEconomyReplayState, AgenticEconomyState, AgenticEconomyTransitionReceipt, Asset,
     EconomyAccountingSnapshot, EconomyDecision,
