@@ -1382,7 +1382,7 @@ require(
 require(
     "pub fn commitment(&self) -> Option<[u8; 32]>" in network
     and 'SYNERGY/TRANSPORT-REPLAY-STATE/V1\\0' in network
-    and "for session_id in &self.consumed" in network
+    and "for (session_id, transcript_hash) in &self.consumed" in network
     and "network_id == [0u8; 32] || epoch == 0" in network,
     "transport replay state must remain persistently commit-able and reject zero epoch",
 )
