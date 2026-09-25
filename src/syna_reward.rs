@@ -1,14 +1,18 @@
 //! SYNA Proof-of-Useful-Inference reward authorization.
 //!
-//! A SYNA inference reward is authorized only from a finalized checkpoint
-//! whose verification and settlement roots correspond to a MATCH verdict.
+//! Monetary authorization is recomputed from the exact canonical verifier
+//! receipt set. Callers cannot mint SYNA by supplying counters alone.
 
 use std::collections::BTreeSet;
+
 use sha2::{Digest, Sha256};
 
-use crate::{ComputeSettlement, MvpCheckpoint, VerificationAggregate, VerificationVerdict};
+use crate::{
+    aggregate_verifier_receipts, ComputeSettlement, MvpCheckpoint, SynaEmissionPolicy,
+    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceipt,
+};
 
-pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V1\0";
+pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaRewardClaim {
@@ -28,15 +32,7 @@ pub struct SynaRewardClaim {
 }
 
 impl SynaRewardClaim {
-    pub fn validate(
-        &self,
-        checkpoint: &MvpCheckpoint,
-        settlement: &ComputeSettlement,
-        aggregate: &VerificationAggregate,
-    ) -> Result<(), &'static str> {
-        if aggregate.final_verdict() != VerificationVerdict::Match {
-            return Err("SYNA worker reward requires MATCH verdict");
-        }
+    pub fn validate_fields(&self) -> Result<(), &'static str> {
         if self.claim_id == [0; 32]
             || self.chain_id == [0; 32]
             || self.epoch == 0
@@ -53,31 +49,11 @@ impl SynaRewardClaim {
         {
             return Err("SYNA reward claim fields required");
         }
-        let cp_root = checkpoint.commitment().ok_or("invalid checkpoint")?;
-        if self.checkpoint_root != cp_root
-            || self.chain_id != checkpoint.chain_id
-            || self.epoch != checkpoint.epoch
-            || self.model_root != checkpoint.model_root
-            || self.inference_root != checkpoint.inference_root
-            || self.verifier_set_root != checkpoint.verification_root
-            || self.settlement_root != checkpoint.settlement_root
-            || self.job_id != settlement.job_id
-            || self.worker_id != settlement.worker_id
-            || settlement.worker_reward == 0
-            || settlement.slash_root.is_some()
-        {
-            return Err("SYNA reward claim binding mismatch");
-        }
         Ok(())
     }
 
-    pub fn canonical_root(
-        &self,
-        checkpoint: &MvpCheckpoint,
-        settlement: &ComputeSettlement,
-        aggregate: &VerificationAggregate,
-    ) -> Option<[u8; 32]> {
-        self.validate(checkpoint, settlement, aggregate).ok()?;
+    pub fn canonical_root(&self) -> Option<[u8; 32]> {
+        self.validate_fields().ok()?;
         let mut h = Sha256::new();
         h.update(SYNA_REWARD_DOMAIN);
         h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
@@ -98,48 +74,205 @@ impl SynaRewardClaim {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SynaRewardState {
     consumed_claims: BTreeSet<[u8; 32]>,
 }
 
 impl SynaRewardState {
-    pub fn consume_once(
-        &mut self,
-        claim: &SynaRewardClaim,
-        checkpoint: &MvpCheckpoint,
-        settlement: &ComputeSettlement,
-        aggregate: &VerificationAggregate,
-    ) -> Result<[u8; 32], &'static str> {
-        let root = claim
-            .canonical_root(checkpoint, settlement, aggregate)
-            .ok_or("invalid SYNA reward claim")?;
-        if self.consumed_claims.contains(&claim.claim_id) {
+    pub fn is_consumed(&self, claim_id: &[u8; 32]) -> bool {
+        self.consumed_claims.contains(claim_id)
+    }
+
+    fn consume(&mut self, claim_id: [u8; 32]) -> Result<(), &'static str> {
+        if !self.consumed_claims.insert(claim_id) {
             return Err("SYNA reward claim already consumed");
         }
-        self.consumed_claims.insert(claim.claim_id);
-        Ok(root)
+        Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynaMintAuthorization {
+    pub claim_root: [u8; 32],
+    pub claim_id: [u8; 32],
+    pub worker_id: [u8; 32],
+    pub amount: u128,
+    pub epoch: u64,
+    pub checkpoint_root: [u8; 32],
+    pub verifier_set_root: [u8; 32],
+    pub settlement_root: [u8; 32],
+}
+
+pub fn authorize_verified_inference_reward_and_mint(
+    claim: &SynaRewardClaim,
+    checkpoint: &MvpCheckpoint,
+    settlement: &ComputeSettlement,
+    challenge: &VerificationChallenge,
+    receipts: &[VerifierReceipt],
+    policy: &SynaEmissionPolicy,
+    reward_state: &mut SynaRewardState,
+    supply_state: &mut SynaSupplyState,
+) -> Result<SynaMintAuthorization, &'static str> {
+    claim.validate_fields()?;
+    checkpoint.validate()?;
+    challenge.validate()?;
+    policy.validate()?;
+
+    let aggregate = aggregate_verifier_receipts(challenge, receipts)?;
+    if aggregate.final_verdict() != VerificationVerdict::Match {
+        return Err("SYNA worker reward requires canonical MATCH verdict");
+    }
+
+    let checkpoint_root = checkpoint.commitment().ok_or("invalid checkpoint")?;
+    if claim.checkpoint_root != checkpoint_root
+        || claim.chain_id != checkpoint.chain_id
+        || claim.epoch != checkpoint.epoch
+        || claim.model_root != checkpoint.model_root
+        || claim.inference_root != checkpoint.inference_root
+        || claim.verifier_set_root != aggregate.receipt_root
+        || checkpoint.verification_root != aggregate.receipt_root
+        || claim.job_id != challenge.job_id
+        || settlement.job_id != challenge.job_id
+        || settlement.worker_id != claim.worker_id
+        || settlement.verifier_set_root != aggregate.receipt_root
+        || settlement.worker_reward == 0
+        || settlement.slash_root.is_some()
+    {
+        return Err("SYNA reward claim binding mismatch");
+    }
+
+    let funded_amount = settlement
+        .total_debit()
+        .ok_or("compute settlement debit overflow")?;
+    let settlement_root = settlement
+        .canonical_root(challenge, &aggregate, funded_amount)
+        .ok_or("invalid compute settlement")?;
+
+    if claim.settlement_root != settlement_root
+        || checkpoint.settlement_root != settlement_root
+    {
+        return Err("SYNA settlement root mismatch");
+    }
+
+    if claim.reward_policy_version != policy.version {
+        return Err("SYNA reward policy version mismatch");
+    }
+
+    let expected_reward = policy
+        .reward_for_useful_work(claim.useful_work_units)
+        .ok_or("useful work below reward threshold")?;
+    if claim.reward_amount != expected_reward {
+        return Err("SYNA reward amount is not policy-derived");
+    }
+
+    if reward_state.is_consumed(&claim.claim_id) {
+        return Err("SYNA reward claim already consumed");
+    }
+
+    // Transactional preflight: mutate clones first so failure cannot partially
+    // consume the one-shot claim or partially advance supply accounting.
+    let mut next_supply = supply_state.clone();
+    next_supply.mint_bounded(policy, claim.epoch, expected_reward)?;
+
+    let claim_root = claim.canonical_root().ok_or("invalid SYNA claim root")?;
+    let mut next_rewards = reward_state.clone();
+    next_rewards.consume(claim.claim_id)?;
+
+    *supply_state = next_supply;
+    *reward_state = next_rewards;
+
+    Ok(SynaMintAuthorization {
+        claim_root,
+        claim_id: claim.claim_id,
+        worker_id: claim.worker_id,
+        amount: expected_reward,
+        epoch: claim.epoch,
+        checkpoint_root,
+        verifier_set_root: aggregate.receipt_root,
+        settlement_root,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::VerificationAggregate;
+    use crate::{SynaEmissionPolicy, SynaSupplyState, VerificationVerdict};
 
-    fn aggregate_match() -> VerificationAggregate {
-        VerificationAggregate {
+    fn challenge() -> VerificationChallenge {
+        VerificationChallenge {
             challenge_id: [1; 32],
-            receipt_root: [5; 32],
-            distinct_verifiers: 2,
-            matches: 2,
-            mismatches: 0,
-            inconclusive: 0,
+            job_id: [2; 32],
+            challenged_output_commitment: [3; 32],
+            sample_seed_commitment: [4; 32],
+            required_replications: 2,
+            opened_at: 1,
+            closes_at: 10,
         }
     }
 
-    fn checkpoint() -> MvpCheckpoint {
-        MvpCheckpoint {
+    fn receipt(
+        verifier: u8,
+        verdict: VerificationVerdict,
+        recomputed: [u8; 32],
+    ) -> VerifierReceipt {
+        VerifierReceipt {
+            challenge_id: [1; 32],
+            verifier_id: [verifier; 32],
+            recomputed_output_commitment: recomputed,
+            trace_commitment: [10 + verifier; 32],
+            signature_commitment: [20 + verifier; 32],
+            verdict,
+            completed_at: 5,
+        }
+    }
+
+    fn policy() -> SynaEmissionPolicy {
+        SynaEmissionPolicy {
+            version: 1,
+            max_reward_per_job: 100,
+            max_emission_per_epoch: 1_000,
+            max_supply: Some(10_000),
+            min_useful_work_units: 10,
+        }
+    }
+
+    fn fixture() -> (
+        VerificationChallenge,
+        Vec<VerifierReceipt>,
+        ComputeSettlement,
+        MvpCheckpoint,
+        SynaRewardClaim,
+    ) {
+        let c = challenge();
+        let receipts = vec![
+            receipt(
+                5,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
+            receipt(
+                6,
+                VerificationVerdict::Match,
+                c.challenged_output_commitment,
+            ),
+        ];
+        let a = aggregate_verifier_receipts(&c, &receipts).unwrap();
+        let settlement = ComputeSettlement {
+            job_id: c.job_id,
+            funding_root: [6; 32],
+            worker_id: [7; 32],
+            storage_provider_id: [8; 32],
+            verifier_set_root: a.receipt_root,
+            worker_reward: 60,
+            storage_reward: 10,
+            verifier_reward: 20,
+            protocol_fee: 10,
+            slash_root: None,
+            refund_amount: 0,
+        };
+        let settlement_root = settlement.canonical_root(&c, &a, 100).unwrap();
+        let cp = MvpCheckpoint {
             chain_id: [10; 32],
             epoch: 1,
             sequence: 1,
@@ -148,69 +281,114 @@ mod tests {
             network_root: [12; 32],
             provider_root: [13; 32],
             inference_root: [14; 32],
-            verification_root: [5; 32],
+            verification_root: a.receipt_root,
             kv_root: [16; 32],
             storage_root: [17; 32],
-            settlement_root: [18; 32],
+            settlement_root,
             scheduler_root: [19; 32],
             node_set_root: [20; 32],
-        }
-    }
-
-    fn settlement() -> ComputeSettlement {
-        ComputeSettlement {
-            job_id: [2; 32],
-            funding_root: [6; 32],
-            worker_id: [7; 32],
-            storage_provider_id: [8; 32],
-            verifier_set_root: [5; 32],
-            worker_reward: 60,
-            storage_reward: 10,
-            verifier_reward: 20,
-            protocol_fee: 10,
-            slash_root: None,
-            refund_amount: 0,
-        }
-    }
-
-    fn claim(cp: &MvpCheckpoint) -> SynaRewardClaim {
-        SynaRewardClaim {
+        };
+        let claim = SynaRewardClaim {
             claim_id: [21; 32],
             chain_id: cp.chain_id,
             epoch: cp.epoch,
-            job_id: [2; 32],
-            worker_id: [7; 32],
+            job_id: c.job_id,
+            worker_id: settlement.worker_id,
             model_root: cp.model_root,
             inference_root: cp.inference_root,
-            verifier_set_root: cp.verification_root,
-            settlement_root: cp.settlement_root,
+            verifier_set_root: a.receipt_root,
+            settlement_root,
             checkpoint_root: cp.commitment().unwrap(),
-            useful_work_units: 1000,
-            reward_amount: 25,
+            useful_work_units: 100,
+            reward_amount: 10,
             reward_policy_version: 1,
-        }
+        };
+        (c, receipts, settlement, cp, claim)
     }
 
     #[test]
-    fn verified_inference_reward_is_one_shot() {
-        let cp = checkpoint();
-        let s = settlement();
-        let a = aggregate_match();
-        let c = claim(&cp);
-        let mut state = SynaRewardState::default();
-        assert!(state.consume_once(&c, &cp, &s, &a).is_ok());
-        assert!(state.consume_once(&c, &cp, &s, &a).is_err());
+    fn verified_inference_mints_once_and_updates_supply() {
+        let (c, receipts, settlement, cp, claim) = fixture();
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+        let auth = authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .unwrap();
+        assert_eq!(auth.amount, 10);
+        assert_eq!(supply.total_supply, 10);
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
     }
 
     #[test]
-    fn mismatch_cannot_mint_worker_reward() {
-        let cp = checkpoint();
-        let s = settlement();
-        let mut a = aggregate_match();
-        a.matches = 1;
-        a.mismatches = 1;
-        let c = claim(&cp);
-        let mut state = SynaRewardState::default();
-        assert!(state.consume_once(&c, &cp, &s, &a).is_err());
+    fn mismatch_receipt_blocks_mint() {
+        let (c, mut receipts, settlement, cp, claim) = fixture();
+        receipts[1].verdict = VerificationVerdict::Mismatch;
+        receipts[1].recomputed_output_commitment = [99; 32];
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn model_cannot_self_choose_reward_amount() {
+        let (c, receipts, settlement, cp, mut claim) = fixture();
+        claim.reward_amount = 99;
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
     }
 }
