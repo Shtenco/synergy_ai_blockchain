@@ -1103,6 +1103,8 @@ mod tests {
         let mut supply = empty_supply();
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
