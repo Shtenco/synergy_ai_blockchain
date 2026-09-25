@@ -426,10 +426,14 @@ require(
 
 require(
     "unexpected features enabled for" in lock_policy
+    and "required_features = {" in lock_policy
+    and "allowed_features = {" in lock_policy
     and '("ml-kem", "0.3.2"): {"getrandom", "zeroize"}' in lock_policy
-    and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"}' in lock_policy
+    and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "rand_core", "zeroize"}' in lock_policy
     and '("slh-dsa", "0.1.0"): {"alloc"}' in lock_policy
-    and '("rand", "0.8.5"): {"getrandom"}' in lock_policy,
+    and '("hkdf", "0.12.4"): set()' in lock_policy
+    and '"rand_chacha"' in lock_policy
+    and '"std_rng"' in lock_policy,
     "critical crypto feature allowlist missing",
 )
 
