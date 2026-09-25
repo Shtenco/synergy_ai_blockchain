@@ -5,7 +5,10 @@
   "crypto": {
     "production": {
       "kem": "ML-KEM-1024",
-      "signatures": ["ML-DSA-87", "SLH-DSA-SHAKE-256s"],
+      "signatures": [
+        "ML-DSA-87",
+        "SLH-DSA-SHAKE-256s"
+      ],
       "required": true
     },
     "pi_pq": {
@@ -28,12 +31,19 @@
     "mismatch_worker_reward": 0,
     "inconclusive_worker_reward": 0,
     "one_shot_claim": true,
-    "reward_policy_versioned": true
+    "reward_policy_versioned": true,
+    "one_shot_identity": "CHAIN_ID_PLUS_JOB_ID",
+    "claim_id_cannot_reset_replay_state": true,
+    "checkpoint_refinalization_cannot_reset_replay_state": true,
+    "reward_state_root_committed_into_supply_state": true
   },
   "federation": {
     "consensus_authority": "Shtenco/synergy_ai_blockchain",
     "transport_adapter": "Shtenco/synergynet",
-    "compute_sources": ["Shtenco/synergy_agi_olga", "Shtenco/synergy_gllm_nexus"],
+    "compute_sources": [
+      "Shtenco/synergy_agi_olga",
+      "Shtenco/synergy_gllm_nexus"
+    ],
     "settlement_source": "Shtenco/synergy_pay_system",
     "evm_l2_lab": "Shtenco/synergy_2chain_qe",
     "application_surface": "Shtenco/synergychain",
@@ -41,5 +51,21 @@
   },
   "security_blockers": [
     "ROTATE_TRACKED_BASE_MAINNET_DEPLOYER_KEY_BEFORE_REAL_DEPLOYMENT"
-  ]
+  ],
+  "inference_security": {
+    "canonical_plan_root_required": true,
+    "first_stage_binds_job_input": true,
+    "stage_chain_requires_previous_output_as_next_input": true,
+    "work_units_derived_from_signed_stage_receipts": true,
+    "verifier_receipts_bind_canonical_work_commitment": true
+  },
+  "node_identity_security": {
+    "pq_identity_separate_from_transport_identity": true,
+    "pq_identity_unique_per_epoch": true,
+    "finalized_node_set_uses_immutable_snapshot": true,
+    "snapshot_epoch_must_equal_checkpoint_epoch": true,
+    "worker_and_verifiers_must_exist_in_snapshot": true,
+    "worker_cannot_self_verify": true,
+    "verifier_ids_and_pq_keysets_must_be_unique": true
+  }
 }
