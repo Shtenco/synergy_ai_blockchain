@@ -180,6 +180,12 @@ impl InferenceExecutionPlan {
         if self.stages.len() > MAX_INFERENCE_STAGES {
             return Err("execution plan exceeds protocol stage limit");
         }
+        if !self.has_canonical_root() {
+            return Err("execution plan root is not canonical for its stages");
+        }
+        if self.stages[0].input_commitment != job.input_commitment {
+            return Err("first inference stage must bind the job input");
+        }
         for (i, stage) in self.stages.iter().enumerate() {
             stage.validate_against(job)?;
             let expected_index =
@@ -380,9 +386,13 @@ pub fn aggregate_inference_stage_receipts(
     let mut total_bytes_written = 0u128;
     let mut total_elapsed_micros = 0u128;
     let mut final_output_commitment = [0u8; 32];
+    let mut expected_input_commitment = job.input_commitment;
 
     for (assignment, receipt) in plan.stages.iter().zip(receipts.iter()) {
         receipt.validate_against(assignment)?;
+        if receipt.input_commitment != expected_input_commitment {
+            return Err("inference stage chain is disconnected");
+        }
         let receipt_commitment = receipt
             .authorization_commitment()
             .ok_or("invalid inference stage receipt commitment")?;
@@ -401,6 +411,7 @@ pub fn aggregate_inference_stage_receipts(
             .checked_add(u128::from(receipt.elapsed_micros))
             .ok_or("inference elapsed-time overflow")?;
         final_output_commitment = receipt.output_commitment;
+        expected_input_commitment = receipt.output_commitment;
     }
 
     let receipt_root: [u8; 32] = hasher.finalize().into();
@@ -565,12 +576,15 @@ mod tests {
     }
 
     fn job() -> InferenceJob {
+        let default_stages = vec![stage(0), stage(1)];
+        let execution_plan_root =
+            InferenceExecutionPlan::canonical_root_for_stages([1; 32], &default_stages).unwrap();
         InferenceJob {
             job_id: [1; 32],
             requester_id: [2; 32],
             model_root: [3; 32],
             input_commitment: [4; 32],
-            execution_plan_root: [5; 32],
+            execution_plan_root,
             max_output_tokens: 64,
             max_cost: 1_000,
             created_at: 10,
@@ -589,7 +603,13 @@ mod tests {
             },
             worker_id: [10 + index as u8; 32],
             model_shard_commitment: [20 + index as u8; 32],
-            input_commitment: [30 + index as u8; 32],
+            input_commitment: if index == 0 {
+                [4; 32]
+            } else if index == 1 {
+                [50; 32]
+            } else {
+                [30 + index as u8; 32]
+            },
             resource_limit_commitment: [40 + index as u8; 32],
             lease_expires_at: 90,
         }
@@ -651,6 +671,53 @@ mod tests {
                 .receipt_root,
             work.receipt_root
         );
+    }
+
+    #[test]
+    fn disconnected_but_individually_valid_stage_chain_is_rejected() {
+        let mut j = job();
+        let mut stages = vec![stage(0), stage(1)];
+        stages[1].input_commitment = [77; 32];
+        let plan_root =
+            InferenceExecutionPlan::canonical_root_for_stages(j.job_id, &stages).unwrap();
+        j.execution_plan_root = plan_root;
+        let plan = InferenceExecutionPlan {
+            job_id: j.job_id,
+            plan_root,
+            stages,
+        };
+        let receipts = vec![
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 0,
+                worker_id: plan.stages[0].worker_id,
+                model_shard_commitment: plan.stages[0].model_shard_commitment,
+                input_commitment: plan.stages[0].input_commitment,
+                output_commitment: [50; 32],
+                execution_trace_commitment: [51; 32],
+                worker_signature_commitment: [52; 32],
+                compute_units: 40,
+                bytes_read: 100,
+                bytes_written: 20,
+                elapsed_micros: 10,
+            },
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 1,
+                worker_id: plan.stages[1].worker_id,
+                model_shard_commitment: plan.stages[1].model_shard_commitment,
+                input_commitment: plan.stages[1].input_commitment,
+                output_commitment: [60; 32],
+                execution_trace_commitment: [61; 32],
+                worker_signature_commitment: [62; 32],
+                compute_units: 60,
+                bytes_read: 200,
+                bytes_written: 30,
+                elapsed_micros: 20,
+            },
+        ];
+
+        assert!(aggregate_inference_stage_receipts(&j, &plan, &receipts).is_err());
     }
 
     #[test]
