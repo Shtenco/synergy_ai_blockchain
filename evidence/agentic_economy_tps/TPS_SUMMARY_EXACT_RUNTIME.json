@@ -1,0 +1,93 @@
+{
+  "benchmark": "SYNERGY execution TPS v2 exact-runtime-bound",
+  "benchmarked_git_commit": "91165e8972c609f0798e202dda05b25312bed1ee",
+  "source_repository": "Shtenco/synergy_agentic_ai_economy",
+  "source_commit": "113ef7df80d465958dc75e63b4afcd358dd39aa3",
+  "exact_dqn_runtime_sha256": "acdcbce6d8f4e2065667bcdda4d1d1f16fc82105e403e8d6c7df9c4babe1c55f",
+  "runner": "DESKTOP-C8GUE41",
+  "cpu": "Intel Core i7-3610QM @ 2.30GHz, 4C/8T",
+  "os": "Windows 11 Pro x64",
+  "rust": "1.85.0",
+  "transactions_per_run": 1000000,
+  "runs": [
+    {
+      "transfer_tps": 12206703.43,
+      "agent_action_tps": 6432878.7,
+      "committed_seconds": 14.948579,
+      "committed_tps": 66895.99,
+      "receipt_seconds": 10.959719,
+      "receipt_tps": 91243.22
+    },
+    {
+      "transfer_tps": 40647101.86,
+      "agent_action_tps": 24361604.16,
+      "committed_seconds": 11.011128,
+      "committed_tps": 90817.22,
+      "receipt_seconds": 10.41099,
+      "receipt_tps": 96052.34
+    },
+    {
+      "transfer_tps": 43274307.18,
+      "agent_action_tps": 28586783.76,
+      "committed_seconds": 11.84751,
+      "committed_tps": 84405.92,
+      "receipt_seconds": 10.043567,
+      "receipt_tps": 99566.22
+    },
+    {
+      "transfer_tps": 29546199.92,
+      "agent_action_tps": 19190064.15,
+      "committed_seconds": 10.768338,
+      "committed_tps": 92864.84,
+      "receipt_seconds": 10.291889,
+      "receipt_tps": 97163.89
+    },
+    {
+      "transfer_tps": 42118918.55,
+      "agent_action_tps": 29131247.92,
+      "committed_seconds": 12.478242,
+      "committed_tps": 80139.5,
+      "receipt_seconds": 10.51275,
+      "receipt_tps": 95122.59
+    }
+  ],
+  "summary": {
+    "transfer_tps": {
+      "median": 40647101.86,
+      "mean": 33558646.188,
+      "min": 12206703.43,
+      "max": 43274307.18
+    },
+    "agent_action_tps": {
+      "median": 24361604.16,
+      "mean": 21540515.738,
+      "min": 6432878.7,
+      "max": 29131247.92
+    },
+    "state_committed_tps": {
+      "median": 84405.92,
+      "mean": 83024.69399999999,
+      "min": 66895.99,
+      "max": 92864.84
+    },
+    "receipt_replay_tps": {
+      "median": 96052.34,
+      "mean": 95829.652,
+      "min": 91243.22,
+      "max": 99566.22
+    },
+    "end_to_end_single_node_execution_tps": {
+      "median": 45680.712739715826,
+      "mean": 44387.45502687605,
+      "min": 38597.67245227764,
+      "max": 47482.869011810755
+    }
+  },
+  "regression": {
+    "core_plus_economy": "305/305 PASS",
+    "reference_pq_plus_economy": "324/324 PASS",
+    "adversarial": "1/1 PASS",
+    "acvp_wycheproof_fips205": "5/5 PASS"
+  },
+  "scope_note": "Single-node execution-layer benchmark. Excludes network propagation, multi-validator consensus/finality, per-transaction PQ signature verification, durable storage fsync, and public-testnet latency."
+}
