@@ -1347,6 +1347,7 @@ mod tests {
         let mut receipt = fixture.verifier_authorizations[1].receipt.clone();
         receipt.verdict = VerificationVerdict::Inconclusive;
         receipt.recomputed_output_commitment = [0; 32];
+        receipt.work_commitment = [0; 32];
         let (resigned, _) = authorize_verifier(
             receipt,
             &fixture.challenge,
