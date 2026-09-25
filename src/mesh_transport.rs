@@ -50,6 +50,7 @@ pub struct EncryptedMeshHop {
     pub record: EncryptedTransportRecord,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn encrypt_mesh_end_to_end(
     route: &MeshRoute,
     flow_id: [u8; 32],
