@@ -321,15 +321,8 @@ mod tests {
             .any(|w| w == b"private-ip-payload"));
 
         let mut hop_recv = seq();
-        let decoded = decrypt_mesh_hop(
-            &wrapped,
-            &route,
-            [7; 32],
-            &key(8),
-            &mut hop_recv,
-            11,
-        )
-        .unwrap();
+        let decoded =
+            decrypt_mesh_hop(&wrapped, &route, [7; 32], &key(8), &mut hop_recv, 11).unwrap();
         let destination = decoded.forward(&route, addr(2)).unwrap();
         let mut e2e_recv = seq();
         let plain =
@@ -362,8 +355,7 @@ mod tests {
         )
         .unwrap();
         let mut recv = seq();
-        let decoded =
-            decrypt_mesh_hop(&wrapped, &route, [7; 32], &key(8), &mut recv, 11).unwrap();
+        let decoded = decrypt_mesh_hop(&wrapped, &route, [7; 32], &key(8), &mut recv, 11).unwrap();
         assert_eq!(decoded, packet);
     }
 
@@ -393,27 +385,11 @@ mod tests {
         .unwrap();
 
         let mut recv = seq();
-        assert!(decrypt_mesh_hop(
-            &wrapped,
-            &route,
-            [7; 32],
-            &key(99),
-            &mut recv,
-            11
-        )
-        .is_none());
+        assert!(decrypt_mesh_hop(&wrapped, &route, [7; 32], &key(99), &mut recv, 11).is_none());
 
         let mut tampered = wrapped;
         tampered.header.packet_root[0] ^= 1;
         let mut recv = seq();
-        assert!(decrypt_mesh_hop(
-            &tampered,
-            &route,
-            [7; 32],
-            &key(8),
-            &mut recv,
-            11
-        )
-        .is_none());
+        assert!(decrypt_mesh_hop(&tampered, &route, [7; 32], &key(8), &mut recv, 11).is_none());
     }
 }

@@ -180,11 +180,17 @@ impl MemoryTunnelDevice {
 impl MeshTunnelDevice for MemoryTunnelDevice {
     fn read_packet(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if self.ingress.is_empty() {
-            return Err(io::Error::new(io::ErrorKind::WouldBlock, "no tunnel packet"));
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "no tunnel packet",
+            ));
         }
         let packet = self.ingress.remove(0);
         if packet.len() > buffer.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "tunnel buffer too small"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "tunnel buffer too small",
+            ));
         }
         buffer[..packet.len()].copy_from_slice(&packet);
         Ok(packet.len())
@@ -192,7 +198,10 @@ impl MeshTunnelDevice for MemoryTunnelDevice {
 
     fn write_packet(&mut self, packet: &[u8]) -> io::Result<()> {
         if packet.is_empty() || packet.len() > MAX_TUNNEL_IP_PACKET_BYTES {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid tunnel packet"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid tunnel packet",
+            ));
         }
         self.egress.push(packet.to_vec());
         Ok(())
@@ -213,43 +222,49 @@ mod tests {
 
     #[test]
     fn exact_mesh_peer_route_wins_over_exit() {
-        let p = TunnelIpPacket::parse(ipv4([10,0,0,1],[10,0,0,2])).unwrap();
+        let p = TunnelIpPacket::parse(ipv4([10, 0, 0, 1], [10, 0, 0, 2])).unwrap();
         let mut routes = MeshTunnelRouting::default();
-        routes.set_default_exit(MeshAddress([9;32]));
-        routes.set_exact(TunnelIpAddress::V4([10,0,0,2]),MeshAddress([2;32])).unwrap();
+        routes.set_default_exit(MeshAddress([9; 32]));
+        routes
+            .set_exact(TunnelIpAddress::V4([10, 0, 0, 2]), MeshAddress([2; 32]))
+            .unwrap();
         assert_eq!(
-            classify_tunnel_packet(&p,&routes,MeshTunnelPolicy::secure_default()).unwrap(),
-            TunnelRouteTarget::MeshPeer(MeshAddress([2;32]))
+            classify_tunnel_packet(&p, &routes, MeshTunnelPolicy::secure_default()).unwrap(),
+            TunnelRouteTarget::MeshPeer(MeshAddress([2; 32]))
         );
     }
 
     #[test]
     fn public_destination_uses_protected_exit_node() {
-        let p = TunnelIpPacket::parse(ipv4([10,0,0,1],[1,1,1,1])).unwrap();
+        let p = TunnelIpPacket::parse(ipv4([10, 0, 0, 1], [1, 1, 1, 1])).unwrap();
         let mut routes = MeshTunnelRouting::default();
-        routes.set_default_exit(MeshAddress([9;32]));
+        routes.set_default_exit(MeshAddress([9; 32]));
         assert_eq!(
-            classify_tunnel_packet(&p,&routes,MeshTunnelPolicy::secure_default()).unwrap(),
-            TunnelRouteTarget::ExitNode(MeshAddress([9;32]))
+            classify_tunnel_packet(&p, &routes, MeshTunnelPolicy::secure_default()).unwrap(),
+            TunnelRouteTarget::ExitNode(MeshAddress([9; 32]))
         );
     }
 
     #[test]
     fn no_exit_means_fail_closed_not_plaintext_bypass() {
-        let p = TunnelIpPacket::parse(ipv4([10,0,0,1],[1,1,1,1])).unwrap();
+        let p = TunnelIpPacket::parse(ipv4([10, 0, 0, 1], [1, 1, 1, 1])).unwrap();
         let routes = MeshTunnelRouting::default();
-        assert!(classify_tunnel_packet(&p,&routes,MeshTunnelPolicy::secure_default()).is_err());
+        assert!(classify_tunnel_packet(&p, &routes, MeshTunnelPolicy::secure_default()).is_err());
     }
 
     #[test]
     fn insecure_policy_is_rejected() {
-        let p = TunnelIpPacket::parse(ipv4([10,0,0,1],[1,1,1,1])).unwrap();
+        let p = TunnelIpPacket::parse(ipv4([10, 0, 0, 1], [1, 1, 1, 1])).unwrap();
         let mut routes = MeshTunnelRouting::default();
-        routes.set_default_exit(MeshAddress([9;32]));
+        routes.set_default_exit(MeshAddress([9; 32]));
         assert!(classify_tunnel_packet(
             &p,
             &routes,
-            MeshTunnelPolicy{fail_closed:false,allow_plaintext_bypass:true}
-        ).is_err());
+            MeshTunnelPolicy {
+                fail_closed: false,
+                allow_plaintext_bypass: true
+            }
+        )
+        .is_err());
     }
 }

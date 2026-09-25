@@ -133,8 +133,7 @@ impl MeshLinkStateDb {
             nodes.insert(link.to);
         }
 
-        let mut dist: BTreeMap<MeshAddress, u64> =
-            nodes.iter().map(|n| (*n, u64::MAX)).collect();
+        let mut dist: BTreeMap<MeshAddress, u64> = nodes.iter().map(|n| (*n, u64::MAX)).collect();
         let mut prev: BTreeMap<MeshAddress, MeshAddress> = BTreeMap::new();
         let mut unvisited = nodes;
         *dist.get_mut(&source)? = 0;
