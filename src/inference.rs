@@ -15,6 +15,7 @@ pub const MAX_INFERENCE_STAGES: usize = 65_536;
 
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
 pub const INFERENCE_OUTCOME_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-OUTCOME/V1\0";
+pub const INFERENCE_WORK_SET_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-WORK-SET/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceStageKind {
@@ -285,6 +286,107 @@ pub(crate) fn verify_inference_receipt<V: ContextSignatureVerifier>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceWorkAggregate {
+    pub job_id: [u8; 32],
+    pub execution_plan_root: [u8; 32],
+    pub receipt_root: [u8; 32],
+    pub stage_count: u32,
+    pub total_compute_units: u128,
+    pub total_bytes_read: u128,
+    pub total_bytes_written: u128,
+    pub total_elapsed_micros: u128,
+    pub final_output_commitment: [u8; 32],
+}
+
+pub fn aggregate_inference_stage_receipts(
+    job: &InferenceJob,
+    plan: &InferenceExecutionPlan,
+    receipts: &[InferenceStageReceipt],
+) -> Result<InferenceWorkAggregate, &'static str> {
+    job.validate()?;
+    plan.validate_against(job)?;
+    if receipts.len() != plan.stages.len() || receipts.is_empty() {
+        return Err("every inference stage requires exactly one receipt");
+    }
+
+    let stage_count =
+        u32::try_from(receipts.len()).map_err(|_| "inference receipt count exceeds u32")?;
+    let mut hasher = Sha256::new();
+    hasher.update(INFERENCE_WORK_SET_DOMAIN);
+    hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+    hasher.update(job.job_id);
+    hasher.update(plan.plan_root);
+    hasher.update(stage_count.to_be_bytes());
+
+    let mut total_compute_units = 0u128;
+    let mut total_bytes_read = 0u128;
+    let mut total_bytes_written = 0u128;
+    let mut total_elapsed_micros = 0u128;
+    let mut final_output_commitment = [0u8; 32];
+
+    for (assignment, receipt) in plan.stages.iter().zip(receipts.iter()) {
+        receipt.validate_against(assignment)?;
+        let receipt_commitment = receipt
+            .authorization_commitment()
+            .ok_or("invalid inference stage receipt commitment")?;
+        hasher.update(receipt_commitment);
+
+        total_compute_units = total_compute_units
+            .checked_add(u128::from(receipt.compute_units))
+            .ok_or("inference compute-unit overflow")?;
+        total_bytes_read = total_bytes_read
+            .checked_add(u128::from(receipt.bytes_read))
+            .ok_or("inference bytes-read overflow")?;
+        total_bytes_written = total_bytes_written
+            .checked_add(u128::from(receipt.bytes_written))
+            .ok_or("inference bytes-written overflow")?;
+        total_elapsed_micros = total_elapsed_micros
+            .checked_add(u128::from(receipt.elapsed_micros))
+            .ok_or("inference elapsed-time overflow")?;
+        final_output_commitment = receipt.output_commitment;
+    }
+
+    let receipt_root: [u8; 32] = hasher.finalize().into();
+    Ok(InferenceWorkAggregate {
+        job_id: job.job_id,
+        execution_plan_root: plan.plan_root,
+        receipt_root,
+        stage_count,
+        total_compute_units,
+        total_bytes_read,
+        total_bytes_written,
+        total_elapsed_micros,
+        final_output_commitment,
+    })
+}
+
+pub fn build_inference_outcome(
+    job: &InferenceJob,
+    plan: &InferenceExecutionPlan,
+    receipts: &[InferenceStageReceipt],
+    verifier_evidence_root: [u8; 32],
+    total_cost: u128,
+    output_tokens: u32,
+) -> Result<InferenceOutcome, &'static str> {
+    if verifier_evidence_root == [0; 32] {
+        return Err("verifier evidence root required");
+    }
+    let work = aggregate_inference_stage_receipts(job, plan, receipts)?;
+    let outcome = InferenceOutcome {
+        job_id: work.job_id,
+        model_root: job.model_root,
+        output_commitment: work.final_output_commitment,
+        receipt_root: work.receipt_root,
+        verifier_evidence_root,
+        total_compute_units: work.total_compute_units,
+        total_cost,
+        output_tokens,
+    };
+    outcome.validate_against(job)?;
+    Ok(outcome)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceOutcome {
     pub job_id: [u8; 32],
     pub model_root: [u8; 32],
@@ -434,6 +536,60 @@ mod tests {
             resource_limit_commitment: [40 + index as u8; 32],
             lease_expires_at: 90,
         }
+    }
+
+    #[test]
+    fn stage_receipt_aggregate_derives_metering_and_final_output() {
+        let j = job();
+        let plan = InferenceExecutionPlan {
+            job_id: j.job_id,
+            plan_root: j.execution_plan_root,
+            stages: vec![stage(0), stage(1)],
+        };
+        let receipts = vec![
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 0,
+                worker_id: plan.stages[0].worker_id,
+                model_shard_commitment: plan.stages[0].model_shard_commitment,
+                input_commitment: plan.stages[0].input_commitment,
+                output_commitment: [50; 32],
+                execution_trace_commitment: [51; 32],
+                worker_signature_commitment: [52; 32],
+                compute_units: 40,
+                bytes_read: 100,
+                bytes_written: 20,
+                elapsed_micros: 10,
+            },
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 1,
+                worker_id: plan.stages[1].worker_id,
+                model_shard_commitment: plan.stages[1].model_shard_commitment,
+                input_commitment: plan.stages[1].input_commitment,
+                output_commitment: [60; 32],
+                execution_trace_commitment: [61; 32],
+                worker_signature_commitment: [62; 32],
+                compute_units: 60,
+                bytes_read: 200,
+                bytes_written: 30,
+                elapsed_micros: 20,
+            },
+        ];
+
+        let work = aggregate_inference_stage_receipts(&j, &plan, &receipts).unwrap();
+        assert_eq!(work.total_compute_units, 100);
+        assert_eq!(work.stage_count, 2);
+        assert_eq!(work.final_output_commitment, [60; 32]);
+
+        let mut forged = receipts.clone();
+        forged[1].compute_units = 600;
+        assert_ne!(
+            aggregate_inference_stage_receipts(&j, &plan, &forged)
+                .unwrap()
+                .receipt_root,
+            work.receipt_root
+        );
     }
 
     #[test]
