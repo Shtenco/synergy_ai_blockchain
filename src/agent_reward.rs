@@ -114,7 +114,10 @@ pub fn authorize_verified_agent_reward_and_mint<V: ContextSignatureVerifier>(
         return Err("agent reward chain/epoch required");
     }
     policy.validate()?;
-    task.root().iter().any(|b| *b != 0).then_some(())
+    task.root()
+        .iter()
+        .any(|b| *b != 0)
+        .then_some(())
         .ok_or("agent task root required")?;
 
     if execution.chain_id != chain_id
@@ -137,12 +140,7 @@ pub fn authorize_verified_agent_reward_and_mint<V: ContextSignatureVerifier>(
     {
         return Err("agent worker PQ identity does not match registry");
     }
-    if !verify_agent_execution_receipt(
-        signature_verifier,
-        task,
-        execution,
-        execution_validation,
-    ) {
+    if !verify_agent_execution_receipt(signature_verifier, task, execution, execution_validation) {
         return Err("invalid PQ-authorized agent execution receipt");
     }
 
@@ -187,12 +185,7 @@ pub fn authorize_verified_agent_reward_and_mint<V: ContextSignatureVerifier>(
         {
             return Err("agent verifier PQ identity does not match registry");
         }
-        if !verify_verifier_receipt(
-            signature_verifier,
-            challenge,
-            authorized,
-            validation,
-        ) {
+        if !verify_verifier_receipt(signature_verifier, challenge, authorized, validation) {
             return Err("invalid PQ-authorized agent verifier receipt");
         }
         if authorized.receipt.verdict != VerificationVerdict::Match
@@ -244,12 +237,12 @@ pub fn authorize_verified_agent_reward_and_mint<V: ContextSignatureVerifier>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_execution::{AgentExecutionReceipt, AgentExecutionAuthorization};
+    use crate::agent_execution::{AgentExecutionAuthorization, AgentExecutionReceipt};
     use crate::peer_discovery::NodeRecord;
     use crate::pq::{
         AuthPolicy, AuthScheme, ContextSignatureVerifier, HybridAuthorization, SignatureEvidence,
-        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
-        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
     use crate::verification::{VerifierReceipt, VerifierReceiptAuthorization};
 
@@ -400,10 +393,7 @@ mod tests {
             });
         }
         records.sort_by_key(|r| r.node_id);
-        let snapshot = NodeSetSnapshot {
-            epoch: 7,
-            records,
-        };
+        let snapshot = NodeSetSnapshot { epoch: 7, records };
 
         (
             task,
