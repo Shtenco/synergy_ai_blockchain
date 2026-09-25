@@ -8,6 +8,8 @@ use crate::transport_record::{
 
 pub const MESH_E2E_APPLICATION_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/E2E-APPLICATION/V1\0";
 pub const MESH_HOP_HEADER_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/HOP-HEADER/V1\0";
+pub const MESH_HOP_FRAME_MAGIC: [u8; 4] = *b"SYM1";
+pub const MAX_MESH_HOP_FRAME_BYTES: usize = crate::mesh_overlay::MAX_MESH_PACKET_BYTES + 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeshHopHeader {
@@ -170,6 +172,85 @@ pub fn decrypt_mesh_hop(
         return None;
     }
     Some(packet)
+}
+
+
+pub fn encode_mesh_hop(wrapped: &EncryptedMeshHop) -> Option<Vec<u8>> {
+    let record = encode_record(&wrapped.record)?;
+    let record_len = u32::try_from(record.len()).ok()?;
+    let mut out = Vec::with_capacity(128 + 4 + record.len());
+    out.extend_from_slice(&wrapped.header.packet_root);
+    out.extend_from_slice(&wrapped.header.route_root);
+    out.extend_from_slice(&wrapped.header.current.0);
+    out.extend_from_slice(&wrapped.header.next.0);
+    out.extend_from_slice(&record_len.to_be_bytes());
+    out.extend_from_slice(&record);
+    Some(out)
+}
+
+pub fn decode_mesh_hop(bytes: &[u8]) -> Option<EncryptedMeshHop> {
+    if bytes.len() < 132 || bytes.len() > MAX_MESH_HOP_FRAME_BYTES {
+        return None;
+    }
+    let packet_root = bytes[0..32].try_into().ok()?;
+    let route_root = bytes[32..64].try_into().ok()?;
+    let current = MeshAddress(bytes[64..96].try_into().ok()?);
+    let next = MeshAddress(bytes[96..128].try_into().ok()?);
+    let len = u32::from_be_bytes(bytes[128..132].try_into().ok()?) as usize;
+    if len == 0 || bytes.len() != 132 + len {
+        return None;
+    }
+    Some(EncryptedMeshHop {
+        header: MeshHopHeader {
+            packet_root,
+            route_root,
+            current,
+            next,
+        },
+        record: decode_record(&bytes[132..])?,
+    })
+}
+
+pub fn write_mesh_hop_frame<W: std::io::Write>(
+    writer: &mut W,
+    wrapped: &EncryptedMeshHop,
+) -> std::io::Result<()> {
+    let body = encode_mesh_hop(wrapped).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "mesh hop encoding failed")
+    })?;
+    let len = u32::try_from(body.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "mesh hop too large"))?;
+    writer.write_all(&MESH_HOP_FRAME_MAGIC)?;
+    writer.write_all(&len.to_be_bytes())?;
+    writer.write_all(&body)?;
+    writer.flush()
+}
+
+pub fn read_mesh_hop_frame<R: std::io::Read>(
+    reader: &mut R,
+) -> std::io::Result<EncryptedMeshHop> {
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic)?;
+    if magic != MESH_HOP_FRAME_MAGIC {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "mesh hop frame magic mismatch",
+        ));
+    }
+    let mut len_bytes = [0u8; 4];
+    reader.read_exact(&mut len_bytes)?;
+    let len = u32::from_be_bytes(len_bytes) as usize;
+    if len == 0 || len > MAX_MESH_HOP_FRAME_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "mesh hop frame length invalid",
+        ));
+    }
+    let mut body = vec![0u8; len];
+    reader.read_exact(&mut body)?;
+    decode_mesh_hop(&body).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "mesh hop decoding failed")
+    })
 }
 
 pub fn encode_record(record: &EncryptedTransportRecord) -> Option<Vec<u8>> {
@@ -358,6 +439,111 @@ mod tests {
         let mut recv = seq();
         let decoded = decrypt_mesh_hop(&wrapped, &route, [7; 32], &key(8), &mut recv, 11).unwrap();
         assert_eq!(decoded, packet);
+    }
+
+    #[test]
+    fn three_node_tcp_relay_keeps_payload_end_to_end_private() {
+        use std::net::{TcpListener, TcpStream};
+        use std::thread;
+
+        let route = MeshRoute {
+            source: addr(1),
+            destination: addr(3),
+            hops: vec![addr(1), addr(2), addr(3)],
+            epoch: 1,
+        };
+
+        let destination_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let destination_addr = destination_listener.local_addr().unwrap();
+        let route_c = route.clone();
+        let destination = thread::spawn(move || {
+            let (mut stream, _) = destination_listener.accept().unwrap();
+            let wrapped = read_mesh_hop_frame(&mut stream).unwrap();
+            let mut hop_recv = seq();
+            let packet_at_b = decrypt_mesh_hop(
+                &wrapped,
+                &route_c,
+                [22; 32],
+                &key(23),
+                &mut hop_recv,
+                11,
+            )
+            .unwrap();
+            let packet_at_c = packet_at_b.forward(&route_c, addr(2)).unwrap();
+            let mut e2e_recv = seq();
+            decrypt_mesh_end_to_end(&packet_at_c, &route_c, &key(6), &mut e2e_recv, 11).unwrap()
+        });
+
+        let relay_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let relay_addr = relay_listener.local_addr().unwrap();
+        let route_b = route.clone();
+        let relay = thread::spawn(move || {
+            let (mut inbound, _) = relay_listener.accept().unwrap();
+            let wrapped_ab = read_mesh_hop_frame(&mut inbound).unwrap();
+            let mut recv_ab = seq();
+            let packet_at_a = decrypt_mesh_hop(
+                &wrapped_ab,
+                &route_b,
+                [12; 32],
+                &key(13),
+                &mut recv_ab,
+                11,
+            )
+            .unwrap();
+
+            assert!(!packet_at_a
+                .opaque_payload
+                .windows(18)
+                .any(|w| w == b"private-ip-payload"));
+
+            let packet_at_b = packet_at_a.forward(&route_b, addr(1)).unwrap();
+            let mut send_bc = seq();
+            let wrapped_bc = encrypt_mesh_hop(
+                &packet_at_b,
+                &route_b,
+                addr(2),
+                addr(3),
+                [22; 32],
+                &key(23),
+                &mut send_bc,
+                11,
+            )
+            .unwrap();
+            let mut outbound = TcpStream::connect(destination_addr).unwrap();
+            write_mesh_hop_frame(&mut outbound, &wrapped_bc).unwrap();
+        });
+
+        let mut e2e_send = seq();
+        let packet_at_a = encrypt_mesh_end_to_end(
+            &route,
+            [4; 32],
+            1,
+            [5; 32],
+            &key(6),
+            &mut e2e_send,
+            11,
+            b"private-ip-payload",
+        )
+        .unwrap();
+        let mut send_ab = seq();
+        let wrapped_ab = encrypt_mesh_hop(
+            &packet_at_a,
+            &route,
+            addr(1),
+            addr(2),
+            [12; 32],
+            &key(13),
+            &mut send_ab,
+            11,
+        )
+        .unwrap();
+
+        let mut stream = TcpStream::connect(relay_addr).unwrap();
+        write_mesh_hop_frame(&mut stream, &wrapped_ab).unwrap();
+
+        relay.join().unwrap();
+        let plain = destination.join().unwrap();
+        assert_eq!(plain, b"private-ip-payload");
     }
 
     #[test]
