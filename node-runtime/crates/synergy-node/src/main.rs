@@ -3,18 +3,25 @@
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use synergy_commander_core::{ensure_capability, Capability, ToolPolicy};
 
+const MAX_READ_LINES: usize = 5_000;
+const MAX_SEARCH_RESULTS: usize = 200;
+const MAX_SEARCH_FILE_BYTES: u64 = 1024 * 1024;
+
 struct ManagedProcess {
     child: Child,
+    stdin: Option<ChildStdin>,
     stdout: Arc<Mutex<String>>,
     stderr: Arc<Mutex<String>>,
+    stdout_offset: usize,
+    stderr_offset: usize,
 }
 
 struct Runtime {
@@ -40,10 +47,12 @@ impl Runtime {
         let mut child = Command::new(program)
             .args(argv)
             .current_dir(&self.policy.workspace_root)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
+        let stdin = child.stdin.take();
         let out = Arc::new(Mutex::new(String::new()));
         let err = Arc::new(Mutex::new(String::new()));
         if let Some(mut stdout) = child.stdout.take() {
@@ -72,8 +81,11 @@ impl Runtime {
             id,
             ManagedProcess {
                 child,
+                stdin,
                 stdout: out,
                 stderr: err,
+                stdout_offset: 0,
+                stderr_offset: 0,
             },
         );
         Ok(id)
@@ -90,15 +102,21 @@ fn error(id: Value, code: i64, message: impl Into<String>) -> Value {
 
 fn tool_specs() -> Value {
     json!([
-      {"name":"read_file","description":"Read UTF-8 text from a path inside the configured workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
-      {"name":"write_file","description":"Write UTF-8 text inside the configured workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}},
-      {"name":"list_directory","description":"List a directory inside the configured workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}}}},
+      {"name":"read_file","description":"Read UTF-8 text inside the workspace, optionally by line range.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"offset_line":{"type":"integer","minimum":0},"max_lines":{"type":"integer","minimum":1,"maximum":5000}},"required":["path"]}},
+      {"name":"write_file","description":"Rewrite or append UTF-8 text inside the workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"mode":{"type":"string","enum":["rewrite","append"]}},"required":["path","content"]}},
+      {"name":"edit_file","description":"Replace exactly one occurrence of old_string in a UTF-8 workspace file.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"}},"required":["path","old_string","new_string"]}},
+      {"name":"list_directory","description":"List entries in a workspace directory with basic type metadata.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}}}},
+      {"name":"search_files","description":"Recursively search UTF-8 files under a workspace directory without following symlinks.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":200}},"required":["query"]}},
+      {"name":"create_directory","description":"Create a directory tree inside the workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
+      {"name":"move_path","description":"Rename or move a file/directory inside the workspace.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"destination":{"type":"string"}},"required":["source","destination"]}},
+      {"name":"file_info","description":"Return metadata for a file or directory inside the workspace.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
       {"name":"run_command","description":"Run one allowlisted executable synchronously with explicit argv.","inputSchema":{"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program"]}},
-      {"name":"start_process","description":"Start an allowlisted long-running process and return a process session id.","inputSchema":{"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program"]}},
-      {"name":"read_process_output","description":"Read accumulated stdout/stderr and current status for a process session.","inputSchema":{"type":"object","properties":{"process_id":{"type":"integer"}},"required":["process_id"]}},
+      {"name":"start_process","description":"Start an allowlisted long-running process and return a commander-owned process id.","inputSchema":{"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program"]}},
+      {"name":"read_process_output","description":"Read new stdout/stderr accumulated since the previous read.","inputSchema":{"type":"object","properties":{"process_id":{"type":"integer"}},"required":["process_id"]}},
+      {"name":"send_process_input","description":"Write UTF-8 input to a commander-owned process stdin.","inputSchema":{"type":"object","properties":{"process_id":{"type":"integer"},"input":{"type":"string"}},"required":["process_id","input"]}},
       {"name":"list_processes","description":"List process sessions owned by this commander instance.","inputSchema":{"type":"object","properties":{}}},
       {"name":"kill_process","description":"Terminate a process session owned by this commander instance.","inputSchema":{"type":"object","properties":{"process_id":{"type":"integer"}},"required":["process_id"]}},
-      {"name":"system_info","description":"Return minimal local node OS/architecture information.","inputSchema":{"type":"object","properties":{}}}
+      {"name":"system_info","description":"Return local node OS/architecture and workspace boundary.","inputSchema":{"type":"object","properties":{}}}
     ])
 }
 
@@ -113,69 +131,214 @@ fn argv(args: &Value) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+fn required_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{key} required"))
+}
+
+fn line_slice(data: &str, offset: usize, max_lines: usize) -> String {
+    data.lines()
+        .skip(offset)
+        .take(max_lines.min(MAX_READ_LINES))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn search_tree(
+    root: &Path,
+    query: &str,
+    max_results: usize,
+    results: &mut Vec<String>,
+) -> Result<(), String> {
+    if results.len() >= max_results {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
+        if results.len() >= max_results {
+            break;
+        }
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_dir() {
+            search_tree(&path, query, max_results, results)?;
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        if metadata.len() > MAX_SEARCH_FILE_BYTES {
+            continue;
+        }
+        let Ok(data) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for (idx, line) in data.lines().enumerate() {
+            if line.contains(query) {
+                results.push(format!("{}:{}:{}", path.display(), idx + 1, line));
+                if results.len() >= max_results {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn call_tool(runtime: &mut Runtime, name: &str, args: &Value) -> Result<Value, String> {
     let policy = &runtime.policy;
     match name {
         "read_file" => {
             ensure_capability(policy, Capability::ReadFile).map_err(|e| format!("{e:?}"))?;
-            let p = args
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or("path required")?;
             let path = policy
-                .resolve_workspace_path(p)
+                .resolve_existing_workspace_path(required_str(args, "path")?)
                 .map_err(|e| format!("{e:?}"))?;
-            Ok(text_result(
-                fs::read_to_string(path).map_err(|e| e.to_string())?,
-            ))
+            let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
+            let offset = args.get("offset_line").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let max_lines = args
+                .get("max_lines")
+                .and_then(Value::as_u64)
+                .unwrap_or(MAX_READ_LINES as u64) as usize;
+            Ok(text_result(line_slice(&data, offset, max_lines)))
         }
         "write_file" => {
             ensure_capability(policy, Capability::WriteFile).map_err(|e| format!("{e:?}"))?;
-            let p = args
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or("path required")?;
-            let content = args
-                .get("content")
-                .and_then(Value::as_str)
-                .ok_or("content required")?;
+            let content = required_str(args, "content")?;
             if content.len() > policy.max_write_bytes {
                 return Err("write exceeds policy max_write_bytes".into());
             }
             let path = policy
-                .resolve_workspace_path(p)
+                .resolve_write_workspace_path(required_str(args, "path")?)
                 .map_err(|e| format!("{e:?}"))?;
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            fs::write(path, content).map_err(|e| e.to_string())?;
+            match args.get("mode").and_then(Value::as_str).unwrap_or("rewrite") {
+                "rewrite" => fs::write(path, content).map_err(|e| e.to_string())?,
+                "append" => {
+                    let mut file = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .map_err(|e| e.to_string())?;
+                    file.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+                }
+                _ => return Err("mode must be rewrite or append".into()),
+            }
+            Ok(text_result("OK"))
+        }
+        "edit_file" => {
+            ensure_capability(policy, Capability::EditFile).map_err(|e| format!("{e:?}"))?;
+            let path = policy
+                .resolve_existing_workspace_path(required_str(args, "path")?)
+                .map_err(|e| format!("{e:?}"))?;
+            let old = required_str(args, "old_string")?;
+            let new = required_str(args, "new_string")?;
+            if new.len() > policy.max_write_bytes {
+                return Err("replacement exceeds policy max_write_bytes".into());
+            }
+            let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            let count = data.matches(old).count();
+            if count != 1 {
+                return Err(format!("old_string must match exactly once; matches={count}"));
+            }
+            let changed = data.replacen(old, new, 1);
+            if changed.len() > policy.max_write_bytes {
+                return Err("edited file exceeds policy max_write_bytes".into());
+            }
+            fs::write(path, changed).map_err(|e| e.to_string())?;
             Ok(text_result("OK"))
         }
         "list_directory" => {
             ensure_capability(policy, Capability::ListDirectory).map_err(|e| format!("{e:?}"))?;
-            let p = args.get("path").and_then(Value::as_str).unwrap_or("");
             let path = policy
-                .resolve_workspace_path(p)
+                .resolve_existing_workspace_path(
+                    args.get("path").and_then(Value::as_str).unwrap_or(""),
+                )
                 .map_err(|e| format!("{e:?}"))?;
-            let mut names = Vec::new();
+            let mut lines = Vec::new();
             for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
-                names.push(
-                    entry
-                        .map_err(|e| e.to_string())?
-                        .file_name()
-                        .to_string_lossy()
-                        .to_string(),
-                );
+                let entry = entry.map_err(|e| e.to_string())?;
+                let ty = entry.file_type().map_err(|e| e.to_string())?;
+                let kind = if ty.is_symlink() {
+                    "symlink"
+                } else if ty.is_dir() {
+                    "dir"
+                } else if ty.is_file() {
+                    "file"
+                } else {
+                    "other"
+                };
+                lines.push(format!("{kind}\t{}", entry.file_name().to_string_lossy()));
             }
-            names.sort();
-            Ok(text_result(names.join("\n")))
+            lines.sort();
+            Ok(text_result(lines.join("\n")))
+        }
+        "search_files" => {
+            ensure_capability(policy, Capability::SearchFiles).map_err(|e| format!("{e:?}"))?;
+            let path = policy
+                .resolve_existing_workspace_path(
+                    args.get("path").and_then(Value::as_str).unwrap_or(""),
+                )
+                .map_err(|e| format!("{e:?}"))?;
+            let query = required_str(args, "query")?;
+            if query.is_empty() {
+                return Err("query must not be empty".into());
+            }
+            let max_results = args
+                .get("max_results")
+                .and_then(Value::as_u64)
+                .unwrap_or(50)
+                .min(MAX_SEARCH_RESULTS as u64) as usize;
+            let mut results = Vec::new();
+            search_tree(&path, query, max_results, &mut results)?;
+            Ok(text_result(results.join("\n")))
+        }
+        "create_directory" => {
+            ensure_capability(policy, Capability::CreateDirectory).map_err(|e| format!("{e:?}"))?;
+            let path = policy
+                .resolve_write_workspace_path(required_str(args, "path")?)
+                .map_err(|e| format!("{e:?}"))?;
+            fs::create_dir_all(path).map_err(|e| e.to_string())?;
+            Ok(text_result("OK"))
+        }
+        "move_path" => {
+            ensure_capability(policy, Capability::MoveFile).map_err(|e| format!("{e:?}"))?;
+            let source = policy
+                .resolve_existing_workspace_path(required_str(args, "source")?)
+                .map_err(|e| format!("{e:?}"))?;
+            let destination = policy
+                .resolve_write_workspace_path(required_str(args, "destination")?)
+                .map_err(|e| format!("{e:?}"))?;
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            fs::rename(source, destination).map_err(|e| e.to_string())?;
+            Ok(text_result("OK"))
+        }
+        "file_info" => {
+            ensure_capability(policy, Capability::FileInfo).map_err(|e| format!("{e:?}"))?;
+            let path = policy
+                .resolve_existing_workspace_path(required_str(args, "path")?)
+                .map_err(|e| format!("{e:?}"))?;
+            let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+            Ok(text_result(format!(
+                "path={}\nis_file={}\nis_dir={}\nlen={}\nreadonly={}",
+                path.display(),
+                meta.is_file(),
+                meta.is_dir(),
+                meta.len(),
+                meta.permissions().readonly()
+            )))
         }
         "run_command" => {
             ensure_capability(policy, Capability::RunCommand).map_err(|e| format!("{e:?}"))?;
-            let program = args
-                .get("program")
-                .and_then(Value::as_str)
-                .ok_or("program required")?;
+            let program = required_str(args, "program")?;
             policy
                 .validate_command(program)
                 .map_err(|e| format!("{e:?}"))?;
@@ -195,10 +358,7 @@ fn call_tool(runtime: &mut Runtime, name: &str, args: &Value) -> Result<Value, S
             )))
         }
         "start_process" => {
-            let program = args
-                .get("program")
-                .and_then(Value::as_str)
-                .ok_or("program required")?;
+            let program = required_str(args, "program")?;
             let id = runtime.start_process(program, &argv(args))?;
             Ok(text_result(format!("process_id={id}")))
         }
@@ -210,22 +370,37 @@ fn call_tool(runtime: &mut Runtime, name: &str, args: &Value) -> Result<Value, S
                 .ok_or("process_id required")?;
             let proc = runtime.processes.get_mut(&id).ok_or("unknown process_id")?;
             let status = proc.child.try_wait().map_err(|e| e.to_string())?;
-            let stdout = proc
-                .stdout
-                .lock()
-                .map_err(|_| "stdout lock poisoned")?
-                .clone();
-            let stderr = proc
-                .stderr
-                .lock()
-                .map_err(|_| "stderr lock poisoned")?
-                .clone();
+            let stdout_guard = proc.stdout.lock().map_err(|_| "stdout lock poisoned")?;
+            let stderr_guard = proc.stderr.lock().map_err(|_| "stderr lock poisoned")?;
+            let stdout = stdout_guard
+                .get(proc.stdout_offset..)
+                .ok_or("stdout offset invalid")?
+                .to_string();
+            let stderr = stderr_guard
+                .get(proc.stderr_offset..)
+                .ok_or("stderr offset invalid")?
+                .to_string();
+            proc.stdout_offset = stdout_guard.len();
+            proc.stderr_offset = stderr_guard.len();
             Ok(text_result(format!(
                 "status={}\n--- stdout ---\n{}\n--- stderr ---\n{}",
                 status.map_or_else(|| "running".into(), |s| format!("exited:{:?}", s.code())),
                 stdout,
                 stderr
             )))
+        }
+        "send_process_input" => {
+            ensure_capability(policy, Capability::InteractProcess).map_err(|e| format!("{e:?}"))?;
+            let id = args
+                .get("process_id")
+                .and_then(Value::as_u64)
+                .ok_or("process_id required")?;
+            let input = required_str(args, "input")?;
+            let proc = runtime.processes.get_mut(&id).ok_or("unknown process_id")?;
+            let stdin = proc.stdin.as_mut().ok_or("process stdin unavailable")?;
+            stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
+            stdin.flush().map_err(|e| e.to_string())?;
+            Ok(text_result("OK"))
         }
         "list_processes" => {
             ensure_capability(policy, Capability::InspectProcess).map_err(|e| format!("{e:?}"))?;
@@ -253,9 +428,10 @@ fn call_tool(runtime: &mut Runtime, name: &str, args: &Value) -> Result<Value, S
         "system_info" => {
             ensure_capability(policy, Capability::SystemInfo).map_err(|e| format!("{e:?}"))?;
             Ok(text_result(format!(
-                "os={} arch={}",
+                "os={}\narch={}\nworkspace={}",
                 env::consts::OS,
-                env::consts::ARCH
+                env::consts::ARCH,
+                policy.workspace_root.display()
             )))
         }
         _ => Err(format!("unknown tool: {name}")),
@@ -271,7 +447,7 @@ fn handle(runtime: &mut Runtime, req: Value) -> Option<Value> {
             json!({
                 "protocolVersion":"2025-06-18",
                 "capabilities":{"tools":{}},
-                "serverInfo":{"name":"synergy-node-commander","version":"0.1.0"}
+                "serverInfo":{"name":"synergy-node-commander","version":"0.2.0"}
             }),
         )),
         "notifications/initialized" => None,
