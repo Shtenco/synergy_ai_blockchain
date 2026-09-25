@@ -20,6 +20,7 @@ use crate::verification::verify_verifier_receipt;
 
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
 pub const SYNA_MINING_REPLAY_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINING-REPLAY/V1\0";
+pub const SYNA_MINT_AUTHORIZATION_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINT-AUTHORIZATION/V1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaRewardClaim {
@@ -127,16 +128,98 @@ pub struct SynaInferenceMintContext<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaMintAuthorization {
-    pub claim_root: [u8; 32],
-    pub claim_id: [u8; 32],
-    pub worker_id: [u8; 32],
-    pub amount: u128,
-    pub epoch: u64,
-    pub checkpoint_root: [u8; 32],
-    pub verifier_set_root: [u8; 32],
-    pub settlement_root: [u8; 32],
-    pub pre_supply_state_root: [u8; 32],
-    pub supply_state_root: [u8; 32],
+    claim_root: [u8; 32],
+    claim_id: [u8; 32],
+    worker_id: [u8; 32],
+    amount: u128,
+    epoch: u64,
+    checkpoint_root: [u8; 32],
+    verifier_set_root: [u8; 32],
+    settlement_root: [u8; 32],
+    pre_supply_state_root: [u8; 32],
+    supply_state_root: [u8; 32],
+}
+
+impl SynaMintAuthorization {
+    pub const fn claim_id(&self) -> [u8; 32] {
+        self.claim_id
+    }
+
+    pub const fn worker_id(&self) -> [u8; 32] {
+        self.worker_id
+    }
+
+    pub const fn amount(&self) -> u128 {
+        self.amount
+    }
+
+    pub const fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub const fn checkpoint_root(&self) -> [u8; 32] {
+        self.checkpoint_root
+    }
+
+    pub const fn verifier_set_root(&self) -> [u8; 32] {
+        self.verifier_set_root
+    }
+
+    pub const fn settlement_root(&self) -> [u8; 32] {
+        self.settlement_root
+    }
+
+    pub const fn pre_supply_state_root(&self) -> [u8; 32] {
+        self.pre_supply_state_root
+    }
+
+    pub const fn supply_state_root(&self) -> [u8; 32] {
+        self.supply_state_root
+    }
+
+    pub fn commitment(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(SYNA_MINT_AUTHORIZATION_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(self.claim_root);
+        h.update(self.claim_id);
+        h.update(self.worker_id);
+        h.update(self.amount.to_be_bytes());
+        h.update(self.epoch.to_be_bytes());
+        h.update(self.checkpoint_root);
+        h.update(self.verifier_set_root);
+        h.update(self.settlement_root);
+        h.update(self.pre_supply_state_root);
+        h.update(self.supply_state_root);
+        h.finalize().into()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_only(
+        claim_root: [u8; 32],
+        claim_id: [u8; 32],
+        worker_id: [u8; 32],
+        amount: u128,
+        epoch: u64,
+        checkpoint_root: [u8; 32],
+        verifier_set_root: [u8; 32],
+        settlement_root: [u8; 32],
+        pre_supply_state_root: [u8; 32],
+        supply_state_root: [u8; 32],
+    ) -> Self {
+        Self {
+            claim_root,
+            claim_id,
+            worker_id,
+            amount,
+            epoch,
+            checkpoint_root,
+            verifier_set_root,
+            settlement_root,
+            pre_supply_state_root,
+            supply_state_root,
+        }
+    }
 }
 
 pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>(
@@ -838,9 +921,9 @@ mod tests {
             &mut supply,
         )
         .unwrap();
-        assert_eq!(auth.amount, 10);
+        assert_eq!(auth.amount(), 10);
         assert_eq!(supply.total_supply, 10);
-        assert_eq!(auth.supply_state_root, supply.commitment().unwrap());
+        assert_eq!(auth.supply_state_root(), supply.commitment().unwrap());
 
         assert!(mint(
             &fixture,
