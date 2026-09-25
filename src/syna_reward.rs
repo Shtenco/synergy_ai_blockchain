@@ -1305,6 +1305,35 @@ mod tests {
     }
 
     #[test]
+    fn pq_signed_verifier_with_wrong_work_root_blocks_mint() {
+        let fixture = fixture();
+        let mut receipt = fixture.verifier_authorizations[1].receipt.clone();
+        receipt.work_commitment = [99; 32];
+        let (resigned, _) = authorize_verifier(
+            receipt,
+            &fixture.challenge,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            11,
+        );
+        let mut verifier_authorizations = fixture.verifier_authorizations.clone();
+        verifier_authorizations[1] = resigned;
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
     fn mismatch_verifier_receipt_blocks_mint() {
         let fixture = fixture();
         let mut receipt = fixture.verifier_authorizations[1].receipt.clone();
