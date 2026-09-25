@@ -9,11 +9,11 @@ New-Item -ItemType Directory -Force -Path $Logs | Out-Null
 $Solc = if ($env:SOLC_BIN) { $env:SOLC_BIN } else { "solc" }
 
 function Run-Gate {
-  param([string]$Name,[string]$Exe,[string[]]$Args)
+  param([string]$Name,[string]$Exe,[string[]]$CommandArgs)
   Write-Host ""
   Write-Host "===== P4 GATE: $Name ====="
   $Log = Join-Path $Logs "$Name.log"
-  & $Exe @Args 2>&1 | Tee-Object -FilePath $Log
+  & $Exe @CommandArgs 2>&1 | Tee-Object -FilePath $Log
   if ($LASTEXITCODE -ne 0) { throw "P4 gate failed: $Name (exit $LASTEXITCODE)" }
 }
 
