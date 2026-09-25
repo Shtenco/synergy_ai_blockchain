@@ -162,7 +162,7 @@ pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_D
 pub use syna_reward::{
     authorize_verified_inference_reward_and_mint, SynaInferenceMintContext,
     SynaMintAuthorization, SynaRewardClaim, SynaRewardState, SYNA_MINT_AUTHORIZATION_DOMAIN,
-    SYNA_REWARD_DOMAIN,
+    SYNA_REWARD_DOMAIN, SYNA_REWARD_STATE_DOMAIN,
 };
 pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use storage::{
