@@ -611,11 +611,17 @@ mod tests {
         verifier: u8,
         verdict: VerificationVerdict,
         recomputed: [u8; 32],
+        work_commitment: [u8; 32],
     ) -> VerifierReceipt {
         VerifierReceipt {
             challenge_id: [1; 32],
             verifier_id: [verifier; 32],
             recomputed_output_commitment: recomputed,
+            work_commitment: if verdict == VerificationVerdict::Inconclusive {
+                [0; 32]
+            } else {
+                work_commitment
+            },
             trace_commitment: [10 + verifier; 32],
             signature_commitment: [20 + verifier; 32],
             verdict,
@@ -726,36 +732,7 @@ mod tests {
 
     fn fixture() -> Fixture {
         let challenge = challenge();
-        let raw_verifiers = vec![
-            verifier_receipt(
-                5,
-                VerificationVerdict::Match,
-                challenge.challenged_output_commitment,
-            ),
-            verifier_receipt(
-                6,
-                VerificationVerdict::Match,
-                challenge.challenged_output_commitment,
-            ),
-        ];
-        let aggregate = aggregate_verifier_receipts(&challenge, &raw_verifiers).unwrap();
-
-        let settlement = ComputeSettlement {
-            job_id: challenge.job_id,
-            funding_root: [6; 32],
-            worker_id: [7; 32],
-            storage_provider_id: [8; 32],
-            verifier_set_root: aggregate.receipt_root,
-            worker_reward: 60,
-            storage_reward: 10,
-            verifier_reward: 20,
-            protocol_fee: 10,
-            slash_root: None,
-            refund_amount: 0,
-        };
-        let settlement_root = settlement
-            .canonical_root(&challenge, &aggregate, 100)
-            .unwrap();
+        let worker_id = [7; 32];
 
         let mut job = InferenceJob {
             job_id: challenge.job_id,
@@ -773,7 +750,7 @@ mod tests {
             job_id: job.job_id,
             stage_index: 0,
             kind: InferenceStageKind::Decode,
-            worker_id: settlement.worker_id,
+            worker_id,
             model_shard_commitment: [33; 32],
             input_commitment: job.input_commitment,
             resource_limit_commitment: [35; 32],
@@ -791,7 +768,7 @@ mod tests {
         let raw_stage = InferenceStageReceipt {
             job_id: job.job_id,
             stage_index: 0,
-            worker_id: settlement.worker_id,
+            worker_id,
             model_shard_commitment: plan.stages[0].model_shard_commitment,
             input_commitment: plan.stages[0].input_commitment,
             output_commitment: challenge.challenged_output_commitment,
@@ -802,6 +779,47 @@ mod tests {
             bytes_written: 100,
             elapsed_micros: 500,
         };
+
+        let work = aggregate_inference_stage_receipts(
+            &job,
+            &plan,
+            std::slice::from_ref(&raw_stage),
+        )
+        .unwrap();
+        let work_root = work.commitment().unwrap();
+
+        let raw_verifiers = vec![
+            verifier_receipt(
+                5,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+                work_root,
+            ),
+            verifier_receipt(
+                6,
+                VerificationVerdict::Match,
+                challenge.challenged_output_commitment,
+                work_root,
+            ),
+        ];
+        let aggregate = aggregate_verifier_receipts(&challenge, &raw_verifiers).unwrap();
+
+        let settlement = ComputeSettlement {
+            job_id: challenge.job_id,
+            funding_root: [6; 32],
+            worker_id,
+            storage_provider_id: [8; 32],
+            verifier_set_root: aggregate.receipt_root,
+            worker_reward: 60,
+            storage_reward: 10,
+            verifier_reward: 20,
+            protocol_fee: 10,
+            slash_root: None,
+            refund_amount: 0,
+        };
+        let settlement_root = settlement
+            .canonical_root(&challenge, &aggregate, 100)
+            .unwrap();
 
         let outcome = build_inference_outcome(
             &job,
@@ -839,7 +857,7 @@ mod tests {
         peer_directory
             .upsert(
                 NodeRecord {
-                    node_id: settlement.worker_id,
+                    node_id: worker_id,
                     endpoint_root: [40; 32],
                     transport_keyset_root: [41; 32],
                     pq_identity_commitment: worker_keyset,
@@ -897,7 +915,7 @@ mod tests {
             chain_id: checkpoint.chain_id,
             epoch: checkpoint.epoch,
             job_id: challenge.job_id,
-            worker_id: settlement.worker_id,
+            worker_id,
             model_root: checkpoint.model_root,
             inference_root: checkpoint.inference_root,
             verifier_set_root: aggregate.receipt_root,
