@@ -16,6 +16,7 @@ pub const MAX_INFERENCE_STAGES: usize = 65_536;
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
 pub const INFERENCE_OUTCOME_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-OUTCOME/V1\0";
 pub const INFERENCE_WORK_SET_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-WORK-SET/V1\0";
+pub const INFERENCE_PLAN_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-PLAN/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceStageKind {
@@ -116,6 +117,59 @@ pub struct InferenceExecutionPlan {
 }
 
 impl InferenceExecutionPlan {
+    pub fn canonical_root_for_stages(
+        job_id: [u8; 32],
+        stages: &[InferenceStageAssignment],
+    ) -> Option<[u8; 32]> {
+        if job_id == [0; 32] || stages.is_empty() || stages.len() > MAX_INFERENCE_STAGES {
+            return None;
+        }
+
+        let stage_count = u64::try_from(stages.len()).ok()?;
+        let mut h = Sha256::new();
+        h.update(INFERENCE_PLAN_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(job_id);
+        h.update(stage_count.to_be_bytes());
+
+        for (i, stage) in stages.iter().enumerate() {
+            let expected_index = u32::try_from(i).ok()?;
+            if stage.job_id != job_id
+                || stage.stage_index != expected_index
+                || stage.worker_id == [0; 32]
+                || stage.model_shard_commitment == [0; 32]
+                || stage.input_commitment == [0; 32]
+                || stage.resource_limit_commitment == [0; 32]
+                || stage.lease_expires_at == 0
+            {
+                return None;
+            }
+
+            h.update(stage.job_id);
+            h.update(stage.stage_index.to_be_bytes());
+            h.update([match stage.kind {
+                InferenceStageKind::ModelLoad => 1,
+                InferenceStageKind::Prefill => 2,
+                InferenceStageKind::Decode => 3,
+                InferenceStageKind::Expert => 4,
+                InferenceStageKind::Verification => 5,
+                InferenceStageKind::KvRead => 6,
+                InferenceStageKind::KvWrite => 7,
+            }]);
+            h.update(stage.worker_id);
+            h.update(stage.model_shard_commitment);
+            h.update(stage.input_commitment);
+            h.update(stage.resource_limit_commitment);
+            h.update(stage.lease_expires_at.to_be_bytes());
+        }
+
+        Some(h.finalize().into())
+    }
+
+    pub fn has_canonical_root(&self) -> bool {
+        Self::canonical_root_for_stages(self.job_id, &self.stages) == Some(self.plan_root)
+    }
+
     pub fn validate_against(&self, job: &InferenceJob) -> Result<(), &'static str> {
         if self.job_id != job.job_id || self.plan_root != job.execution_plan_root {
             return Err("execution plan/job commitment mismatch");
@@ -305,6 +359,9 @@ pub fn aggregate_inference_stage_receipts(
 ) -> Result<InferenceWorkAggregate, &'static str> {
     job.validate()?;
     plan.validate_against(job)?;
+    if !plan.has_canonical_root() {
+        return Err("execution plan root is not canonical for its stages");
+    }
     if receipts.len() != plan.stages.len() || receipts.is_empty() {
         return Err("every inference stage requires exactly one receipt");
     }
@@ -609,6 +666,26 @@ mod tests {
         let mut changed = outcome;
         changed.total_compute_units += 1;
         assert_ne!(changed.commitment().unwrap(), root);
+    }
+
+    #[test]
+    fn canonical_plan_root_binds_every_stage_assignment() {
+        let mut stages = vec![stage(0), stage(1)];
+        let root =
+            InferenceExecutionPlan::canonical_root_for_stages([1; 32], &stages).unwrap();
+
+        let mut changed = stages.clone();
+        changed[1].worker_id[0] ^= 1;
+        assert_ne!(
+            InferenceExecutionPlan::canonical_root_for_stages([1; 32], &changed).unwrap(),
+            root
+        );
+
+        stages[1].resource_limit_commitment[0] ^= 1;
+        assert_ne!(
+            InferenceExecutionPlan::canonical_root_for_stages([1; 32], &stages).unwrap(),
+            root
+        );
     }
 
     #[test]
