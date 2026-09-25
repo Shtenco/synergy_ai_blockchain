@@ -594,7 +594,7 @@ mod tests {
             kind: InferenceStageKind::Decode,
             worker_id: settlement.worker_id,
             model_shard_commitment: [33; 32],
-            input_commitment: [34; 32],
+            input_commitment: job.input_commitment,
             resource_limit_commitment: [35; 32],
             lease_expires_at: 50,
         }];
@@ -781,6 +781,47 @@ mod tests {
             &fixture.claim,
             &stage_authorizations,
             &fixture.verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn pq_signed_stage_with_wrong_job_input_cannot_mint() {
+        let fixture = fixture();
+        let mut changed = fixture.stage_authorizations[0].receipt.clone();
+        changed.input_commitment = [99; 32];
+        let (resigned, validation) = authorize_stage(
+            changed,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            1,
+        );
+        let stage_authorizations = vec![resigned];
+        let stage_validations = vec![validation];
+
+        let context = SynaInferenceMintContext {
+            checkpoint: &fixture.checkpoint,
+            outcome: &fixture.outcome,
+            job: &fixture.job,
+            plan: &fixture.plan,
+            stage_authorizations: &stage_authorizations,
+            stage_validations: &stage_validations,
+            settlement: &fixture.settlement,
+            challenge: &fixture.challenge,
+            verifier_authorizations: &fixture.verifier_authorizations,
+            verifier_validations: &fixture.verifier_validations,
+        };
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            &fixture.claim,
+            &context,
+            &policy(),
             &mut rewards,
             &mut supply,
         )
