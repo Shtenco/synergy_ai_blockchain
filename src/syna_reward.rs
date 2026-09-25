@@ -102,6 +102,7 @@ pub struct SynaMintAuthorization {
     pub checkpoint_root: [u8; 32],
     pub verifier_set_root: [u8; 32],
     pub settlement_root: [u8; 32],
+    pub supply_state_root: [u8; 32],
 }
 
 pub fn authorize_verified_inference_reward_and_mint(
@@ -179,6 +180,10 @@ pub fn authorize_verified_inference_reward_and_mint(
     let mut next_rewards = reward_state.clone();
     next_rewards.consume(claim.claim_id)?;
 
+    let supply_state_root = next_supply
+        .commitment()
+        .ok_or("invalid post-mint SYNA supply state")?;
+
     *supply_state = next_supply;
     *reward_state = next_rewards;
 
@@ -191,6 +196,7 @@ pub fn authorize_verified_inference_reward_and_mint(
         checkpoint_root,
         verifier_set_root: aggregate.receipt_root,
         settlement_root,
+        supply_state_root,
     })
 }
 
@@ -329,6 +335,7 @@ mod tests {
         .unwrap();
         assert_eq!(auth.amount, 10);
         assert_eq!(supply.total_supply, 10);
+        assert_eq!(auth.supply_state_root, supply.commitment().unwrap());
         assert!(authorize_verified_inference_reward_and_mint(
             &claim,
             &cp,
