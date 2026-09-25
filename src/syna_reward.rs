@@ -86,14 +86,7 @@ impl SynaRewardClaim {
         h.update(SYNA_MINING_REPLAY_DOMAIN);
         h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
         h.update(self.chain_id);
-        h.update(self.epoch.to_be_bytes());
         h.update(self.job_id);
-        h.update(self.worker_id);
-        h.update(self.model_root);
-        h.update(self.inference_root);
-        h.update(self.verifier_set_root);
-        h.update(self.settlement_root);
-        h.update(self.checkpoint_root);
         Some(h.finalize().into())
     }
 }
@@ -1040,6 +1033,22 @@ mod tests {
         )
         .is_err());
         assert_eq!(supply.total_supply, 10);
+    }
+
+    #[test]
+    fn refinalizing_same_job_with_different_checkpoint_cannot_change_mining_identity() {
+        let fixture = fixture();
+        let key = fixture.claim.mining_replay_key().unwrap();
+
+        let mut refinalized = fixture.claim.clone();
+        refinalized.epoch += 1;
+        refinalized.checkpoint_root = [88; 32];
+        refinalized.settlement_root = [89; 32];
+        refinalized.verifier_set_root = [90; 32];
+        refinalized.worker_id = [91; 32];
+        refinalized.inference_root = [92; 32];
+
+        assert_eq!(refinalized.mining_replay_key().unwrap(), key);
     }
 
     #[test]
