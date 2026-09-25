@@ -135,6 +135,7 @@ mod tests {
             current_epoch: 7,
             total_supply: 1_000,
             epoch_emission: 0,
+            reward_state_root: [8; 32],
         }
     }
 
@@ -144,6 +145,7 @@ mod tests {
             current_epoch: 7,
             total_supply: 1_010,
             epoch_emission: 10,
+            reward_state_root: [9; 32],
         }
     }
 
