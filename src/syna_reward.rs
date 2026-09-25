@@ -21,6 +21,7 @@ use crate::verification::verify_verifier_receipt;
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
 pub const SYNA_MINING_REPLAY_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINING-REPLAY/V1\0";
 pub const SYNA_MINT_AUTHORIZATION_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINT-AUTHORIZATION/V1\0";
+pub const SYNA_REWARD_STATE_DOMAIN: &[u8] = b"SYNERGY/SYNA-REWARD-STATE/V1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaRewardClaim {
@@ -100,6 +101,19 @@ pub struct SynaRewardState {
 impl SynaRewardState {
     pub fn is_consumed(&self, mining_replay_key: &[u8; 32]) -> bool {
         self.consumed_mining_keys.contains(mining_replay_key)
+    }
+
+    pub fn commitment(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(SYNA_REWARD_STATE_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        let count = u64::try_from(self.consumed_mining_keys.len())
+            .expect("reward state length cannot exceed u64 on supported targets");
+        h.update(count.to_be_bytes());
+        for key in &self.consumed_mining_keys {
+            h.update(key);
+        }
+        h.finalize().into()
     }
 
     fn consume(&mut self, mining_replay_key: [u8; 32]) -> Result<(), &'static str> {
@@ -418,6 +432,9 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     if reward_state.is_consumed(&mining_replay_key) {
         return Err("SYNA finalized inference already mined");
     }
+    if supply_state.reward_state_root != reward_state.commitment() {
+        return Err("SYNA replay state does not match canonical supply state");
+    }
 
     let pre_supply_state_root = supply_state
         .commitment()
@@ -431,6 +448,7 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     let claim_root = claim.canonical_root().ok_or("invalid SYNA claim root")?;
     let mut next_rewards = reward_state.clone();
     next_rewards.consume(mining_replay_key)?;
+    next_supply.reward_state_root = next_rewards.commitment();
 
     let supply_state_root = next_supply
         .commitment()
@@ -923,6 +941,7 @@ mod tests {
             current_epoch: 1,
             total_supply: 0,
             epoch_emission: 0,
+            reward_state_root: SynaRewardState::default().commitment(),
         }
     }
 
@@ -1123,6 +1142,25 @@ mod tests {
         assert!(!rewards.is_consumed(
             &fixture.claim.mining_replay_key().unwrap()
         ));
+    }
+
+    #[test]
+    fn replay_state_must_match_canonical_supply_state() {
+        let fixture = fixture();
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        supply.reward_state_root[0] ^= 1;
+
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
     }
 
     #[test]
