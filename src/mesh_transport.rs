@@ -174,7 +174,6 @@ pub fn decrypt_mesh_hop(
     Some(packet)
 }
 
-
 pub fn encode_mesh_hop(wrapped: &EncryptedMeshHop) -> Option<Vec<u8>> {
     let record = encode_record(&wrapped.record)?;
     let record_len = u32::try_from(record.len()).ok()?;
@@ -226,9 +225,7 @@ pub fn write_mesh_hop_frame<W: std::io::Write>(
     writer.flush()
 }
 
-pub fn read_mesh_hop_frame<R: std::io::Read>(
-    reader: &mut R,
-) -> std::io::Result<EncryptedMeshHop> {
+pub fn read_mesh_hop_frame<R: std::io::Read>(reader: &mut R) -> std::io::Result<EncryptedMeshHop> {
     let mut magic = [0u8; 4];
     reader.read_exact(&mut magic)?;
     if magic != MESH_HOP_FRAME_MAGIC {
@@ -460,15 +457,9 @@ mod tests {
             let (mut stream, _) = destination_listener.accept().unwrap();
             let wrapped = read_mesh_hop_frame(&mut stream).unwrap();
             let mut hop_recv = seq();
-            let packet_at_b = decrypt_mesh_hop(
-                &wrapped,
-                &route_c,
-                [22; 32],
-                &key(23),
-                &mut hop_recv,
-                11,
-            )
-            .unwrap();
+            let packet_at_b =
+                decrypt_mesh_hop(&wrapped, &route_c, [22; 32], &key(23), &mut hop_recv, 11)
+                    .unwrap();
             let packet_at_c = packet_at_b.forward(&route_c, addr(2)).unwrap();
             let mut e2e_recv = seq();
             decrypt_mesh_end_to_end(&packet_at_c, &route_c, &key(6), &mut e2e_recv, 11).unwrap()
@@ -481,15 +472,9 @@ mod tests {
             let (mut inbound, _) = relay_listener.accept().unwrap();
             let wrapped_ab = read_mesh_hop_frame(&mut inbound).unwrap();
             let mut recv_ab = seq();
-            let packet_at_a = decrypt_mesh_hop(
-                &wrapped_ab,
-                &route_b,
-                [12; 32],
-                &key(13),
-                &mut recv_ab,
-                11,
-            )
-            .unwrap();
+            let packet_at_a =
+                decrypt_mesh_hop(&wrapped_ab, &route_b, [12; 32], &key(13), &mut recv_ab, 11)
+                    .unwrap();
 
             assert!(!packet_at_a
                 .opaque_payload
