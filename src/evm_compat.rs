@@ -157,6 +157,7 @@ pub struct EvmBridgeProofReceipt {
     pub source_block_number: u64,
     pub source_tx_hash: [u8; 32],
     pub source_event_index: u64,
+    pub source_contract: [u8; 20],
     pub event_or_state_root: [u8; 32],
     pub proof_root: [u8; 32],
     pub deposit_or_withdrawal_id: [u8; 32],
@@ -171,6 +172,7 @@ impl EvmBridgeProofReceipt {
             || self.source_block_hash == [0; 32]
             || self.source_block_number == 0
             || self.source_tx_hash == [0; 32]
+            || self.source_contract == [0; 20]
             || self.event_or_state_root == [0; 32]
         {
             return None;
@@ -183,6 +185,7 @@ impl EvmBridgeProofReceipt {
         h.update(self.source_block_number.to_be_bytes());
         h.update(self.source_tx_hash);
         h.update(self.source_event_index.to_be_bytes());
+        h.update(self.source_contract);
         h.update(self.event_or_state_root);
         Some(h.finalize().into())
     }
@@ -195,6 +198,7 @@ impl EvmBridgeProofReceipt {
             || self.source_block_hash == [0; 32]
             || self.source_block_number == 0
             || self.source_tx_hash == [0; 32]
+            || self.source_contract != source.bridge_contract
             || self.event_or_state_root == [0; 32]
             || self.proof_root == [0; 32]
             || self.canonical_message_id() != Some(self.deposit_or_withdrawal_id)
@@ -240,6 +244,7 @@ impl EvmBridgeReplayState {
         h.update(receipt.source_block_number.to_be_bytes());
         h.update(receipt.source_tx_hash);
         h.update(receipt.source_event_index.to_be_bytes());
+        h.update(receipt.source_contract);
         h.update(receipt.event_or_state_root);
         h.update(receipt.proof_root);
         h.update(receipt.deposit_or_withdrawal_id);
@@ -292,6 +297,7 @@ mod tests {
             source_block_number: 10,
             source_tx_hash: [3; 32],
             source_event_index: 7,
+            source_contract: [1; 20],
             event_or_state_root: [4; 32],
             proof_root: [5; 32],
             deposit_or_withdrawal_id: [0; 32],
@@ -340,6 +346,15 @@ mod tests {
         let mut state = EvmBridgeReplayState::default();
         assert!(state.verify_and_consume(&r, &p, &e).is_ok());
         assert!(state.verify_and_consume(&r, &p, &e).is_err());
+    }
+
+    #[test]
+    fn bridge_event_must_come_from_configured_contract() {
+        let p = eth();
+        let mut r = finalized_receipt();
+        r.source_contract = [9; 20];
+        r.deposit_or_withdrawal_id = r.canonical_message_id().unwrap();
+        assert!(r.validate(&p).is_err());
     }
 
     #[test]
