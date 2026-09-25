@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use super::actions::{CbPolicy, TraderAction};
-use super::constants::{SOURCE_COMMIT, SYNERGY_CHAIN_ID};
+use super::constants::{EXACT_DQN_RUNTIME_SHA256, SOURCE_COMMIT, SYNERGY_CHAIN_ID};
 
 pub const AGENTIC_ECONOMY_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/AGENTIC-ECONOMY-TRANSITION/V1\0";
 
@@ -100,6 +100,7 @@ pub struct AgenticEconomyTransitionReceipt {
     pub sequence: u64,
     pub source_block: u64,
     pub decision: EconomyDecision,
+    pub executor_runtime_root: [u8; 32],
     pub model_checkpoint_root: [u8; 32],
     pub observation_root: [u8; 32],
     pub pre_state_root: [u8; 32],
@@ -117,6 +118,9 @@ impl AgenticEconomyTransitionReceipt {
             return Err("zero economy sequence or source block");
         }
         self.decision.validate()?;
+        if self.executor_runtime_root != EXACT_DQN_RUNTIME_SHA256 {
+            return Err("wrong exact DQN runtime root");
+        }
         if self.model_checkpoint_root == [0; 32]
             || self.observation_root == [0; 32]
             || self.pre_state_root == [0; 32]
@@ -138,6 +142,7 @@ impl AgenticEconomyTransitionReceipt {
         h.update(self.sequence.to_be_bytes());
         h.update(self.source_block.to_be_bytes());
         self.decision.update_hasher(&mut h);
+        h.update(self.executor_runtime_root);
         h.update(self.model_checkpoint_root);
         h.update(self.observation_root);
         h.update(self.pre_state_root);
@@ -220,6 +225,7 @@ mod tests {
                 actor: 2,
                 action: 22,
             },
+            executor_runtime_root: EXACT_DQN_RUNTIME_SHA256,
             model_checkpoint_root: [7; 32],
             observation_root: [8; 32],
             pre_state_root: [pre; 32],
@@ -237,6 +243,13 @@ mod tests {
         changed.action_log_root[0] ^= 1;
         assert_ne!(a, changed.commitment().unwrap());
         assert_eq!(SOURCE_COMMIT, "113ef7df80d465958dc75e63b4afcd358dd39aa3");
+    }
+
+    #[test]
+    fn wrong_runtime_is_rejected() {
+        let mut r = receipt(1, 100, 1, 2);
+        r.executor_runtime_root[0] ^= 1;
+        assert!(r.validate_static().is_err());
     }
 
     #[test]
