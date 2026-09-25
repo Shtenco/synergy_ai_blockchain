@@ -240,10 +240,8 @@ fn canonical_receipt_set(
     for receipt in receipts {
         receipt.validate_against(challenge)?;
 
-        if let Some(previous) = previous_verifier {
-            if receipt.verifier_id <= previous {
-                return Err("verifier receipts must be strictly ordered and unique");
-            }
+        if previous_verifier.is_some_and(|previous| receipt.verifier_id <= previous) {
+            return Err("verifier receipts must be strictly ordered and unique");
         }
         previous_verifier = Some(receipt.verifier_id);
 
