@@ -153,14 +153,9 @@ mod tests {
         worker_id: [u8; 32],
     ) -> SynaMintAuthorization {
         SynaMintAuthorization::test_only(
-            [1; 32],
-            [2; 32],
             worker_id,
             10,
             7,
-            [4; 32],
-            [5; 32],
-            [6; 32],
             pre.commitment().unwrap(),
             post.commitment().unwrap(),
         )
