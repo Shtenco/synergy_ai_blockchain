@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use crate::{
     aggregate_verifier_receipts, build_inference_outcome, ComputeSettlement,
     InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
-    InferenceReceiptValidationContext, InferenceStageReceipt, MvpCheckpoint, SynaEmissionPolicy,
-    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceipt,
-    VerifierReceiptAuthorization, VerifierReceiptValidationContext,
+    InferenceReceiptValidationContext, MvpCheckpoint, SynaEmissionPolicy, SynaSupplyState,
+    VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
+    VerifierReceiptValidationContext,
 };
 use crate::inference::verify_inference_receipt;
 use crate::pq::ContextSignatureVerifier;
@@ -320,7 +320,9 @@ mod tests {
         SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
         SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
-    use crate::{InferenceStageAssignment, InferenceStageKind};
+    use crate::{
+        InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, VerifierReceipt,
+    };
 
     #[derive(Clone, Copy)]
     struct BindingTestVerifier;
@@ -358,9 +360,11 @@ mod tests {
             context: &[u8],
             signature: &[u8],
         ) -> bool {
-            signature.len() >= 32
-                && signature[..32]
-                    == test_signature_digest(scheme, public_key, message, context)
+            if signature.len() < 32 {
+                return false;
+            }
+            let expected = test_signature_digest(scheme, public_key, message, context);
+            signature.get(..32) == Some(expected.as_slice())
         }
     }
 
