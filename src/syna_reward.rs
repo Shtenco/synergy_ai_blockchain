@@ -103,17 +103,16 @@ impl SynaRewardState {
         self.consumed_mining_keys.contains(mining_replay_key)
     }
 
-    pub fn commitment(&self) -> [u8; 32] {
+    pub fn commitment(&self) -> Option<[u8; 32]> {
         let mut h = Sha256::new();
         h.update(SYNA_REWARD_STATE_DOMAIN);
         h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
-        let count = u64::try_from(self.consumed_mining_keys.len())
-            .expect("reward state length cannot exceed u64 on supported targets");
+        let count = u64::try_from(self.consumed_mining_keys.len()).ok()?;
         h.update(count.to_be_bytes());
         for key in &self.consumed_mining_keys {
             h.update(key);
         }
-        h.finalize().into()
+        Some(h.finalize().into())
     }
 
     fn consume(&mut self, mining_replay_key: [u8; 32]) -> Result<(), &'static str> {
@@ -432,7 +431,10 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     if reward_state.is_consumed(&mining_replay_key) {
         return Err("SYNA finalized inference already mined");
     }
-    if supply_state.reward_state_root != reward_state.commitment() {
+    let reward_state_root = reward_state
+        .commitment()
+        .ok_or("invalid SYNA reward replay state")?;
+    if supply_state.reward_state_root != reward_state_root {
         return Err("SYNA replay state does not match canonical supply state");
     }
 
@@ -448,7 +450,9 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     let claim_root = claim.canonical_root().ok_or("invalid SYNA claim root")?;
     let mut next_rewards = reward_state.clone();
     next_rewards.consume(mining_replay_key)?;
-    next_supply.reward_state_root = next_rewards.commitment();
+    next_supply.reward_state_root = next_rewards
+        .commitment()
+        .ok_or("invalid post-mint SYNA reward replay state")?;
 
     let supply_state_root = next_supply
         .commitment()
@@ -941,7 +945,7 @@ mod tests {
             current_epoch: 1,
             total_supply: 0,
             epoch_emission: 0,
-            reward_state_root: SynaRewardState::default().commitment(),
+            reward_state_root: SynaRewardState::default().commitment().unwrap(),
         }
     }
 
