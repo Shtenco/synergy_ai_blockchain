@@ -135,6 +135,11 @@ mod tests {
             challenge_id: [1; 32],
             verifier_id: [verifier; 32],
             recomputed_output_commitment: recomputed,
+            work_commitment: if verdict == VerificationVerdict::Inconclusive {
+                [0; 32]
+            } else {
+                [9; 32]
+            },
             trace_commitment: [10 + verifier; 32],
             signature_commitment: [20 + verifier; 32],
             verdict,
