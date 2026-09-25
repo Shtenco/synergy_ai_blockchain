@@ -65,12 +65,18 @@ impl PeerDirectory {
         if !r.live(now) {
             return Err("stale node record");
         }
-        if let Some(old) = self.records.get(&r.node_id) {
-            if r.epoch < old.epoch || (r.epoch == old.epoch && r.sequence <= old.sequence) {
+        match self.records.get(&r.node_id) {
+            Some(old)
+                if r.epoch < old.epoch
+                    || (r.epoch == old.epoch && r.sequence <= old.sequence) =>
+            {
                 return Err("node record replay or downgrade");
             }
-        } else if self.records.len() >= MAX_MVP_PEERS {
-            return Err("peer directory capacity exceeded");
+            Some(_) => {}
+            None if self.records.len() >= MAX_MVP_PEERS => {
+                return Err("peer directory capacity exceeded");
+            }
+            None => {}
         }
         self.records.insert(r.node_id, r);
         Ok(())
