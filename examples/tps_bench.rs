@@ -1,9 +1,9 @@
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use synergy_pq_evm_core::{
-    agentic_economy::constants::EXACT_DQN_RUNTIME_SHA256,
-    AgenticEconomyReplayState, AgenticEconomyState, AgenticEconomyTransitionReceipt, Asset,
-    EconomyAccountingSnapshot, EconomyDecision,
+    agentic_economy::constants::EXACT_DQN_RUNTIME_SHA256, AgenticEconomyReplayState,
+    AgenticEconomyState, AgenticEconomyTransitionReceipt, Asset, EconomyAccountingSnapshot,
+    EconomyDecision,
 };
 
 fn rate(n: u64, secs: f64) -> f64 {
