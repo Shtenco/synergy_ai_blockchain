@@ -113,9 +113,11 @@ pub use mesh_overlay::{
 };
 pub use mesh_routing::{MeshLinkAdvertisement, MeshLinkStateDb, MAX_LINK_COST, MAX_MESH_LINKS};
 pub use mesh_transport::{
-    decode_packet as decode_mesh_packet, decode_record as decode_mesh_record,
-    decrypt_mesh_end_to_end, decrypt_mesh_hop, encode_packet as encode_mesh_packet,
-    encode_record as encode_mesh_record, encrypt_mesh_end_to_end, encrypt_mesh_hop,
+    decode_mesh_hop, decode_packet as decode_mesh_packet, decode_record as decode_mesh_record,
+    decrypt_mesh_end_to_end, decrypt_mesh_hop, encode_mesh_hop,
+    encode_packet as encode_mesh_packet, encode_record as encode_mesh_record,
+    encrypt_mesh_end_to_end, encrypt_mesh_hop, read_mesh_hop_frame, write_mesh_hop_frame,
+    EncryptedMeshHop, MeshHopHeader, MAX_MESH_HOP_FRAME_BYTES, MESH_HOP_FRAME_MAGIC,
 };
 pub use mesh_transport::{EncryptedMeshHop, MeshHopHeader};
 pub use mesh_tunnel::{
