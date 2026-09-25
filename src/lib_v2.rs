@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod agentic_economy;
+
 pub mod autopilot;
 pub mod autopilot_budget;
 pub mod autopilot_execution_lease;
@@ -40,6 +42,10 @@ pub mod tx;
 pub mod validator;
 pub mod verification;
 
+pub use agentic_economy::{
+    decide_gas_aware_execution, AgenticEconomyState, Asset, CbPolicy, EconomyAccount,
+    EconomyActionError, EconomyError, GasDecision, TraderAction,
+};
 pub use autopilot::{
     ApprovalMode, AutopilotCapability, AutopilotExecutionReceipt, AutopilotPolicy,
     AutopilotProposal,
