@@ -1,0 +1,56 @@
+{
+  "milestone": "P6 SYNERGY PQ-MESH INTERNET",
+  "branch": "feat/p6-pq-mesh-internet",
+  "code_head": "698c6105d1484251546f4828c06227248de6b83e",
+  "runner": "DESKTOP-C8GUE41",
+  "architecture": {
+    "node_role": ["client","server","relay","validator"],
+    "virtual_mesh_address_from_pq_identity": true,
+    "link_state_routing": true,
+    "route_loop_rejection": true,
+    "route_replay_downgrade_protection": true,
+    "hop_limit": true,
+    "e2e_encryption": true,
+    "per_hop_encryption": true,
+    "relay_plaintext_visibility": false,
+    "bidirectional_direction_separation": true,
+    "ipv4_ipv6_tunnel_boundary": true,
+    "fail_closed_no_plaintext_bypass": true,
+    "protected_exit_node_model": true
+  },
+  "crypto": {
+    "kex": "ML-KEM-1024",
+    "identity_authorization": ["ML-DSA-87","SLH-DSA-SHAKE-256s"],
+    "record_cipher": "ChaCha20-Poly1305",
+    "kdf": "HKDF-SHA256",
+    "replay_protection": true,
+    "rekey_message_and_time_bounds": true,
+    "transcript_binding": true
+  },
+  "physical_tests": {
+    "fmt_check": "PASS",
+    "cargo_check_all_targets": "PASS",
+    "clippy_minus_D_warnings": "PASS",
+    "mesh_tests": "24/24 PASS",
+    "three_node_real_tcp_relay": "PASS",
+    "relay_does_not_observe_application_plaintext": "PASS",
+    "wrong_hop_key_rejected": "PASS",
+    "route_header_tamper_rejected": "PASS",
+    "mesh_replay_rejected": "PASS",
+    "bidirectional_request_response": "PASS",
+    "default_full_regression": "329/329 PASS",
+    "default_adversarial": "1/1 PASS"
+  },
+  "reference_pq": {
+    "previous_p6_head": "1657f37ba6b5cec42d0692e1a6d81e83a73c29af",
+    "previous_result": "348/348 PASS + adversarial 1/1 + ACVP/Wycheproof/FIPS205 5/5",
+    "current_head_final_rerun": "PENDING_RUNNER_RESPONSE"
+  },
+  "scope_limitations": [
+    "Local three-node TCP smoke currently uses one physical host.",
+    "A second independently controlled physical/VM host is still required for WAN cross-host evidence.",
+    "The host tunnel layer is a protocol/device abstraction; production Windows Wintun/Linux TUN adapters are not yet packaged in this commit.",
+    "Traffic remains post-quantum protected only while inside the SYNERGY mesh. Ordinary Internet traffic after an exit node depends on the destination protocol."
+  ],
+  "security_claim": "No absolute unhackability claim. The design is fail-closed and aims for confidentiality, integrity, authentication, replay resistance and post-quantum key establishment under the implemented cryptographic assumptions."
+}
