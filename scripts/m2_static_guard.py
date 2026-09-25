@@ -1313,7 +1313,7 @@ require(
     and "_hasNonZeroByte(slhDsaPublicKey_)" in smart_account_sol
     and "mlDsaSignature.length != 4627" in smart_account_sol
     and "slhDsaSignature.length != 29792" in smart_account_sol
-    and "block.timestamp >= validUntil" in smart_account_sol
+    and "block.timestamp >= uint256(validUntil)" in smart_account_sol
     and "uint256(validUntil) - block.timestamp > MAX_AUTHORIZATION_LIFETIME_SECONDS" in smart_account_sol
     and "PQVerify.mlDsa87" in smart_account_sol
     and "PQVerify.slhDsa256s" in smart_account_sol,
