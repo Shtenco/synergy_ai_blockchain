@@ -1,0 +1,23 @@
+{
+  "profile": "SYNERGY-EVM-NETWORK-POLICY/V1",
+  "network": "Ethereum Mainnet",
+  "chain_id": 1,
+  "class": "EthereumL1",
+  "settlement_chain_id": 1,
+  "bridge_mode": "PROOF_REQUIRED",
+  "trusted_rpc_is_finality": false,
+  "pq_authorization_additive": true,
+  "legacy_downgrade_for_pq_only": false,
+  "deployment_status": "EVIDENCE_PENDING",
+  "required_evidence": [
+    "transaction_vectors_root",
+    "receipts_logs_vectors_root",
+    "gas_vectors_root",
+    "json_rpc_vectors_root",
+    "abi_vectors_root",
+    "precompile_registry_root",
+    "client_matrix_root",
+    "bridge_contract",
+    "finality_proof_vectors"
+  ]
+}
