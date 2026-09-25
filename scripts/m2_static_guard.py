@@ -933,7 +933,7 @@ require(
 
 require(
     'slh-dsa = { version = "=0.1.0", optional = true, default-features = false, features = ["alloc"] }' in cargo
-    and 'rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom"] }' in cargo,
+    and 'rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom", "std", "std_rng"] }' in cargo,
     "SLH-DSA/rand feature surface must remain explicit and minimal",
 )
 
