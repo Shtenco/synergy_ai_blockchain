@@ -9,6 +9,7 @@ pub mod cognitive_registry;
 pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
+pub mod evm_compat;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -30,6 +31,7 @@ pub mod scheduling;
 pub mod service_planes;
 pub mod slashing;
 pub mod storage;
+pub mod syna_emission;
 pub mod syna_reward;
 pub mod transport_record;
 pub mod transport_wire;
@@ -67,6 +69,7 @@ pub use consensus::{
     verify_consensus_activation_and_consume, ConsensusActivation, ConsensusActivationAuthorization,
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
+pub use evm_compat::{EvmBridgeProofReceipt, EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN};
 pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
@@ -148,6 +151,7 @@ pub use service_planes::{
     ServicePlaneRoots, MAX_SERVICE_FINALITY_ITEMS,
 };
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
+pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState};
 pub use syna_reward::{SynaRewardClaim, SynaRewardState, SYNA_REWARD_DOMAIN};
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope,
