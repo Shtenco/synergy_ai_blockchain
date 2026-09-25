@@ -531,6 +531,123 @@ mod tests {
         assert_eq!(plain, b"private-ip-payload");
     }
 
+    #[cfg(feature = "reference-pq")]
+    #[test]
+    fn real_ml_kem_derived_key_protects_mesh_payload() {
+        use crate::network::{
+            derive_directional_transport_session_keys, establish_shared_secret,
+            InMemoryTransportReplayGuard, MlKem1024Provider, TransportPeerIdentity,
+            TransportPolicy, TransportRole, TransportTranscript, TransportValidationContext,
+        };
+        use crate::pq_reference::ReferenceMlKem1024Provider;
+
+        let mut provider = ReferenceMlKem1024Provider::new();
+        let (_initiator_handle, initiator_public) =
+            provider.try_generate_keypair().expect("initiator ML-KEM");
+        let (responder_handle, responder_public) =
+            provider.try_generate_keypair().expect("responder ML-KEM");
+
+        let (ciphertext, sender_shared) =
+            provider.encapsulate(&responder_public).expect("ML-KEM encapsulate");
+        let receiver_shared = provider
+            .decapsulate(&responder_handle, &ciphertext)
+            .expect("ML-KEM decapsulate");
+
+        let rekey = RekeyPolicy {
+            max_messages: 100,
+            max_seconds: 300,
+        };
+        let transcript = TransportTranscript {
+            network_id: [41; 32],
+            epoch: 9,
+            session_id: [42; 32],
+            initiator: TransportPeerIdentity {
+                node_id: [1; 32],
+                ml_kem1024_public_key: initiator_public,
+                legacy_kex_scheme: None,
+                legacy_kex_public_key: vec![],
+            },
+            responder: TransportPeerIdentity {
+                node_id: [3; 32],
+                ml_kem1024_public_key: responder_public,
+                legacy_kex_scheme: None,
+                legacy_kex_public_key: vec![],
+            },
+            policy: TransportPolicy::PqOnly,
+            rekey_policy: rekey,
+            ml_kem_recipient: TransportRole::Responder,
+            ml_kem_ciphertext: ciphertext,
+            classical_transcript_hash: None,
+        };
+        let validation = TransportValidationContext {
+            expected_network_id: [41; 32],
+            expected_epoch: 9,
+            expected_session_id: [42; 32],
+        };
+        let mut sender_guard =
+            InMemoryTransportReplayGuard::new([41; 32], 9).expect("sender replay");
+        let mut receiver_guard =
+            InMemoryTransportReplayGuard::new([41; 32], 9).expect("receiver replay");
+
+        let sender_secret = establish_shared_secret(
+            &mut sender_guard,
+            sender_shared,
+            None,
+            &transcript,
+            &validation,
+        )
+        .expect("sender shared secret");
+        let receiver_secret = establish_shared_secret(
+            &mut receiver_guard,
+            receiver_shared,
+            None,
+            &transcript,
+            &validation,
+        )
+        .expect("receiver shared secret");
+
+        let sender_keys =
+            derive_directional_transport_session_keys(&sender_secret).expect("sender keys");
+        let receiver_keys =
+            derive_directional_transport_session_keys(&receiver_secret).expect("receiver keys");
+        assert_eq!(
+            sender_keys.initiator_to_responder().as_bytes(),
+            receiver_keys.initiator_to_responder().as_bytes()
+        );
+
+        let route = MeshRoute {
+            source: addr(1),
+            destination: addr(3),
+            hops: vec![addr(1), addr(3)],
+            epoch: 9,
+        };
+        let mut send_seq = TransportRecordSequence::new_initiator_to_responder(rekey, 10).unwrap();
+        let packet = encrypt_mesh_end_to_end(
+            &route,
+            [44; 32],
+            1,
+            [45; 32],
+            sender_keys.initiator_to_responder(),
+            &mut send_seq,
+            11,
+            b"real-ml-kem-mesh-payload",
+        )
+        .unwrap()
+        .forward(&route, addr(1))
+        .unwrap();
+
+        let mut recv_seq = TransportRecordSequence::new_initiator_to_responder(rekey, 10).unwrap();
+        let plain = decrypt_mesh_end_to_end(
+            &packet,
+            &route,
+            receiver_keys.initiator_to_responder(),
+            &mut recv_seq,
+            11,
+        )
+        .unwrap();
+        assert_eq!(plain, b"real-ml-kem-mesh-payload");
+    }
+
     #[test]
     fn wrong_hop_key_or_header_tamper_cannot_decrypt() {
         let route = MeshRoute {
