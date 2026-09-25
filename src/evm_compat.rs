@@ -16,6 +16,70 @@ pub enum EvmNetworkClass {
     Sidechain,
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvmCompatibilityEvidence {
+    pub transaction_vectors_root: [u8; 32],
+    pub receipts_logs_vectors_root: [u8; 32],
+    pub gas_vectors_root: [u8; 32],
+    pub json_rpc_vectors_root: [u8; 32],
+    pub abi_vectors_root: [u8; 32],
+    pub precompile_registry_root: [u8; 32],
+    pub client_matrix_root: [u8; 32],
+    pub version: u32,
+}
+
+impl EvmCompatibilityEvidence {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.version == 0 {
+            return Err("EVM compatibility evidence version required");
+        }
+        for root in [
+            self.transaction_vectors_root,
+            self.receipts_logs_vectors_root,
+            self.gas_vectors_root,
+            self.json_rpc_vectors_root,
+            self.abi_vectors_root,
+            self.precompile_registry_root,
+            self.client_matrix_root,
+        ] {
+            if root == [0; 32] {
+                return Err("all EVM compatibility evidence roots required");
+            }
+        }
+        Ok(())
+    }
+
+    pub fn verified_commitment(
+        &self,
+        evidence: &EvmCompatibilityEvidence,
+    ) -> Option<[u8; 32]> {
+        let profile_root = self.commitment()?;
+        let evidence_root = evidence.commitment()?;
+        let mut h = Sha256::new();
+        h.update(EVM_COMPAT_DOMAIN);
+        h.update(b"VERIFIED\0");
+        h.update(profile_root);
+        h.update(evidence_root);
+        Some(h.finalize().into())
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        let mut h = Sha256::new();
+        h.update(EVM_COMPAT_EVIDENCE_DOMAIN);
+        h.update(self.version.to_be_bytes());
+        h.update(self.transaction_vectors_root);
+        h.update(self.receipts_logs_vectors_root);
+        h.update(self.gas_vectors_root);
+        h.update(self.json_rpc_vectors_root);
+        h.update(self.abi_vectors_root);
+        h.update(self.precompile_registry_root);
+        h.update(self.client_matrix_root);
+        Some(h.finalize().into())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvmCompatibilityProfile {
     pub chain_id: u64,
@@ -131,6 +195,26 @@ mod tests {
         assert!(p.validate().is_ok());
         p.legacy_downgrade_for_pq_only = true;
         assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn compatibility_claim_requires_hash_pinned_evidence() {
+        let p = eth();
+        let e = EvmCompatibilityEvidence {
+            transaction_vectors_root: [11; 32],
+            receipts_logs_vectors_root: [12; 32],
+            gas_vectors_root: [13; 32],
+            json_rpc_vectors_root: [14; 32],
+            abi_vectors_root: [15; 32],
+            precompile_registry_root: [16; 32],
+            client_matrix_root: [17; 32],
+            version: 1,
+        };
+        assert!(p.verified_commitment(&e).is_some());
+
+        let mut missing = e.clone();
+        missing.gas_vectors_root = [0; 32];
+        assert!(p.verified_commitment(&missing).is_none());
     }
 
     #[test]
