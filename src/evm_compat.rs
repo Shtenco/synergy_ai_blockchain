@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 pub const EVM_COMPAT_DOMAIN: &[u8] = b"SYNERGY/EVM-COMPAT/V1\0";
 pub const EVM_COMPAT_EVIDENCE_DOMAIN: &[u8] = b"SYNERGY/EVM-COMPAT-EVIDENCE/V1\0";
 pub const EVM_VERIFIED_PROFILE_DOMAIN: &[u8] = b"SYNERGY/EVM-VERIFIED-PROFILE/V1\0";
+pub const EVM_BRIDGE_MESSAGE_ID_DOMAIN: &[u8] = b"SYNERGY/EVM-BRIDGE-MESSAGE-ID/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvmNetworkClass {
@@ -154,6 +155,8 @@ pub struct EvmBridgeProofReceipt {
     pub destination_chain_id: u64,
     pub source_block_hash: [u8; 32],
     pub source_block_number: u64,
+    pub source_tx_hash: [u8; 32],
+    pub source_event_index: u64,
     pub event_or_state_root: [u8; 32],
     pub proof_root: [u8; 32],
     pub deposit_or_withdrawal_id: [u8; 32],
@@ -161,6 +164,29 @@ pub struct EvmBridgeProofReceipt {
 }
 
 impl EvmBridgeProofReceipt {
+    pub fn canonical_message_id(&self) -> Option<[u8; 32]> {
+        if self.source_chain_id == 0
+            || self.destination_chain_id == 0
+            || self.destination_chain_id == self.source_chain_id
+            || self.source_block_hash == [0; 32]
+            || self.source_block_number == 0
+            || self.source_tx_hash == [0; 32]
+            || self.event_or_state_root == [0; 32]
+        {
+            return None;
+        }
+        let mut h = Sha256::new();
+        h.update(EVM_BRIDGE_MESSAGE_ID_DOMAIN);
+        h.update(self.source_chain_id.to_be_bytes());
+        h.update(self.destination_chain_id.to_be_bytes());
+        h.update(self.source_block_hash);
+        h.update(self.source_block_number.to_be_bytes());
+        h.update(self.source_tx_hash);
+        h.update(self.source_event_index.to_be_bytes());
+        h.update(self.event_or_state_root);
+        Some(h.finalize().into())
+    }
+
     pub fn validate(&self, source: &EvmCompatibilityProfile) -> Result<(), &'static str> {
         source.validate()?;
         if self.source_chain_id != source.chain_id
@@ -168,9 +194,10 @@ impl EvmBridgeProofReceipt {
             || self.destination_chain_id == self.source_chain_id
             || self.source_block_hash == [0; 32]
             || self.source_block_number == 0
+            || self.source_tx_hash == [0; 32]
             || self.event_or_state_root == [0; 32]
             || self.proof_root == [0; 32]
-            || self.deposit_or_withdrawal_id == [0; 32]
+            || self.canonical_message_id() != Some(self.deposit_or_withdrawal_id)
             || !self.finalized
         {
             return Err("invalid EVM bridge proof receipt");
@@ -211,6 +238,8 @@ impl EvmBridgeReplayState {
         h.update(receipt.destination_chain_id.to_be_bytes());
         h.update(receipt.source_block_hash);
         h.update(receipt.source_block_number.to_be_bytes());
+        h.update(receipt.source_tx_hash);
+        h.update(receipt.source_event_index.to_be_bytes());
         h.update(receipt.event_or_state_root);
         h.update(receipt.proof_root);
         h.update(receipt.deposit_or_withdrawal_id);
@@ -255,6 +284,23 @@ mod tests {
         }
     }
 
+    fn finalized_receipt() -> EvmBridgeProofReceipt {
+        let mut receipt = EvmBridgeProofReceipt {
+            source_chain_id: 1,
+            destination_chain_id: 8453,
+            source_block_hash: [2; 32],
+            source_block_number: 10,
+            source_tx_hash: [3; 32],
+            source_event_index: 7,
+            event_or_state_root: [4; 32],
+            proof_root: [5; 32],
+            deposit_or_withdrawal_id: [0; 32],
+            finalized: true,
+        };
+        receipt.deposit_or_withdrawal_id = receipt.canonical_message_id().unwrap();
+        receipt
+    }
+
     #[test]
     fn pq_only_downgrade_is_never_compatible() {
         let mut p = eth();
@@ -290,34 +336,43 @@ mod tests {
     fn finalized_bridge_proof_is_one_shot() {
         let p = eth();
         let e = evidence();
-        let r = EvmBridgeProofReceipt {
-            source_chain_id: 1,
-            destination_chain_id: 8453,
-            source_block_hash: [2; 32],
-            source_block_number: 10,
-            event_or_state_root: [3; 32],
-            proof_root: [4; 32],
-            deposit_or_withdrawal_id: [5; 32],
-            finalized: true,
-        };
+        let r = finalized_receipt();
         let mut state = EvmBridgeReplayState::default();
         assert!(state.verify_and_consume(&r, &p, &e).is_ok());
         assert!(state.verify_and_consume(&r, &p, &e).is_err());
     }
 
     #[test]
+    fn bridge_message_id_is_derived_from_source_event_identity() {
+        let p = eth();
+        let mut r = finalized_receipt();
+        assert!(r.validate(&p).is_ok());
+
+        r.deposit_or_withdrawal_id[0] ^= 1;
+        assert!(r.validate(&p).is_err());
+    }
+
+    #[test]
+    fn alternate_proof_for_same_event_cannot_bypass_replay_state() {
+        let p = eth();
+        let e = evidence();
+        let r = finalized_receipt();
+        let mut state = EvmBridgeReplayState::default();
+        assert!(state.verify_and_consume(&r, &p, &e).is_ok());
+
+        let mut alternate_proof = r;
+        alternate_proof.proof_root[0] ^= 1;
+        assert!(alternate_proof.validate(&p).is_ok());
+        assert!(state
+            .verify_and_consume(&alternate_proof, &p, &e)
+            .is_err());
+    }
+
+    #[test]
     fn rpc_without_finalized_proof_is_not_bridge_finality() {
         let p = eth();
-        let r = EvmBridgeProofReceipt {
-            source_chain_id: 1,
-            destination_chain_id: 8453,
-            source_block_hash: [2; 32],
-            source_block_number: 10,
-            event_or_state_root: [3; 32],
-            proof_root: [4; 32],
-            deposit_or_withdrawal_id: [5; 32],
-            finalized: false,
-        };
+        let mut r = finalized_receipt();
+        r.finalized = false;
         assert!(r.validate(&p).is_err());
     }
 }
