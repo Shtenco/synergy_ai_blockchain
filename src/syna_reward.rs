@@ -11,7 +11,7 @@ use crate::{
     aggregate_inference_stage_receipts, aggregate_verifier_receipts, build_inference_outcome,
     ComputeSettlement,
     InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
-    InferenceReceiptValidationContext, MvpCheckpoint, PeerDirectory, SynaEmissionPolicy,
+    InferenceReceiptValidationContext, MvpCheckpoint, NodeSetSnapshot, SynaEmissionPolicy,
     SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
     VerifierReceiptValidationContext,
 };
@@ -151,7 +151,7 @@ fn validate_verifier_diversity(
 #[derive(Debug, Clone, Copy)]
 pub struct SynaInferenceMintContext<'a> {
     pub checkpoint: &'a MvpCheckpoint,
-    pub peer_directory: &'a PeerDirectory,
+    pub node_snapshot: &'a NodeSetSnapshot,
     pub outcome: &'a InferenceOutcome,
     pub job: &'a InferenceJob,
     pub plan: &'a InferenceExecutionPlan,
@@ -267,10 +267,13 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     context.challenge.validate()?;
     policy.validate()?;
 
+    if context.node_snapshot.epoch != context.checkpoint.epoch {
+        return Err("node-set snapshot epoch does not match finalized checkpoint");
+    }
     let node_set_root = context
-        .peer_directory
-        .commitment_for_epoch(context.checkpoint.epoch)
-        .ok_or("finalized PQ identity epoch snapshot required")?;
+        .node_snapshot
+        .commitment()
+        .ok_or("finalized PQ identity node snapshot required")?;
     if node_set_root != context.checkpoint.node_set_root {
         return Err("PQ identity node set does not match finalized checkpoint");
     }
@@ -289,8 +292,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         .zip(context.stage_validations.iter())
     {
         let registered = context
-            .peer_directory
-            .get_at_epoch(&authorized.receipt.worker_id, context.checkpoint.epoch)
+            .node_snapshot
+            .get(&authorized.receipt.worker_id)
             .ok_or("inference worker is not in finalized epoch node set")?;
         let authorization_keyset = authorized
             .authorization
@@ -342,8 +345,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         }
 
         let registered = context
-            .peer_directory
-            .get_at_epoch(&authorized.receipt.verifier_id, context.checkpoint.epoch)
+            .node_snapshot
+            .get(&authorized.receipt.verifier_id)
             .ok_or("verifier is not in finalized epoch node set")?;
         let authorization_keyset = authorized
             .authorization
@@ -722,7 +725,7 @@ mod tests {
         outcome: InferenceOutcome,
         settlement: ComputeSettlement,
         checkpoint: MvpCheckpoint,
-        peer_directory: PeerDirectory,
+        node_snapshot: NodeSetSnapshot,
         identity_now: u64,
         verifier_authorizations: Vec<VerifierReceiptAuthorization>,
         verifier_validations: Vec<VerifierReceiptValidationContext>,
@@ -891,7 +894,8 @@ mod tests {
                 .unwrap();
         }
 
-        let node_set_root = peer_directory.commitment_for_epoch(epoch).unwrap();
+        let node_snapshot = peer_directory.snapshot(epoch).unwrap();
+        let node_set_root = node_snapshot.commitment().unwrap();
         let checkpoint = MvpCheckpoint {
             chain_id,
             epoch,
@@ -934,7 +938,7 @@ mod tests {
             outcome,
             settlement,
             checkpoint,
-            peer_directory,
+            node_snapshot,
             identity_now,
             verifier_authorizations,
             verifier_validations,
@@ -952,7 +956,7 @@ mod tests {
     ) -> Result<SynaMintAuthorization, &'static str> {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -982,7 +986,7 @@ mod tests {
     ) -> Result<SynaMintAuthorization, &'static str> {
         let context = SynaInferenceMintContext {
             checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1200,7 +1204,7 @@ mod tests {
 
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1273,7 +1277,7 @@ mod tests {
 
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1542,7 +1546,7 @@ mod tests {
 
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -1578,7 +1582,7 @@ mod tests {
         let mut supply = empty_supply();
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
-            peer_directory: &fixture.peer_directory,
+            node_snapshot: &fixture.node_snapshot,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
