@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 use crate::{
     aggregate_verifier_receipts, build_inference_outcome, ComputeSettlement,
     InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
-    InferenceReceiptValidationContext, MvpCheckpoint, SynaEmissionPolicy, SynaSupplyState,
-    VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
+    InferenceReceiptValidationContext, MvpCheckpoint, PeerDirectory, SynaEmissionPolicy,
+    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
     VerifierReceiptValidationContext,
 };
 use crate::inference::verify_inference_receipt;
