@@ -53,6 +53,26 @@ pub struct EncryptedMeshHop {
 }
 
 #[allow(clippy::too_many_arguments)]
+pub fn encrypt_mesh_end_to_end_directional(
+    route: &MeshRoute,
+    flow_id: [u8; 32],
+    sequence: u64,
+    session_root: [u8; 32],
+    sender: TransportRole,
+    key: &TransportSessionKey,
+    record_sequence: &mut TransportRecordSequence,
+    now: u64,
+    plaintext: &[u8],
+) -> Option<MeshPacket> {
+    let flow_root = mesh_flow_root(route.source, route.destination, flow_id, session_root)?;
+    let record = encrypt_transport_record(
+        key, record_sequence, now, session_root, sender, flow_root, plaintext,
+    )?;
+    let opaque_payload = encode_record(&record)?;
+    MeshPacket::new(route, flow_id, sequence, session_root, opaque_payload)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn encrypt_mesh_end_to_end(
     route: &MeshRoute,
     flow_id: [u8; 32],
@@ -63,23 +83,16 @@ pub fn encrypt_mesh_end_to_end(
     now: u64,
     plaintext: &[u8],
 ) -> Option<MeshPacket> {
-    let flow_root = mesh_flow_root(route.source, route.destination, flow_id, session_root)?;
-    let record = encrypt_transport_record(
-        key,
-        record_sequence,
-        now,
-        session_root,
-        TransportRole::Initiator,
-        flow_root,
-        plaintext,
-    )?;
-    let opaque_payload = encode_record(&record)?;
-    MeshPacket::new(route, flow_id, sequence, session_root, opaque_payload)
+    encrypt_mesh_end_to_end_directional(
+        route, flow_id, sequence, session_root, TransportRole::Initiator,
+        key, record_sequence, now, plaintext,
+    )
 }
 
-pub fn decrypt_mesh_end_to_end(
+pub fn decrypt_mesh_end_to_end_directional(
     packet: &MeshPacket,
     route: &MeshRoute,
+    sender: TransportRole,
     key: &TransportSessionKey,
     record_sequence: &mut TransportRecordSequence,
     now: u64,
@@ -100,19 +113,32 @@ pub fn decrypt_mesh_end_to_end(
         record_sequence,
         now,
         packet.end_to_end_session_root,
-        TransportRole::Initiator,
+        sender,
         flow_root,
         &record,
     )
 }
 
+pub fn decrypt_mesh_end_to_end(
+    packet: &MeshPacket,
+    route: &MeshRoute,
+    key: &TransportSessionKey,
+    record_sequence: &mut TransportRecordSequence,
+    now: u64,
+) -> Option<Vec<u8>> {
+    decrypt_mesh_end_to_end_directional(
+        packet, route, TransportRole::Initiator, key, record_sequence, now,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
-pub fn encrypt_mesh_hop(
+pub fn encrypt_mesh_hop_directional(
     packet: &MeshPacket,
     route: &MeshRoute,
     current: MeshAddress,
     next: MeshAddress,
     hop_session_root: [u8; 32],
+    sender: TransportRole,
     key: &TransportSessionKey,
     record_sequence: &mut TransportRecordSequence,
     now: u64,
@@ -131,22 +157,34 @@ pub fn encrypt_mesh_hop(
     let app_root = header.application_root(route)?;
     let bytes = encode_packet(packet)?;
     let record = encrypt_transport_record(
-        key,
-        record_sequence,
-        now,
-        hop_session_root,
-        TransportRole::Initiator,
-        app_root,
-        &bytes,
+        key, record_sequence, now, hop_session_root, sender, app_root, &bytes,
     )?;
     Some(EncryptedMeshHop { header, record })
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn decrypt_mesh_hop(
+pub fn encrypt_mesh_hop(
+    packet: &MeshPacket,
+    route: &MeshRoute,
+    current: MeshAddress,
+    next: MeshAddress,
+    hop_session_root: [u8; 32],
+    key: &TransportSessionKey,
+    record_sequence: &mut TransportRecordSequence,
+    now: u64,
+) -> Option<EncryptedMeshHop> {
+    encrypt_mesh_hop_directional(
+        packet, route, current, next, hop_session_root, TransportRole::Initiator,
+        key, record_sequence, now,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn decrypt_mesh_hop_directional(
     wrapped: &EncryptedMeshHop,
     route: &MeshRoute,
     hop_session_root: [u8; 32],
+    sender: TransportRole,
     key: &TransportSessionKey,
     record_sequence: &mut TransportRecordSequence,
     now: u64,
@@ -157,7 +195,7 @@ pub fn decrypt_mesh_hop(
         record_sequence,
         now,
         hop_session_root,
-        TransportRole::Initiator,
+        sender,
         app_root,
         &wrapped.record,
     )?;
@@ -172,6 +210,21 @@ pub fn decrypt_mesh_hop(
         return None;
     }
     Some(packet)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn decrypt_mesh_hop(
+    wrapped: &EncryptedMeshHop,
+    route: &MeshRoute,
+    hop_session_root: [u8; 32],
+    key: &TransportSessionKey,
+    record_sequence: &mut TransportRecordSequence,
+    now: u64,
+) -> Option<MeshPacket> {
+    decrypt_mesh_hop_directional(
+        wrapped, route, hop_session_root, TransportRole::Initiator,
+        key, record_sequence, now,
+    )
 }
 
 pub fn encode_mesh_hop(wrapped: &EncryptedMeshHop) -> Option<Vec<u8>> {
