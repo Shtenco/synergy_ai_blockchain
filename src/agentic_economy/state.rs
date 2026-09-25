@@ -232,7 +232,12 @@ impl AgenticEconomyState {
         Ok(p)
     }
 
-    pub fn apply_consensus_action(&mut self, actor: usize, action: u8) -> Result<(), EconomyError> {
+    /// Synthetic deterministic action mix used only by the throughput benchmark.
+    ///
+    /// The authoritative DQN/economy runtime is pinned under
+    /// reference/agentic_ai_economy_v8_1. Production economy results enter
+    /// consensus through AgenticEconomyTransitionReceipt, not through this helper.
+    pub fn apply_benchmark_action(&mut self, actor: usize, action: u8) -> Result<(), EconomyError> {
         let a = TraderAction::try_from(action)?;
         match a {
             TraderAction::Hold => {}
