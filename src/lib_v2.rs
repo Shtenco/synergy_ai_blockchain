@@ -43,8 +43,9 @@ pub mod validator;
 pub mod verification;
 
 pub use agentic_economy::{
-    decide_gas_aware_execution, AgenticEconomyState, Asset, CbPolicy, EconomyAccount,
-    EconomyActionError, EconomyError, GasDecision, TraderAction,
+    decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
+    AgenticEconomyTransitionReceipt, Asset, CbPolicy, EconomyAccount, EconomyAccountingSnapshot,
+    EconomyActionError, EconomyDecision, EconomyError, GasDecision, TraderAction,
 };
 pub use autopilot::{
     ApprovalMode, AutopilotCapability, AutopilotExecutionReceipt, AutopilotPolicy,
