@@ -171,9 +171,10 @@ mod tests {
 
     #[test]
     fn fabricated_balance_transition_is_rejected() {
-        let s = supply();
-        let a = authorization(&s);
-        let mut t = build_syna_mint_transition(&a, 25, 1_000, &s).unwrap();
+        let pre = pre_supply();
+        let post = post_supply();
+        let a = authorization(&pre, &post);
+        let mut t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
         t.account_balance_after += 1;
         assert!(t.commitment(&a, &pre, &post).is_none());
     }
