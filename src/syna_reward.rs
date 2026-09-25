@@ -939,6 +939,37 @@ mod tests {
         )
     }
 
+    fn mint_with_checkpoint(
+        fixture: &Fixture,
+        claim: &SynaRewardClaim,
+        checkpoint: &MvpCheckpoint,
+        rewards: &mut SynaRewardState,
+        supply: &mut SynaSupplyState,
+    ) -> Result<SynaMintAuthorization, &'static str> {
+        let context = SynaInferenceMintContext {
+            checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
+            outcome: &fixture.outcome,
+            job: &fixture.job,
+            plan: &fixture.plan,
+            stage_authorizations: &fixture.stage_authorizations,
+            stage_validations: &fixture.stage_validations,
+            settlement: &fixture.settlement,
+            challenge: &fixture.challenge,
+            verifier_authorizations: &fixture.verifier_authorizations,
+            verifier_validations: &fixture.verifier_validations,
+        };
+        authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            claim,
+            &context,
+            &policy(),
+            rewards,
+            supply,
+        )
+    }
+
     fn empty_supply() -> SynaSupplyState {
         SynaSupplyState {
             policy_version: 1,
@@ -947,6 +978,110 @@ mod tests {
             epoch_emission: 0,
             reward_state_root: SynaRewardState::default().commitment().unwrap(),
         }
+    }
+
+    #[test]
+    fn forged_node_set_root_blocks_mint() {
+        let fixture = fixture();
+        let mut checkpoint = fixture.checkpoint.clone();
+        checkpoint.node_set_root = [99; 32];
+        let mut claim = fixture.claim.clone();
+        claim.checkpoint_root = checkpoint.commitment().unwrap();
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint_with_checkpoint(
+            &fixture,
+            &claim,
+            &checkpoint,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn forged_verification_root_blocks_mint() {
+        let fixture = fixture();
+        let mut checkpoint = fixture.checkpoint.clone();
+        checkpoint.verification_root = [98; 32];
+        let mut claim = fixture.claim.clone();
+        claim.checkpoint_root = checkpoint.commitment().unwrap();
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint_with_checkpoint(
+            &fixture,
+            &claim,
+            &checkpoint,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn forged_settlement_root_blocks_mint() {
+        let fixture = fixture();
+        let mut checkpoint = fixture.checkpoint.clone();
+        checkpoint.settlement_root = [97; 32];
+        let mut claim = fixture.claim.clone();
+        claim.checkpoint_root = checkpoint.commitment().unwrap();
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint_with_checkpoint(
+            &fixture,
+            &claim,
+            &checkpoint,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn forged_inference_root_blocks_mint() {
+        let fixture = fixture();
+        let mut checkpoint = fixture.checkpoint.clone();
+        checkpoint.inference_root = [96; 32];
+        let mut claim = fixture.claim.clone();
+        claim.inference_root = checkpoint.inference_root;
+        claim.checkpoint_root = checkpoint.commitment().unwrap();
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(mint_with_checkpoint(
+            &fixture,
+            &claim,
+            &checkpoint,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn desynchronized_reward_state_root_blocks_mint() {
+        let fixture = fixture();
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        supply.reward_state_root = [95; 32];
+
+        assert!(mint(
+            &fixture,
+            &fixture.claim,
+            &fixture.stage_authorizations,
+            &fixture.verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
     }
 
     #[test]
