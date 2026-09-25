@@ -126,6 +126,17 @@ jobs:
       - name: Release-mode PQ library tests
         run: cargo test --frozen --release --lib --features reference-pq
 
+      - name: P4 protocol regression gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --frozen inference::tests
+          cargo test --frozen pi_pq::tests
+          cargo test --frozen evm_compat::tests
+          cargo test --frozen syna_emission::tests
+          cargo test --frozen syna_reward::tests
+          cargo test --frozen syna_state::tests
+
       - name: Upload M2 reproducibility evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
