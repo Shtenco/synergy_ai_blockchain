@@ -56,9 +56,7 @@ pub struct SynaSupplyState {
 
 impl SynaSupplyState {
     pub fn commitment(&self) -> Option<[u8; 32]> {
-        if self.policy_version == 0
-            || self.current_epoch == 0
-            || self.reward_state_root == [0; 32]
+        if self.policy_version == 0 || self.current_epoch == 0 || self.reward_state_root == [0; 32]
         {
             return None;
         }

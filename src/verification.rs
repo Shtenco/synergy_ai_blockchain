@@ -84,12 +84,8 @@ impl VerifierReceipt {
 
         match self.verdict {
             VerificationVerdict::Inconclusive => {
-                if self.recomputed_output_commitment != [0; 32]
-                    || self.work_commitment != [0; 32]
-                {
-                    return Err(
-                        "inconclusive receipt must not claim recomputed output or work",
-                    );
+                if self.recomputed_output_commitment != [0; 32] || self.work_commitment != [0; 32] {
+                    return Err("inconclusive receipt must not claim recomputed output or work");
                 }
             }
             VerificationVerdict::Match => {

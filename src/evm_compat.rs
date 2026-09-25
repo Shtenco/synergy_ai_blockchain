@@ -135,10 +135,7 @@ impl EvmCompatibilityProfile {
         Some(h.finalize().into())
     }
 
-    pub fn verified_commitment(
-        &self,
-        evidence: &EvmCompatibilityEvidence,
-    ) -> Option<[u8; 32]> {
+    pub fn verified_commitment(&self, evidence: &EvmCompatibilityEvidence) -> Option<[u8; 32]> {
         let profile_root = self.commitment()?;
         let evidence_root = evidence.commitment()?;
         let mut h = Sha256::new();
@@ -332,10 +329,7 @@ mod tests {
         let e1 = evidence();
         let mut e2 = e1.clone();
         e2.json_rpc_vectors_root[0] ^= 1;
-        assert_ne!(
-            p.verified_commitment(&e1),
-            p.verified_commitment(&e2)
-        );
+        assert_ne!(p.verified_commitment(&e1), p.verified_commitment(&e2));
     }
 
     #[test]
@@ -378,9 +372,7 @@ mod tests {
         let mut alternate_proof = r;
         alternate_proof.proof_root[0] ^= 1;
         assert!(alternate_proof.validate(&p).is_ok());
-        assert!(state
-            .verify_and_consume(&alternate_proof, &p, &e)
-            .is_err());
+        assert!(state.verify_and_consume(&alternate_proof, &p, &e).is_err());
     }
 
     #[test]

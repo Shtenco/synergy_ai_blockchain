@@ -16,8 +16,7 @@ pub const MAX_INFERENCE_STAGES: usize = 65_536;
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
 pub const INFERENCE_OUTCOME_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-OUTCOME/V1\0";
 pub const INFERENCE_WORK_SET_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-WORK-SET/V1\0";
-pub const INFERENCE_WORK_AGGREGATE_DOMAIN: &[u8] =
-    b"SYNERGY/INFERENCE-WORK-AGGREGATE/V1\0";
+pub const INFERENCE_WORK_AGGREGATE_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-WORK-AGGREGATE/V1\0";
 pub const INFERENCE_PLAN_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-PLAN/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -823,8 +822,7 @@ mod tests {
     #[test]
     fn canonical_plan_root_binds_every_stage_assignment() {
         let mut stages = vec![stage(0), stage(1)];
-        let root =
-            InferenceExecutionPlan::canonical_root_for_stages([1; 32], &stages).unwrap();
+        let root = InferenceExecutionPlan::canonical_root_for_stages([1; 32], &stages).unwrap();
 
         let mut changed = stages.clone();
         changed[1].worker_id[0] ^= 1;

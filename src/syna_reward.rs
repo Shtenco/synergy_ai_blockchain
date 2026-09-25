@@ -7,17 +7,16 @@ use std::collections::BTreeSet;
 
 use sha2::{Digest, Sha256};
 
-use crate::{
-    aggregate_inference_stage_receipts, aggregate_verifier_receipts, build_inference_outcome,
-    ComputeSettlement,
-    InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceReceiptAuthorization,
-    InferenceReceiptValidationContext, MvpCheckpoint, NodeSetSnapshot, SynaEmissionPolicy,
-    SynaSupplyState, VerificationChallenge, VerificationVerdict, VerifierReceiptAuthorization,
-    VerifierReceiptValidationContext,
-};
 use crate::inference::verify_inference_receipt;
 use crate::pq::ContextSignatureVerifier;
 use crate::verification::verify_verifier_receipt;
+use crate::{
+    aggregate_inference_stage_receipts, aggregate_verifier_receipts, build_inference_outcome,
+    ComputeSettlement, InferenceExecutionPlan, InferenceJob, InferenceOutcome,
+    InferenceReceiptAuthorization, InferenceReceiptValidationContext, MvpCheckpoint,
+    NodeSetSnapshot, SynaEmissionPolicy, SynaSupplyState, VerificationChallenge,
+    VerificationVerdict, VerifierReceiptAuthorization, VerifierReceiptValidationContext,
+};
 
 pub const SYNA_REWARD_DOMAIN: &[u8] = b"SYNERGY/SYNA-USEFUL-INFERENCE/V2\0";
 pub const SYNA_MINING_REPLAY_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINING-REPLAY/V1\0";
@@ -285,7 +284,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     }
 
     let mut stage_receipts = Vec::with_capacity(context.stage_authorizations.len());
-    for ((assignment, authorized), validation) in context.plan
+    for ((assignment, authorized), validation) in context
+        .plan
         .stages
         .iter()
         .zip(context.stage_authorizations.iter())
@@ -301,29 +301,20 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
             .ok_or("inference worker PQ keyset commitment unavailable")?;
         if registered.epoch != context.checkpoint.epoch
             || registered.pq_identity_commitment != authorization_keyset
-            || validation.expected_worker_keyset_commitment
-                != registered.pq_identity_commitment
+            || validation.expected_worker_keyset_commitment != registered.pq_identity_commitment
         {
             return Err("inference worker PQ identity does not match finalized registry");
         }
 
-        if !verify_inference_receipt(
-            signature_verifier,
-            assignment,
-            authorized,
-            validation,
-        ) {
+        if !verify_inference_receipt(signature_verifier, assignment, authorized, validation) {
             return Err("invalid PQ-authorized inference stage receipt");
         }
         stage_receipts.push(authorized.receipt.clone());
     }
 
-    let canonical_work = aggregate_inference_stage_receipts(
-        context.job,
-        context.plan,
-        &stage_receipts,
-    )
-    .map_err(|_| "invalid canonical inference work aggregate")?;
+    let canonical_work =
+        aggregate_inference_stage_receipts(context.job, context.plan, &stage_receipts)
+            .map_err(|_| "invalid canonical inference work aggregate")?;
     let work_root = canonical_work
         .commitment()
         .ok_or("invalid canonical inference work commitment")?;
@@ -336,7 +327,8 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     validate_verifier_diversity(claim.worker_id, context.verifier_validations)?;
 
     let mut receipts = Vec::with_capacity(context.verifier_authorizations.len());
-    for (authorized, validation) in context.verifier_authorizations
+    for (authorized, validation) in context
+        .verifier_authorizations
         .iter()
         .zip(context.verifier_validations.iter())
     {
@@ -354,8 +346,7 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
             .ok_or("verifier PQ keyset commitment unavailable")?;
         if registered.epoch != context.checkpoint.epoch
             || registered.pq_identity_commitment != authorization_keyset
-            || validation.expected_verifier_keyset_commitment
-                != registered.pq_identity_commitment
+            || validation.expected_verifier_keyset_commitment != registered.pq_identity_commitment
         {
             return Err("verifier PQ identity does not match finalized registry");
         }
@@ -379,7 +370,10 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         return Err("SYNA worker reward requires canonical MATCH verdict");
     }
 
-    let checkpoint_root = context.checkpoint.commitment().ok_or("invalid checkpoint")?;
+    let checkpoint_root = context
+        .checkpoint
+        .commitment()
+        .ok_or("invalid checkpoint")?;
     let canonical_outcome = build_inference_outcome(
         context.job,
         context.plan,
@@ -421,10 +415,12 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         return Err("SYNA reward claim binding mismatch");
     }
 
-    let funded_amount = context.settlement
+    let funded_amount = context
+        .settlement
         .total_debit()
         .ok_or("compute settlement debit overflow")?;
-    let settlement_root = context.settlement
+    let settlement_root = context
+        .settlement
         .canonical_root(context.challenge, &aggregate, funded_amount)
         .ok_or("invalid compute settlement")?;
 
@@ -554,10 +550,7 @@ mod tests {
         }
     }
 
-    fn signed_pq_authorization(
-        envelope: &AuthorizationEnvelope,
-        seed: u8,
-    ) -> HybridAuthorization {
+    fn signed_pq_authorization(envelope: &AuthorizationEnvelope, seed: u8) -> HybridAuthorization {
         let message = envelope.canonical_message(AuthPolicy::PqOnly).unwrap();
         let context = envelope.fips_signature_context(AuthPolicy::PqOnly).unwrap();
 
@@ -636,7 +629,10 @@ mod tests {
         chain_id: [u8; 32],
         epoch: u64,
         nonce: u64,
-    ) -> (InferenceReceiptAuthorization, InferenceReceiptValidationContext) {
+    ) -> (
+        InferenceReceiptAuthorization,
+        InferenceReceiptValidationContext,
+    ) {
         let envelope = AuthorizationEnvelope {
             chain_id,
             domain: AuthorizationDomain::InferenceReceipt,
@@ -674,7 +670,10 @@ mod tests {
         chain_id: [u8; 32],
         epoch: u64,
         nonce: u64,
-    ) -> (VerifierReceiptAuthorization, VerifierReceiptValidationContext) {
+    ) -> (
+        VerifierReceiptAuthorization,
+        VerifierReceiptValidationContext,
+    ) {
         let envelope = AuthorizationEnvelope {
             chain_id,
             domain: AuthorizationDomain::VerificationReceipt,
@@ -782,12 +781,9 @@ mod tests {
             elapsed_micros: 500,
         };
 
-        let work = aggregate_inference_stage_receipts(
-            &job,
-            &plan,
-            std::slice::from_ref(&raw_stage),
-        )
-        .unwrap();
+        let work =
+            aggregate_inference_stage_receipts(&job, &plan, std::slice::from_ref(&raw_stage))
+                .unwrap();
         let work_root = work.commitment().unwrap();
 
         let raw_verifiers = vec![
@@ -1027,14 +1023,10 @@ mod tests {
 
         let mut rewards = SynaRewardState::default();
         let mut supply = empty_supply();
-        assert!(mint_with_checkpoint(
-            &fixture,
-            &claim,
-            &checkpoint,
-            &mut rewards,
-            &mut supply,
-        )
-        .is_err());
+        assert!(
+            mint_with_checkpoint(&fixture, &claim, &checkpoint, &mut rewards, &mut supply,)
+                .is_err()
+        );
         assert_eq!(supply.total_supply, 0);
     }
 
@@ -1048,14 +1040,10 @@ mod tests {
 
         let mut rewards = SynaRewardState::default();
         let mut supply = empty_supply();
-        assert!(mint_with_checkpoint(
-            &fixture,
-            &claim,
-            &checkpoint,
-            &mut rewards,
-            &mut supply,
-        )
-        .is_err());
+        assert!(
+            mint_with_checkpoint(&fixture, &claim, &checkpoint, &mut rewards, &mut supply,)
+                .is_err()
+        );
         assert_eq!(supply.total_supply, 0);
     }
 
@@ -1069,14 +1057,10 @@ mod tests {
 
         let mut rewards = SynaRewardState::default();
         let mut supply = empty_supply();
-        assert!(mint_with_checkpoint(
-            &fixture,
-            &claim,
-            &checkpoint,
-            &mut rewards,
-            &mut supply,
-        )
-        .is_err());
+        assert!(
+            mint_with_checkpoint(&fixture, &claim, &checkpoint, &mut rewards, &mut supply,)
+                .is_err()
+        );
         assert_eq!(supply.total_supply, 0);
     }
 
@@ -1091,14 +1075,10 @@ mod tests {
 
         let mut rewards = SynaRewardState::default();
         let mut supply = empty_supply();
-        assert!(mint_with_checkpoint(
-            &fixture,
-            &claim,
-            &checkpoint,
-            &mut rewards,
-            &mut supply,
-        )
-        .is_err());
+        assert!(
+            mint_with_checkpoint(&fixture, &claim, &checkpoint, &mut rewards, &mut supply,)
+                .is_err()
+        );
         assert_eq!(supply.total_supply, 0);
     }
 
@@ -1389,9 +1369,7 @@ mod tests {
         )
         .is_err());
         assert_eq!(supply.total_supply, 0);
-        assert!(!rewards.is_consumed(
-            &fixture.claim.mining_replay_key().unwrap()
-        ));
+        assert!(!rewards.is_consumed(&fixture.claim.mining_replay_key().unwrap()));
     }
 
     #[test]
@@ -1528,9 +1506,7 @@ mod tests {
             expected_epoch: fixture.checkpoint.epoch,
             expected_nonce: 1,
             expected_worker_id: original_receipt.worker_id,
-            expected_worker_keyset_commitment: attacker_authorization
-                .keyset_commitment()
-                .unwrap(),
+            expected_worker_keyset_commitment: attacker_authorization.keyset_commitment().unwrap(),
             now: fixture.identity_now,
             max_future_seconds: 60,
         };

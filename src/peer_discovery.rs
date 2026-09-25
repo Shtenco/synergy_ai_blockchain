@@ -127,8 +127,7 @@ impl PeerDirectory {
         }
         match self.records.get(&r.node_id) {
             Some(old)
-                if r.epoch < old.epoch
-                    || (r.epoch == old.epoch && r.sequence <= old.sequence) =>
+                if r.epoch < old.epoch || (r.epoch == old.epoch && r.sequence <= old.sequence) =>
             {
                 return Err("node record replay or downgrade");
             }

@@ -70,14 +70,14 @@ pub use consensus::{
     verify_consensus_activation_and_consume, ConsensusActivation, ConsensusActivationAuthorization,
     ConsensusActivationValidationContext, PrecompileAddress, PrecompileGasSchedule,
 };
-pub use evm_compat::{
-    EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence,
-    EvmCompatibilityProfile, EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN,
-    EVM_COMPAT_EVIDENCE_DOMAIN, EVM_VERIFIED_PROFILE_DOMAIN,
-};
 pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
+};
+pub use evm_compat::{
+    EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile,
+    EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
+    EVM_VERIFIED_PROFILE_DOMAIN,
 };
 pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
@@ -129,11 +129,11 @@ pub use payments::{
     SettlementBatch, SettlementBatchAuthorization, SettlementBatchValidationContext,
     SettlementState,
 };
-pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use peer_discovery::{
-    NodeRecord, NodeSetSnapshot, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN,
-    NODE_SET_DOMAIN, NODE_SET_SNAPSHOT_DOMAIN,
+    NodeRecord, NodeSetSnapshot, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
+    NODE_SET_SNAPSHOT_DOMAIN,
 };
+pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
     AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState,
@@ -159,18 +159,18 @@ pub use service_planes::{
     ServicePlaneRoots, MAX_SERVICE_FINALITY_ITEMS,
 };
 pub use slashing::{SlashState, WorkerSlash, WORKER_SLASH_DOMAIN};
-pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_DOMAIN};
-pub use syna_reward::{
-    authorize_verified_inference_reward_and_mint, SynaInferenceMintContext,
-    SynaMintAuthorization, SynaRewardClaim, SynaRewardState, SYNA_MINT_AUTHORIZATION_DOMAIN,
-    SYNA_REWARD_DOMAIN, SYNA_REWARD_STATE_DOMAIN,
-};
-pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use storage::{
     verify_storage_proof_and_consume, ArchiveReceipt, DedupReceipt, DedupScope,
     ErasurePlacementReceipt, ProofOfStorageReceipt, StorageBid, StorageClass,
     StorageProofAuthorization, StorageProofValidationContext,
 };
+pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_DOMAIN};
+pub use syna_reward::{
+    authorize_verified_inference_reward_and_mint, SynaInferenceMintContext, SynaMintAuthorization,
+    SynaRewardClaim, SynaRewardState, SYNA_MINT_AUTHORIZATION_DOMAIN, SYNA_REWARD_DOMAIN,
+    SYNA_REWARD_STATE_DOMAIN,
+};
+pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use transport_record::{
     decrypt_transport_record, encrypt_transport_record, read_encrypted_transport_frame,
     write_encrypted_transport_frame, EncryptedTransportRecord,
