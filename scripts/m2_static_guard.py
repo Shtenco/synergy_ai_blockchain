@@ -551,8 +551,11 @@ require(
 )
 
 require(
-    "let expand_result = hkdf.expand(&info, &mut output);" in network
-    and "drop(hkdf);" in network,
+    "let expand_result = {" in network
+    and "let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);" in network
+    and "ikm.zeroize();" in network
+    and "hkdf.expand(&info, &mut output)" in network
+    and "drop(hkdf);" not in network,
     "HKDF state lifetime must remain one-shot and explicitly minimized",
 )
 
