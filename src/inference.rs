@@ -16,6 +16,8 @@ pub const MAX_INFERENCE_STAGES: usize = 65_536;
 const INFERENCE_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-RECEIPT/V1\0";
 pub const INFERENCE_OUTCOME_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-OUTCOME/V1\0";
 pub const INFERENCE_WORK_SET_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-WORK-SET/V1\0";
+pub const INFERENCE_WORK_AGGREGATE_DOMAIN: &[u8] =
+    b"SYNERGY/INFERENCE-WORK-AGGREGATE/V1\0";
 pub const INFERENCE_PLAN_DOMAIN: &[u8] = b"SYNERGY/INFERENCE-PLAN/V1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +358,35 @@ pub struct InferenceWorkAggregate {
     pub total_bytes_written: u128,
     pub total_elapsed_micros: u128,
     pub final_output_commitment: [u8; 32],
+}
+
+impl InferenceWorkAggregate {
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        if self.job_id == [0; 32]
+            || self.execution_plan_root == [0; 32]
+            || self.receipt_root == [0; 32]
+            || self.stage_count == 0
+            || self.total_compute_units == 0
+            || self.total_elapsed_micros == 0
+            || self.final_output_commitment == [0; 32]
+        {
+            return None;
+        }
+
+        let mut h = Sha256::new();
+        h.update(INFERENCE_WORK_AGGREGATE_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(self.job_id);
+        h.update(self.execution_plan_root);
+        h.update(self.receipt_root);
+        h.update(self.stage_count.to_be_bytes());
+        h.update(self.total_compute_units.to_be_bytes());
+        h.update(self.total_bytes_read.to_be_bytes());
+        h.update(self.total_bytes_written.to_be_bytes());
+        h.update(self.total_elapsed_micros.to_be_bytes());
+        h.update(self.final_output_commitment);
+        Some(h.finalize().into())
+    }
 }
 
 pub fn aggregate_inference_stage_receipts(
@@ -718,6 +749,56 @@ mod tests {
         ];
 
         assert!(aggregate_inference_stage_receipts(&j, &plan, &receipts).is_err());
+    }
+
+    #[test]
+    fn work_commitment_binds_metering_and_final_output() {
+        let mut j = job();
+        let stages = vec![stage(0), stage(1)];
+        let plan_root =
+            InferenceExecutionPlan::canonical_root_for_stages(j.job_id, &stages).unwrap();
+        j.execution_plan_root = plan_root;
+        let plan = InferenceExecutionPlan {
+            job_id: j.job_id,
+            plan_root,
+            stages,
+        };
+        let receipts = vec![
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 0,
+                worker_id: plan.stages[0].worker_id,
+                model_shard_commitment: plan.stages[0].model_shard_commitment,
+                input_commitment: plan.stages[0].input_commitment,
+                output_commitment: [50; 32],
+                execution_trace_commitment: [51; 32],
+                worker_signature_commitment: [52; 32],
+                compute_units: 40,
+                bytes_read: 100,
+                bytes_written: 20,
+                elapsed_micros: 10,
+            },
+            InferenceStageReceipt {
+                job_id: j.job_id,
+                stage_index: 1,
+                worker_id: plan.stages[1].worker_id,
+                model_shard_commitment: plan.stages[1].model_shard_commitment,
+                input_commitment: plan.stages[1].input_commitment,
+                output_commitment: [60; 32],
+                execution_trace_commitment: [61; 32],
+                worker_signature_commitment: [62; 32],
+                compute_units: 60,
+                bytes_read: 200,
+                bytes_written: 30,
+                elapsed_micros: 20,
+            },
+        ];
+
+        let work = aggregate_inference_stage_receipts(&j, &plan, &receipts).unwrap();
+        let root = work.commitment().unwrap();
+        let mut changed = work;
+        changed.total_compute_units += 1;
+        assert_ne!(changed.commitment().unwrap(), root);
     }
 
     #[test]
