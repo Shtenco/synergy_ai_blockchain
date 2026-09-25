@@ -1,0 +1,56 @@
+apiVersion: synergy.ai/v1alpha1
+kind: Workspace
+metadata:
+  name: synergy-core
+spec:
+  git:
+    repository: Shtenco/synergy_ai_blockchain
+    revision: main
+---
+apiVersion: synergy.ai/v1alpha1
+kind: Model
+metadata:
+  name: local-code-model
+spec:
+  provider: local
+  endpoint: llama.cpp
+  model: qwen
+---
+apiVersion: synergy.ai/v1alpha1
+kind: ToolPolicy
+metadata:
+  name: safe-dev
+spec:
+  workspaceRoot: .
+  capabilities: [read_file, write_file, list_directory, run_command, system_info]
+  allowedCommands: [git, cargo, rustc, python, python3]
+  network: pq-mesh-only
+---
+apiVersion: synergy.ai/v1alpha1
+kind: Swarm
+metadata:
+  name: rust-development-team
+spec:
+  agents:
+    - {role: architect, replicas: 1}
+    - {role: coder, replicas: 4}
+    - {role: tester, replicas: 2}
+    - {role: security-reviewer, replicas: 2}
+    - {role: final-reviewer, replicas: 1}
+  scheduler:
+    preferLocal: true
+    allowRemoteNodes: true
+    maxAgents: 10
+---
+apiVersion: synergy.ai/v1alpha1
+kind: Task
+metadata:
+  name: improve-pq-mesh
+spec:
+  swarm: rust-development-team
+  workspace: synergy-core
+  policy: safe-dev
+  goal: Audit PQ-MESH, implement fixes, prove them with tests.
+  economics:
+    usefulWorkReceipt: true
+    rewardAsset: SYNA
