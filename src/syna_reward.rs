@@ -327,6 +327,10 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         .iter()
         .zip(context.verifier_validations.iter())
     {
+        if authorized.receipt.verifier_id == claim.worker_id {
+            return Err("inference worker cannot verify its own mining result");
+        }
+
         let registered = context
             .peer_directory
             .get(&authorized.receipt.verifier_id, context.identity_now)
@@ -1214,6 +1218,53 @@ mod tests {
             &fixture.claim,
             &stage_authorizations,
             &fixture.verifier_authorizations,
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
+    fn worker_cannot_self_verify_its_own_mining_result() {
+        let fixture = fixture();
+        let mut self_receipt = fixture.verifier_authorizations[0].receipt.clone();
+        self_receipt.verifier_id = fixture.claim.worker_id;
+        let (self_authorized, self_validation) = authorize_verifier(
+            self_receipt,
+            &fixture.challenge,
+            fixture.checkpoint.chain_id,
+            fixture.checkpoint.epoch,
+            10,
+        );
+
+        let mut verifier_authorizations = fixture.verifier_authorizations.clone();
+        let mut verifier_validations = fixture.verifier_validations.clone();
+        verifier_authorizations[0] = self_authorized;
+        verifier_validations[0] = self_validation;
+
+        let context = SynaInferenceMintContext {
+            checkpoint: &fixture.checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
+            outcome: &fixture.outcome,
+            job: &fixture.job,
+            plan: &fixture.plan,
+            stage_authorizations: &fixture.stage_authorizations,
+            stage_validations: &fixture.stage_validations,
+            settlement: &fixture.settlement,
+            challenge: &fixture.challenge,
+            verifier_authorizations: &verifier_authorizations,
+            verifier_validations: &verifier_validations,
+        };
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            &fixture.claim,
+            &context,
+            &policy(),
             &mut rewards,
             &mut supply,
         )
