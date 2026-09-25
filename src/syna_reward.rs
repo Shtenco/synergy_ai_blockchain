@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    aggregate_verifier_receipts, ComputeSettlement, InferenceOutcome, MvpCheckpoint,
+    aggregate_verifier_receipts, build_inference_outcome, ComputeSettlement,
+    InferenceExecutionPlan, InferenceJob, InferenceOutcome, InferenceStageReceipt, MvpCheckpoint,
     SynaEmissionPolicy, SynaSupplyState, VerificationChallenge, VerificationVerdict,
     VerifierReceipt,
 };
@@ -129,6 +130,9 @@ pub fn authorize_verified_inference_reward_and_mint(
     claim: &SynaRewardClaim,
     checkpoint: &MvpCheckpoint,
     outcome: &InferenceOutcome,
+    job: &InferenceJob,
+    plan: &InferenceExecutionPlan,
+    stage_receipts: &[InferenceStageReceipt],
     settlement: &ComputeSettlement,
     challenge: &VerificationChallenge,
     receipts: &[VerifierReceipt],
@@ -147,7 +151,19 @@ pub fn authorize_verified_inference_reward_and_mint(
     }
 
     let checkpoint_root = checkpoint.commitment().ok_or("invalid checkpoint")?;
-    let outcome_root = outcome
+    let canonical_outcome = build_inference_outcome(
+        job,
+        plan,
+        stage_receipts,
+        aggregate.receipt_root,
+        outcome.total_cost,
+        outcome.output_tokens,
+    )
+    .map_err(|_| "invalid canonical inference work evidence")?;
+    if canonical_outcome != *outcome {
+        return Err("inference outcome does not match canonical stage receipts");
+    }
+    let outcome_root = canonical_outcome
         .commitment()
         .ok_or("invalid canonical inference outcome")?;
     if claim.checkpoint_root != checkpoint_root
@@ -158,6 +174,8 @@ pub fn authorize_verified_inference_reward_and_mint(
         || claim.inference_root != outcome_root
         || checkpoint.inference_root != outcome_root
         || claim.useful_work_units != outcome.total_compute_units
+        || job.job_id != challenge.job_id
+        || job.model_root != checkpoint.model_root
         || outcome.job_id != challenge.job_id
         || outcome.model_root != checkpoint.model_root
         || outcome.output_commitment != challenge.challenged_output_commitment
@@ -280,6 +298,9 @@ mod tests {
     fn fixture() -> (
         VerificationChallenge,
         Vec<VerifierReceipt>,
+        InferenceJob,
+        InferenceExecutionPlan,
+        Vec<InferenceStageReceipt>,
         InferenceOutcome,
         ComputeSettlement,
         MvpCheckpoint,
@@ -313,23 +334,61 @@ mod tests {
             refund_amount: 0,
         };
         let settlement_root = settlement.canonical_root(&c, &a, 100).unwrap();
-        let outcome = InferenceOutcome {
+        let job = InferenceJob {
             job_id: c.job_id,
+            requester_id: [30; 32],
             model_root: [11; 32],
-            output_commitment: c.challenged_output_commitment,
-            receipt_root: [14; 32],
-            verifier_evidence_root: a.receipt_root,
-            total_compute_units: 100,
-            total_cost: 100,
-            output_tokens: 1,
+            input_commitment: [31; 32],
+            execution_plan_root: [32; 32],
+            max_output_tokens: 16,
+            max_cost: 1_000,
+            created_at: 1,
+            deadline: 100,
         };
+        let plan = InferenceExecutionPlan {
+            job_id: job.job_id,
+            plan_root: job.execution_plan_root,
+            stages: vec![crate::InferenceStageAssignment {
+                job_id: job.job_id,
+                stage_index: 0,
+                kind: crate::InferenceStageKind::Decode,
+                worker_id: settlement.worker_id,
+                model_shard_commitment: [33; 32],
+                input_commitment: [34; 32],
+                resource_limit_commitment: [35; 32],
+                lease_expires_at: 50,
+            }],
+        };
+        let stage_receipts = vec![InferenceStageReceipt {
+            job_id: job.job_id,
+            stage_index: 0,
+            worker_id: settlement.worker_id,
+            model_shard_commitment: plan.stages[0].model_shard_commitment,
+            input_commitment: plan.stages[0].input_commitment,
+            output_commitment: c.challenged_output_commitment,
+            execution_trace_commitment: [36; 32],
+            worker_signature_commitment: [37; 32],
+            compute_units: 100,
+            bytes_read: 1_000,
+            bytes_written: 100,
+            elapsed_micros: 500,
+        }];
+        let outcome = build_inference_outcome(
+            &job,
+            &plan,
+            &stage_receipts,
+            a.receipt_root,
+            100,
+            1,
+        )
+        .unwrap();
         let inference_root = outcome.commitment().unwrap();
         let cp = MvpCheckpoint {
             chain_id: [10; 32],
             epoch: 1,
             sequence: 1,
             previous_checkpoint: [0; 32],
-            model_root: outcome.model_root,
+            model_root: job.model_root,
             network_root: [12; 32],
             provider_root: [13; 32],
             inference_root,
@@ -355,12 +414,22 @@ mod tests {
             reward_amount: 10,
             reward_policy_version: 1,
         };
-        (c, receipts, outcome, settlement, cp, claim)
+        (
+            c,
+            receipts,
+            job,
+            plan,
+            stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        )
     }
 
     #[test]
     fn verified_inference_mints_once_and_updates_supply() {
-        let (c, receipts, outcome, settlement, cp, claim) = fixture();
+        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -372,6 +441,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -387,6 +459,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -399,7 +474,7 @@ mod tests {
 
     #[test]
     fn mismatch_receipt_blocks_mint() {
-        let (c, mut receipts, outcome, settlement, cp, claim) = fixture();
+        let (c, mut receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
         receipts[1].verdict = VerificationVerdict::Mismatch;
         receipts[1].recomputed_output_commitment = [99; 32];
         let mut rewards = SynaRewardState::default();
@@ -413,6 +488,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -426,7 +504,7 @@ mod tests {
 
     #[test]
     fn inconclusive_receipt_blocks_mint() {
-        let (c, mut receipts, outcome, settlement, cp, claim) = fixture();
+        let (c, mut receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
         receipts[1].verdict = VerificationVerdict::Inconclusive;
         receipts[1].recomputed_output_commitment = [0; 32];
         let mut rewards = SynaRewardState::default();
@@ -440,6 +518,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -454,7 +535,7 @@ mod tests {
 
     #[test]
     fn changing_claim_id_cannot_double_mint_same_finalized_inference() {
-        let (c, receipts, outcome, settlement, cp, claim) = fixture();
+        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, claim) = fixture();
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
             policy_version: 1,
@@ -467,6 +548,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -482,6 +566,9 @@ mod tests {
             &replayed,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -494,8 +581,49 @@ mod tests {
     }
 
     #[test]
+    fn forged_stage_compute_units_cannot_mint() {
+        let (
+            c,
+            receipts,
+            job,
+            plan,
+            mut stage_receipts,
+            outcome,
+            settlement,
+            cp,
+            claim,
+        ) = fixture();
+        stage_receipts[0].compute_units = 10_000;
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+
+        assert!(authorize_verified_inference_reward_and_mint(
+            &claim,
+            &cp,
+            &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
+            &settlement,
+            &c,
+            &receipts,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
     fn caller_cannot_inflate_useful_work_units() {
-        let (c, receipts, outcome, settlement, cp, mut claim) = fixture();
+        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, mut claim) = fixture();
         claim.useful_work_units += 10_000;
         claim.reward_amount = 100;
 
@@ -511,6 +639,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
@@ -524,7 +655,7 @@ mod tests {
 
     #[test]
     fn model_cannot_self_choose_reward_amount() {
-        let (c, receipts, outcome, settlement, cp, mut claim) = fixture();
+        let (c, receipts, job, plan, stage_receipts, outcome, settlement, cp, mut claim) = fixture();
         claim.reward_amount = 99;
         let mut rewards = SynaRewardState::default();
         let mut supply = SynaSupplyState {
@@ -537,6 +668,9 @@ mod tests {
             &claim,
             &cp,
             &outcome,
+            &job,
+            &plan,
+            &stage_receipts,
             &settlement,
             &c,
             &receipts,
