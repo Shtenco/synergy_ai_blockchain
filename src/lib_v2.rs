@@ -9,6 +9,7 @@ pub mod cognitive_registry;
 pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
+pub mod evm_compat;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -21,6 +22,7 @@ pub mod nexus;
 pub mod payment_funding;
 pub mod payments;
 pub mod peer_discovery;
+pub mod pi_pq;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
@@ -29,6 +31,9 @@ pub mod scheduling;
 pub mod service_planes;
 pub mod slashing;
 pub mod storage;
+pub mod syna_emission;
+pub mod syna_reward;
+pub mod syna_state;
 pub mod transport_record;
 pub mod transport_wire;
 pub mod tx;
@@ -69,14 +74,21 @@ pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
 };
+pub use evm_compat::{
+    EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile,
+    EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
+    EVM_VERIFIED_PROFILE_DOMAIN,
+};
 pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
     GovernanceValidationContext,
 };
 pub use inference::{
+    aggregate_inference_stage_receipts, build_inference_outcome,
     verify_inference_receipt_and_consume, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
-    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt,
+    InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, InferenceWorkAggregate,
+    INFERENCE_OUTCOME_DOMAIN, INFERENCE_PLAN_DOMAIN, INFERENCE_WORK_SET_DOMAIN,
 };
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
@@ -118,8 +130,10 @@ pub use payments::{
     SettlementState,
 };
 pub use peer_discovery::{
-    NodeRecord, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
+    NodeRecord, NodeSetSnapshot, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
+    NODE_SET_SNAPSHOT_DOMAIN,
 };
+pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
     AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState,
@@ -150,6 +164,13 @@ pub use storage::{
     ErasurePlacementReceipt, ProofOfStorageReceipt, StorageBid, StorageClass,
     StorageProofAuthorization, StorageProofValidationContext,
 };
+pub use syna_emission::{SynaEmissionPolicy, SynaSupplyState, SYNA_SUPPLY_STATE_DOMAIN};
+pub use syna_reward::{
+    authorize_verified_inference_reward_and_mint, SynaInferenceMintContext, SynaMintAuthorization,
+    SynaRewardClaim, SynaRewardState, SYNA_MINT_AUTHORIZATION_DOMAIN, SYNA_REWARD_DOMAIN,
+    SYNA_REWARD_STATE_DOMAIN,
+};
+pub use syna_state::{build_syna_mint_transition, SynaMintTransition, SYNA_MINT_TRANSITION_DOMAIN};
 pub use transport_record::{
     decrypt_transport_record, encrypt_transport_record, read_encrypted_transport_frame,
     write_encrypted_transport_frame, EncryptedTransportRecord,

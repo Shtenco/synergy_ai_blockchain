@@ -14,6 +14,11 @@ fn receipt(
         challenge_id,
         verifier_id: [verifier; 32],
         recomputed_output_commitment: recomputed,
+        work_commitment: if verdict == VerificationVerdict::Inconclusive {
+            [0; 32]
+        } else {
+            [9; 32]
+        },
         trace_commitment: [40 + verifier; 32],
         signature_commitment: [60 + verifier; 32],
         verdict,

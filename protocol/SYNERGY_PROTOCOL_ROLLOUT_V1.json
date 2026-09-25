@@ -1,0 +1,50 @@
+{
+  "profile": "SYNERGY-PROTOCOL-ROLLOUT/V1",
+  "canonical_repository": "Shtenco/synergy_ai_blockchain",
+  "canonical_pr": 24,
+  "canonical_ref": "feat/protocol-convergence-pi-pq-evm-syna-v1-20260925",
+  "status": "STAGED_WAITING_FOR_PHYSICAL_GREEN",
+  "adapters": [
+    {
+      "repository": "Shtenco/synergynet",
+      "pr": 20,
+      "role": "transport_discovery"
+    },
+    {
+      "repository": "Shtenco/synergy_agi_olga",
+      "pr": 28,
+      "role": "inference_worker"
+    },
+    {
+      "repository": "Shtenco/synergy_gllm_nexus",
+      "pr": 5,
+      "role": "model_research"
+    },
+    {
+      "repository": "Shtenco/synergy_pay_system",
+      "pr": 22,
+      "role": "settlement_adapter"
+    },
+    {
+      "repository": "Shtenco/synergy_ai_financial_system",
+      "pr": 24,
+      "role": "legacy_syna_economics_adapter"
+    },
+    {
+      "repository": "Shtenco/synergy_2chain_qe",
+      "pr": 2,
+      "role": "evm_l2_economic_lab"
+    },
+    {
+      "repository": "Shtenco/synergychain",
+      "pr": 23,
+      "role": "application_node_surface"
+    },
+    {
+      "repository": "Shtenco/synergy_system",
+      "pr": 51,
+      "role": "architecture_federation"
+    }
+  ],
+  "activation_rule": "PIN_FINAL_CANONICAL_MERGE_SHA_AFTER_PHYSICAL_GREEN_ONLY"
+}

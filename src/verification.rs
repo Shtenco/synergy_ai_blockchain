@@ -58,6 +58,9 @@ pub struct VerifierReceipt {
     /// Zero is allowed only for an inconclusive verifier that could not complete
     /// deterministic recomputation before the challenge deadline.
     pub recomputed_output_commitment: [u8; 32],
+    /// Deterministic useful-work aggregate recomputed by this verifier.
+    /// Zero is allowed only for an inconclusive verdict.
+    pub work_commitment: [u8; 32],
     pub trace_commitment: [u8; 32],
     pub signature_commitment: [u8; 32],
     pub verdict: VerificationVerdict,
@@ -81,22 +84,24 @@ impl VerifierReceipt {
 
         match self.verdict {
             VerificationVerdict::Inconclusive => {
-                if self.recomputed_output_commitment != [0; 32] {
-                    return Err("inconclusive receipt must not claim a recomputed output");
+                if self.recomputed_output_commitment != [0; 32] || self.work_commitment != [0; 32] {
+                    return Err("inconclusive receipt must not claim recomputed output or work");
                 }
             }
             VerificationVerdict::Match => {
                 if self.recomputed_output_commitment == [0; 32]
                     || self.recomputed_output_commitment != challenge.challenged_output_commitment
+                    || self.work_commitment == [0; 32]
                 {
-                    return Err("match verdict/output commitment inconsistency");
+                    return Err("match verdict/output/work commitment inconsistency");
                 }
             }
             VerificationVerdict::Mismatch => {
                 if self.recomputed_output_commitment == [0; 32]
                     || self.recomputed_output_commitment == challenge.challenged_output_commitment
+                    || self.work_commitment == [0; 32]
                 {
-                    return Err("mismatch verdict/output commitment inconsistency");
+                    return Err("mismatch verdict/output/work commitment inconsistency");
                 }
             }
         }
@@ -114,6 +119,7 @@ impl VerifierReceipt {
         hasher.update(self.challenge_id);
         hasher.update(self.verifier_id);
         hasher.update(self.recomputed_output_commitment);
+        hasher.update(self.work_commitment);
         hasher.update(self.trace_commitment);
         hasher.update(self.signature_commitment);
         hasher.update([match self.verdict {
@@ -230,10 +236,8 @@ fn canonical_receipt_set(
     for receipt in receipts {
         receipt.validate_against(challenge)?;
 
-        if let Some(previous) = previous_verifier {
-            if receipt.verifier_id <= previous {
-                return Err("verifier receipts must be strictly ordered and unique");
-            }
+        if previous_verifier.is_some_and(|previous| receipt.verifier_id <= previous) {
+            return Err("verifier receipts must be strictly ordered and unique");
         }
         previous_verifier = Some(receipt.verifier_id);
 
@@ -254,6 +258,7 @@ fn canonical_receipt_set(
         hasher.update(receipt.challenge_id);
         hasher.update(receipt.verifier_id);
         hasher.update(receipt.recomputed_output_commitment);
+        hasher.update(receipt.work_commitment);
         hasher.update(receipt.trace_commitment);
         hasher.update(receipt.signature_commitment);
         hasher.update([match receipt.verdict {
@@ -428,6 +433,11 @@ mod tests {
             challenge_id: [1; 32],
             verifier_id: [verifier; 32],
             recomputed_output_commitment: recomputed,
+            work_commitment: if verdict == VerificationVerdict::Inconclusive {
+                [0; 32]
+            } else {
+                [9; 32]
+            },
             trace_commitment: [6 + verifier; 32],
             signature_commitment: [20 + verifier; 32],
             verdict,
@@ -442,6 +452,7 @@ mod tests {
             challenge_id: c.challenge_id,
             verifier_id: [5; 32],
             recomputed_output_commitment: [9; 32],
+            work_commitment: [9; 32],
             trace_commitment: [6; 32],
             signature_commitment: [7; 32],
             verdict: VerificationVerdict::Match,
@@ -457,6 +468,7 @@ mod tests {
             challenge_id: c.challenge_id,
             verifier_id: [5; 32],
             recomputed_output_commitment: [9; 32],
+            work_commitment: [9; 32],
             trace_commitment: [6; 32],
             signature_commitment: [7; 32],
             verdict: VerificationVerdict::Inconclusive,
@@ -472,6 +484,7 @@ mod tests {
             challenge_id: c.challenge_id,
             verifier_id: [5; 32],
             recomputed_output_commitment: [0; 32],
+            work_commitment: [0; 32],
             trace_commitment: [6; 32],
             signature_commitment: [7; 32],
             verdict: VerificationVerdict::Inconclusive,

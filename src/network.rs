@@ -724,9 +724,6 @@ fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<Transport
         None => ikm.push(0),
     }
 
-    let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
-    ikm.zeroize();
-
     let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 2 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
@@ -739,7 +736,11 @@ fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<Transport
     info.extend_from_slice(secret.transcript_hash());
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
-    let expand_result = hkdf.expand(&info, &mut output);
+    let expand_result = {
+        let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
+        ikm.zeroize();
+        hkdf.expand(&info, &mut output)
+    };
     if expand_result.is_err() {
         info.zeroize();
         output.zeroize();
@@ -770,9 +771,6 @@ fn derive_transport_direction_key(
         None => ikm.push(0),
     }
 
-    let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
-    ikm.zeroize();
-
     let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 4 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
@@ -786,7 +784,11 @@ fn derive_transport_direction_key(
     info.extend_from_slice(secret.transcript_hash());
 
     let mut output = [0u8; TRANSPORT_SESSION_KEY_BYTES];
-    let expand_result = hkdf.expand(&info, &mut output);
+    let expand_result = {
+        let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);
+        ikm.zeroize();
+        hkdf.expand(&info, &mut output)
+    };
 
     if expand_result.is_err() {
         info.zeroize();

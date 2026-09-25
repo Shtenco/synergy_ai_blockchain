@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -9,6 +10,7 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(f"M2 static guard failed: {message}")
 
 cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+cargo_toml = tomllib.loads(cargo)
 pq = (ROOT / "src/pq.rs").read_text(encoding="utf-8")
 lib_v2 = (ROOT / "src/lib_v2.rs").read_text(encoding="utf-8")
 pq_sol = (ROOT / "contracts/IPQVerifier.sol").read_text(encoding="utf-8")
@@ -67,10 +69,12 @@ require(
     "pub(crate) fn verify_envelope_authorization" in pq,
     "envelope-bound verifier must remain crate-internal",
 )
-require(
-    '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
-    "no-context authorization helper must exist only in test builds",
-)
+no_context_helper = "pub(crate) fn verify_authorization<" in pq
+if no_context_helper:
+    require(
+        '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
+        "no-context authorization helper may exist only in test builds",
+    )
 require(
     "pub(crate) fn verify_authorization_with_context<" in pq,
     "raw context verifier must remain crate-internal",
@@ -424,10 +428,14 @@ require(
 
 require(
     "unexpected features enabled for" in lock_policy
+    and "required_features = {" in lock_policy
+    and "allowed_features = {" in lock_policy
     and '("ml-kem", "0.3.2"): {"getrandom", "zeroize"}' in lock_policy
-    and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "zeroize"}' in lock_policy
+    and '("ml-dsa", "0.1.1"): {"alloc", "getrandom", "rand_core", "zeroize"}' in lock_policy
     and '("slh-dsa", "0.1.0"): {"alloc"}' in lock_policy
-    and '("rand", "0.8.5"): {"getrandom"}' in lock_policy,
+    and '("hkdf", "0.12.4"): set()' in lock_policy
+    and '"rand_chacha"' in lock_policy
+    and '"std_rng"' in lock_policy,
     "critical crypto feature allowlist missing",
 )
 
@@ -545,8 +553,11 @@ require(
 )
 
 require(
-    "let expand_result = hkdf.expand(&info, &mut output);" in network
-    and "drop(hkdf);" in network,
+    "let expand_result = {" in network
+    and "let hkdf = Hkdf::<Sha256>::new(Some(secret.transcript_hash()), &ikm);" in network
+    and "ikm.zeroize();" in network
+    and "hkdf.expand(&info, &mut output)" in network
+    and "drop(hkdf);" not in network,
     "HKDF state lifetime must remain one-shot and explicitly minimized",
 )
 
@@ -925,9 +936,18 @@ require(
 )
 
 
+deps = cargo_toml.get("dependencies", {})
+slh_cfg = deps.get("slh-dsa", {})
+rand_cfg = deps.get("rand", {})
 require(
-    'slh-dsa = { version = "=0.1.0", optional = true, default-features = false, features = ["alloc"] }' in cargo
-    and 'rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom"] }' in cargo,
+    slh_cfg.get("version") == "=0.1.0"
+    and slh_cfg.get("optional") is True
+    and slh_cfg.get("default-features") is False
+    and slh_cfg.get("features") == ["alloc"]
+    and rand_cfg.get("version") == "=0.8.5"
+    and rand_cfg.get("optional") is True
+    and rand_cfg.get("default-features") is False
+    and rand_cfg.get("features") == ["getrandom", "std", "std_rng"],
     "SLH-DSA/rand feature surface must remain explicit and minimal",
 )
 
@@ -1277,7 +1297,7 @@ require(
 
 
 require(
-    "pub fn finalize_once(" in autopilot_execution_lease
+    "pub(crate) fn finalize_once(" in autopilot_execution_lease
     and "execution lease already terminal" in autopilot_execution_lease
     and "terminal receipt lease mismatch" in autopilot_execution_lease
     and "AUTOPILOT_LEASE_TERMINAL_DOMAIN" in autopilot_execution_lease
@@ -1307,7 +1327,7 @@ require(
     and "_hasNonZeroByte(slhDsaPublicKey_)" in smart_account_sol
     and "mlDsaSignature.length != 4627" in smart_account_sol
     and "slhDsaSignature.length != 29792" in smart_account_sol
-    and "block.timestamp >= validUntil" in smart_account_sol
+    and "block.timestamp >= uint256(validUntil)" in smart_account_sol
     and "uint256(validUntil) - block.timestamp > MAX_AUTHORIZATION_LIFETIME_SECONDS" in smart_account_sol
     and "PQVerify.mlDsa87" in smart_account_sol
     and "PQVerify.slhDsa256s" in smart_account_sol,
@@ -1376,7 +1396,7 @@ require(
 require(
     "pub fn commitment(&self) -> Option<[u8; 32]>" in network
     and 'SYNERGY/TRANSPORT-REPLAY-STATE/V1\\0' in network
-    and "for session_id in &self.consumed" in network
+    and "for (session_id, transcript_hash) in &self.consumed" in network
     and "network_id == [0u8; 32] || epoch == 0" in network,
     "transport replay state must remain persistently commit-able and reject zero epoch",
 )
@@ -1415,7 +1435,7 @@ require(
 require(
     "TRANSPORT_RECORD_NONCE_BYTES: usize = 12" in network
     and "pub struct TransportRecordSequence" in network
-    and "if self.next_sequence >= self.max_messages" in network
+    and "self.next_sequence >= self.max_messages" in network
     and "self.next_sequence.checked_add(1)?" in network
     and "nonce[1] = self.direction.protocol_code()" in network,
     "transport record nonce sequence must remain directional, bounded and non-wrapping",
@@ -1470,7 +1490,7 @@ require(
 require(
     "pub struct ServiceFinalityBatch" in service_planes
     and "MAX_SERVICE_FINALITY_ITEMS: usize = 65_536" in service_planes
-    and "duplicate service finality item" in service_planes
+    and "conflicting service finality subject" in service_planes
     and "ordered.sort_by_key" in service_planes
     and "service finality root mismatch" in service_planes
     and "pub(crate) fn verify_service_plane_checkpoint_and_consume" in service_planes
@@ -1540,7 +1560,8 @@ require(
 
 require(
     "pub fn validate(&self) -> Result<(), &'static str>" in scheduling
-    and "nodes[..index].iter().any(|prior| prior.node_id == node.node_id)" in scheduling
+    and "nodes[..index]" in scheduling
+    and ".any(|prior| prior.node_id == node.node_id)" in scheduling
     and ".min_by_key(|(score, node)| (*score, node.node_id))" in scheduling,
     "scheduler must reject duplicate identities and remain permutation-invariant",
 )
@@ -1610,7 +1631,8 @@ require(
 
 require(
     "current_epoch: u64" in storage
-    and "archive.expires_at_epoch.checked_sub(current_epoch)" in storage
+    and ".expires_at_epoch" in storage
+    and ".checked_sub(current_epoch)" in storage
     and "storage bid term exceeds archive lifetime" in storage
     and "storage bid starts after archive expiry" in storage,
     "storage provider bids must remain bounded by archive lifetime",
