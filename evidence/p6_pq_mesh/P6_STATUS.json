@@ -42,9 +42,12 @@
     "default_adversarial": "1/1 PASS"
   },
   "reference_pq": {
-    "previous_p6_head": "1657f37ba6b5cec42d0692e1a6d81e83a73c29af",
-    "previous_result": "348/348 PASS + adversarial 1/1 + ACVP/Wycheproof/FIPS205 5/5",
-    "current_head_final_rerun": "PENDING_RUNNER_RESPONSE"
+    "final_head": "698c6105d1484251546f4828c06227248de6b83e",
+    "full_regression": "349/349 PASS",
+    "adversarial": "1/1 PASS",
+    "acvp_wycheproof_fips205": "5/5 PASS",
+    "process_exit_code": 0,
+    "runner": "DESKTOP-C8GUE41"
   },
   "scope_limitations": [
     "Local three-node TCP smoke currently uses one physical host.",
@@ -52,5 +55,6 @@
     "The host tunnel layer is a protocol/device abstraction; production Windows Wintun/Linux TUN adapters are not yet packaged in this commit.",
     "Traffic remains post-quantum protected only while inside the SYNERGY mesh. Ordinary Internet traffic after an exit node depends on the destination protocol."
   ],
-  "security_claim": "No absolute unhackability claim. The design is fail-closed and aims for confidentiality, integrity, authentication, replay resistance and post-quantum key establishment under the implemented cryptographic assumptions."
+  "security_claim": "No absolute unhackability claim. The design is fail-closed and aims for confidentiality, integrity, authentication, replay resistance and post-quantum key establishment under the implemented cryptographic assumptions.",
+  "status": "GREEN_WITH_SCOPE_LIMITATIONS"
 }
