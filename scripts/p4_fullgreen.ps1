@@ -13,6 +13,7 @@ function Run-Gate {
   Write-Host ""
   Write-Host "===== P4 GATE: $Name ====="
   $Log = Join-Path $Logs "$Name.log"
+  New-Item -ItemType File -Force -Path $Log | Out-Null
   $PreviousErrorActionPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   & $Exe @CommandArgs 2>&1 | Tee-Object -FilePath $Log
