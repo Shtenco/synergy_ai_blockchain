@@ -339,30 +339,34 @@ mod tests {
             refund_amount: 0,
         };
         let settlement_root = settlement.canonical_root(&c, &a, 100).unwrap();
-        let job = InferenceJob {
+        let mut job = InferenceJob {
             job_id: c.job_id,
             requester_id: [30; 32],
             model_root: [11; 32],
             input_commitment: [31; 32],
-            execution_plan_root: [32; 32],
+            execution_plan_root: [1; 32],
             max_output_tokens: 16,
             max_cost: 1_000,
             created_at: 1,
             deadline: 100,
         };
+        let stages = vec![crate::InferenceStageAssignment {
+            job_id: job.job_id,
+            stage_index: 0,
+            kind: crate::InferenceStageKind::Decode,
+            worker_id: settlement.worker_id,
+            model_shard_commitment: [33; 32],
+            input_commitment: [34; 32],
+            resource_limit_commitment: [35; 32],
+            lease_expires_at: 50,
+        }];
+        let plan_root =
+            InferenceExecutionPlan::canonical_root_for_stages(job.job_id, &stages).unwrap();
+        job.execution_plan_root = plan_root;
         let plan = InferenceExecutionPlan {
             job_id: job.job_id,
-            plan_root: job.execution_plan_root,
-            stages: vec![crate::InferenceStageAssignment {
-                job_id: job.job_id,
-                stage_index: 0,
-                kind: crate::InferenceStageKind::Decode,
-                worker_id: settlement.worker_id,
-                model_shard_commitment: [33; 32],
-                input_commitment: [34; 32],
-                resource_limit_commitment: [35; 32],
-                lease_expires_at: 50,
-            }],
+            plan_root,
+            stages,
         };
         let stage_receipts = vec![InferenceStageReceipt {
             job_id: job.job_id,
