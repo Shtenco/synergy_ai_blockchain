@@ -1,0 +1,29 @@
+{
+  "profile": "SYNERGY-EVM-NETWORK-POLICY/V1",
+  "network": "Base Mainnet",
+  "chain_id": 8453,
+  "class": "OptimisticRollup",
+  "settlement_chain_id": 1,
+  "bridge_mode": "PROOF_REQUIRED",
+  "trusted_relayer_v1": "TRANSITIONAL_ONLY",
+  "trusted_rpc_is_finality": false,
+  "pq_authorization_additive": true,
+  "legacy_downgrade_for_pq_only": false,
+  "historical_adapter": {
+    "branch": "feat/sinergy-l1-base-qe-v1-20260904",
+    "relayer": "relayer/base_sinergy_relayer.py",
+    "messenger": "contracts/bridge/TrustedRelayerCrossDomainMessenger.sol"
+  },
+  "deployment_status": "EVIDENCE_PENDING",
+  "required_evidence": [
+    "transaction_vectors_root",
+    "receipts_logs_vectors_root",
+    "gas_vectors_root",
+    "json_rpc_vectors_root",
+    "abi_vectors_root",
+    "precompile_registry_root",
+    "client_matrix_root",
+    "bridge_contract",
+    "base_finality_or_output_proof_vectors"
+  ]
+}
