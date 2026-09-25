@@ -119,7 +119,6 @@ pub use mesh_transport::{
     encrypt_mesh_end_to_end, encrypt_mesh_hop, read_mesh_hop_frame, write_mesh_hop_frame,
     EncryptedMeshHop, MeshHopHeader, MAX_MESH_HOP_FRAME_BYTES, MESH_HOP_FRAME_MAGIC,
 };
-pub use mesh_transport::{EncryptedMeshHop, MeshHopHeader};
 pub use mesh_tunnel::{
     classify_tunnel_packet, MemoryTunnelDevice, MeshTunnelDevice, MeshTunnelPolicy,
     MeshTunnelRouting, TunnelIpAddress, TunnelIpPacket, TunnelRouteTarget,
