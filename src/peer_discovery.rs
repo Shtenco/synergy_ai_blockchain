@@ -12,6 +12,7 @@ pub struct NodeRecord {
     pub node_id: [u8; 32],
     pub endpoint_root: [u8; 32],
     pub transport_keyset_root: [u8; 32],
+    pub pq_identity_commitment: [u8; 32],
     pub capability_root: [u8; 32],
     pub epoch: u64,
     pub sequence: u64,
@@ -23,6 +24,7 @@ impl NodeRecord {
         if self.node_id == [0; 32]
             || self.endpoint_root == [0; 32]
             || self.transport_keyset_root == [0; 32]
+            || self.pq_identity_commitment == [0; 32]
             || self.capability_root == [0; 32]
         {
             return Err("node record commitments required");
@@ -40,6 +42,7 @@ impl NodeRecord {
         h.update(self.node_id);
         h.update(self.endpoint_root);
         h.update(self.transport_keyset_root);
+        h.update(self.pq_identity_commitment);
         h.update(self.capability_root);
         h.update(self.epoch.to_be_bytes());
         h.update(self.sequence.to_be_bytes());
@@ -100,12 +103,27 @@ mod tests {
             node_id: [1; 32],
             endpoint_root: [2; 32],
             transport_keyset_root: [3; 32],
-            capability_root: [4; 32],
+            pq_identity_commitment: [4; 32],
+            capability_root: [5; 32],
             epoch: 1,
             sequence: seq,
             expires_at: 100,
         }
     }
+    #[test]
+    fn node_commitment_binds_pq_signing_identity_separately_from_transport() {
+        let record = r(1);
+        let root = record.commitment().unwrap();
+
+        let mut changed = record.clone();
+        changed.pq_identity_commitment[0] ^= 1;
+        assert_ne!(changed.commitment().unwrap(), root);
+
+        let mut changed_transport = record;
+        changed_transport.transport_keyset_root[0] ^= 1;
+        assert_ne!(changed_transport.commitment().unwrap(), root);
+    }
+
     #[test]
     fn rejects_replay() {
         let mut d = PeerDirectory::default();
