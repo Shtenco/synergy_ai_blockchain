@@ -3,8 +3,7 @@ use sha2::{Digest, Sha256};
 use super::actions::{CbPolicy, TraderAction};
 use super::constants::{SOURCE_COMMIT, SYNERGY_CHAIN_ID};
 
-pub const AGENTIC_ECONOMY_RECEIPT_DOMAIN: &[u8] =
-    b"SYNERGY/AGENTIC-ECONOMY-TRANSITION/V1\0";
+pub const AGENTIC_ECONOMY_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/AGENTIC-ECONOMY-TRANSITION/V1\0";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EconomyAccountingSnapshot {
@@ -217,7 +216,10 @@ mod tests {
             chain_id: SYNERGY_CHAIN_ID,
             sequence,
             source_block: block,
-            decision: EconomyDecision::Trader { actor: 2, action: 22 },
+            decision: EconomyDecision::Trader {
+                actor: 2,
+                action: 22,
+            },
             model_checkpoint_root: [7; 32],
             observation_root: [8; 32],
             pre_state_root: [pre; 32],
@@ -255,7 +257,10 @@ mod tests {
     #[test]
     fn cb_and_trader_action_spaces_are_enforced() {
         let mut r = receipt(1, 100, 1, 2);
-        r.decision = EconomyDecision::Trader { actor: 6, action: 1 };
+        r.decision = EconomyDecision::Trader {
+            actor: 6,
+            action: 1,
+        };
         assert!(r.validate_static().is_err());
         r.decision = EconomyDecision::CentralBank { action: 90 };
         assert!(r.validate_static().is_err());
