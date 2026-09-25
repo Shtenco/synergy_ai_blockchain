@@ -15,9 +15,9 @@ pub mod evm_compat;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
-pub mod migration;
 pub mod mesh_node;
 pub mod mesh_overlay;
+pub mod migration;
 pub mod model_shard;
 pub mod mvp;
 pub mod mvp_finalization;
@@ -105,8 +105,8 @@ pub use kv_cache::{
 };
 pub use mesh_node::{MeshNode, MeshNodeCapabilities, MeshService, MAX_MESH_SERVICES};
 pub use mesh_overlay::{
-    mesh_flow_root, mesh_hop_application_root, MeshAddress, MeshPacket, MeshReplayState,
-    MeshRoute, MeshRoutingTable, MAX_MESH_HOPS, MAX_MESH_PACKET_BYTES, MAX_MESH_ROUTES,
+    mesh_flow_root, mesh_hop_application_root, MeshAddress, MeshPacket, MeshReplayState, MeshRoute,
+    MeshRoutingTable, MAX_MESH_HOPS, MAX_MESH_PACKET_BYTES, MAX_MESH_ROUTES,
 };
 pub use migration::{
     verify_binding_and_consume, LegacyChain, LegacyIdentityBinding, LegacyProofVerifier,

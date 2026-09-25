@@ -116,12 +116,14 @@ impl MeshRoutingTable {
         for source in &addresses {
             for destination in &addresses {
                 if source != destination {
-                    table.insert(MeshRoute {
-                        source: *source,
-                        destination: *destination,
-                        hops: vec![*source, *destination],
-                        epoch: snapshot.epoch,
-                    }).ok()?;
+                    table
+                        .insert(MeshRoute {
+                            source: *source,
+                            destination: *destination,
+                            hops: vec![*source, *destination],
+                            epoch: snapshot.epoch,
+                        })
+                        .ok()?;
                 }
             }
         }
@@ -177,7 +179,10 @@ impl MeshPacket {
         route.validate()?;
         if self.source != route.source
             || self.destination != route.destination
-            || self.route_root != route.commitment().ok_or("mesh route commitment unavailable")?
+            || self.route_root
+                != route
+                    .commitment()
+                    .ok_or("mesh route commitment unavailable")?
         {
             return Err("mesh packet route mismatch");
         }
@@ -295,7 +300,9 @@ mod tests {
     use super::*;
     use crate::peer_discovery::{NodeRecord, NodeSetSnapshot};
 
-    fn addr(v: u8) -> MeshAddress { MeshAddress([v; 32]) }
+    fn addr(v: u8) -> MeshAddress {
+        MeshAddress([v; 32])
+    }
 
     fn route() -> MeshRoute {
         MeshRoute {
@@ -320,7 +327,8 @@ mod tests {
     #[test]
     fn packet_forwarding_preserves_end_to_end_ciphertext() {
         let r = route();
-        let p = MeshPacket::new(&r, [5;32], 1, [6;32], b"opaque-e2e-ciphertext".to_vec()).unwrap();
+        let p =
+            MeshPacket::new(&r, [5; 32], 1, [6; 32], b"opaque-e2e-ciphertext".to_vec()).unwrap();
         let root = p.payload_root;
         let p = p.forward(&r, addr(1)).unwrap();
         let p = p.forward(&r, addr(2)).unwrap();
@@ -332,11 +340,11 @@ mod tests {
     #[test]
     fn route_or_payload_tamper_is_rejected() {
         let r = route();
-        let mut p = MeshPacket::new(&r, [5;32], 1, [6;32], vec![7;32]).unwrap();
+        let mut p = MeshPacket::new(&r, [5; 32], 1, [6; 32], vec![7; 32]).unwrap();
         p.opaque_payload[0] ^= 1;
         assert!(p.validate_against_route(&r).is_err());
 
-        let mut p = MeshPacket::new(&r, [5;32], 1, [6;32], vec![7;32]).unwrap();
+        let mut p = MeshPacket::new(&r, [5; 32], 1, [6; 32], vec![7; 32]).unwrap();
         p.route_root[0] ^= 1;
         assert!(p.validate_against_route(&r).is_err());
     }
@@ -345,8 +353,8 @@ mod tests {
     fn replay_state_requires_exact_monotonic_flow_sequence() {
         let r = route();
         let mut s = MeshReplayState::default();
-        let p1 = MeshPacket::new(&r, [5;32], 1, [6;32], vec![1]).unwrap();
-        let p2 = MeshPacket::new(&r, [5;32], 2, [6;32], vec![2]).unwrap();
+        let p1 = MeshPacket::new(&r, [5; 32], 1, [6; 32], vec![1]).unwrap();
+        let p2 = MeshPacket::new(&r, [5; 32], 2, [6; 32], vec![2]).unwrap();
         assert!(s.consume(&p1, &r).is_ok());
         assert!(s.consume(&p1, &r).is_err());
         assert!(s.consume(&p2, &r).is_ok());
@@ -354,34 +362,42 @@ mod tests {
 
     #[test]
     fn snapshot_builds_direct_symmetric_routes() {
-        let records: Vec<NodeRecord> = (1u8..=3).map(|v| NodeRecord {
-            node_id:[v;32], endpoint_root:[v+10;32], transport_keyset_root:[v+20;32],
-            pq_identity_commitment:[v+30;32], capability_root:[v+40;32],
-            epoch:7, sequence:1, expires_at:100,
-        }).collect();
-        let snapshot = NodeSetSnapshot { epoch:7, records };
+        let records: Vec<NodeRecord> = (1u8..=3)
+            .map(|v| NodeRecord {
+                node_id: [v; 32],
+                endpoint_root: [v + 10; 32],
+                transport_keyset_root: [v + 20; 32],
+                pq_identity_commitment: [v + 30; 32],
+                capability_root: [v + 40; 32],
+                epoch: 7,
+                sequence: 1,
+                expires_at: 100,
+            })
+            .collect();
+        let snapshot = NodeSetSnapshot { epoch: 7, records };
         let table = MeshRoutingTable::direct_routes_from_snapshot(&snapshot).unwrap();
-        let a = MeshAddress::from_pq_identity([1;32],[31;32]).unwrap();
-        let b = MeshAddress::from_pq_identity([2;32],[32;32]).unwrap();
-        assert_eq!(table.route(a,b).unwrap().hops, vec![a,b]);
-        assert!(table.route(b,a).is_some());
+        let a = MeshAddress::from_pq_identity([1; 32], [31; 32]).unwrap();
+        let b = MeshAddress::from_pq_identity([2; 32], [32; 32]).unwrap();
+        assert_eq!(table.route(a, b).unwrap().hops, vec![a, b]);
+        assert!(table.route(b, a).is_some());
     }
 
     #[test]
     fn hop_application_root_binds_exact_forwarding_edge() {
-        let r=route();
-        let p=MeshPacket::new(&r,[5;32],1,[6;32],vec![7;8]).unwrap();
-        let a=mesh_hop_application_root(&p,&r,addr(1),addr(2)).unwrap();
-        assert!(mesh_hop_application_root(&p,&r,addr(1),addr(3)).is_none());
-        let mut p2=p.clone(); p2.sequence=2;
-        let b=mesh_hop_application_root(&p2,&r,addr(1),addr(2)).unwrap();
-        assert_ne!(a,b);
+        let r = route();
+        let p = MeshPacket::new(&r, [5; 32], 1, [6; 32], vec![7; 8]).unwrap();
+        let a = mesh_hop_application_root(&p, &r, addr(1), addr(2)).unwrap();
+        assert!(mesh_hop_application_root(&p, &r, addr(1), addr(3)).is_none());
+        let mut p2 = p.clone();
+        p2.sequence = 2;
+        let b = mesh_hop_application_root(&p2, &r, addr(1), addr(2)).unwrap();
+        assert_ne!(a, b);
     }
 
     #[test]
     fn flow_root_binds_endpoints_and_e2e_session() {
-        let a=mesh_flow_root(addr(1),addr(2),[3;32],[4;32]).unwrap();
-        let b=mesh_flow_root(addr(1),addr(2),[3;32],[5;32]).unwrap();
-        assert_ne!(a,b);
+        let a = mesh_flow_root(addr(1), addr(2), [3; 32], [4; 32]).unwrap();
+        let b = mesh_flow_root(addr(1), addr(2), [3; 32], [5; 32]).unwrap();
+        assert_ne!(a, b);
     }
 }
