@@ -51,11 +51,15 @@ pub struct SynaSupplyState {
     pub current_epoch: u64,
     pub total_supply: u128,
     pub epoch_emission: u128,
+    pub reward_state_root: [u8; 32],
 }
 
 impl SynaSupplyState {
     pub fn commitment(&self) -> Option<[u8; 32]> {
-        if self.policy_version == 0 || self.current_epoch == 0 {
+        if self.policy_version == 0
+            || self.current_epoch == 0
+            || self.reward_state_root == [0; 32]
+        {
             return None;
         }
         let mut h = Sha256::new();
@@ -64,6 +68,7 @@ impl SynaSupplyState {
         h.update(self.current_epoch.to_be_bytes());
         h.update(self.total_supply.to_be_bytes());
         h.update(self.epoch_emission.to_be_bytes());
+        h.update(self.reward_state_root);
         Some(h.finalize().into())
     }
 
@@ -130,6 +135,7 @@ mod tests {
             current_epoch: 1,
             total_supply: 0,
             epoch_emission: 0,
+            reward_state_root: [9; 32],
         };
         assert!(s.mint_bounded(&p, 1, 100).is_ok());
         assert!(s.mint_bounded(&p, 1, 101).is_err());
@@ -149,6 +155,7 @@ mod tests {
             current_epoch: 1,
             total_supply: 900,
             epoch_emission: 900,
+            reward_state_root: [9; 32],
         };
         let before = s.clone();
 
@@ -164,6 +171,7 @@ mod tests {
             current_epoch: 2,
             total_supply: 9_950,
             epoch_emission: 0,
+            reward_state_root: [9; 32],
         };
         let before = s.clone();
 
@@ -179,6 +187,7 @@ mod tests {
             current_epoch: 3,
             total_supply: 100,
             epoch_emission: 10,
+            reward_state_root: [9; 32],
         };
         let before = s.clone();
 
@@ -194,11 +203,26 @@ mod tests {
             current_epoch: 1,
             total_supply: 0,
             epoch_emission: 0,
+            reward_state_root: [9; 32],
         };
         let before = s.clone();
 
         assert!(s.mint_bounded(&p, 1, 10).is_err());
         assert_eq!(s, before);
+    }
+
+    #[test]
+    fn supply_commitment_binds_replay_state_root() {
+        let mut s = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 1,
+            total_supply: 10,
+            epoch_emission: 10,
+            reward_state_root: [9; 32],
+        };
+        let root = s.commitment().unwrap();
+        s.reward_state_root[0] ^= 1;
+        assert_ne!(s.commitment().unwrap(), root);
     }
 
     #[test]
