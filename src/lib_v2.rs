@@ -72,8 +72,8 @@ pub use consensus::{
 };
 pub use evm_compat::{
     EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence,
-    EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
-    EVM_VERIFIED_PROFILE_DOMAIN,
+    EvmCompatibilityProfile, EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN,
+    EVM_COMPAT_EVIDENCE_DOMAIN, EVM_VERIFIED_PROFILE_DOMAIN,
 };
 pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
