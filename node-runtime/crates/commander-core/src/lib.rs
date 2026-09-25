@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -8,9 +9,15 @@ use std::path::{Component, Path, PathBuf};
 pub enum Capability {
     ReadFile,
     WriteFile,
+    EditFile,
     ListDirectory,
+    SearchFiles,
+    CreateDirectory,
+    MoveFile,
+    FileInfo,
     RunCommand,
     InspectProcess,
+    InteractProcess,
     KillProcess,
     SystemInfo,
 }
@@ -30,9 +37,15 @@ impl ToolPolicy {
             capabilities: vec![
                 Capability::ReadFile,
                 Capability::WriteFile,
+                Capability::EditFile,
                 Capability::ListDirectory,
+                Capability::SearchFiles,
+                Capability::CreateDirectory,
+                Capability::MoveFile,
+                Capability::FileInfo,
                 Capability::RunCommand,
                 Capability::InspectProcess,
+                Capability::InteractProcess,
                 Capability::KillProcess,
                 Capability::SystemInfo,
             ],
@@ -70,6 +83,48 @@ impl ToolPolicy {
         Ok(self.workspace_root.join(candidate))
     }
 
+    fn canonical_root(&self) -> Result<PathBuf, PolicyError> {
+        fs::canonicalize(&self.workspace_root).map_err(|_| PolicyError::WorkspaceUnavailable)
+    }
+
+    pub fn resolve_existing_workspace_path(
+        &self,
+        relative: &str,
+    ) -> Result<PathBuf, PolicyError> {
+        let lexical = self.resolve_workspace_path(relative)?;
+        let root = self.canonical_root()?;
+        let canonical = fs::canonicalize(lexical).map_err(|_| PolicyError::PathUnavailable)?;
+        if !canonical.starts_with(&root) {
+            return Err(PolicyError::SymlinkEscapeDenied);
+        }
+        Ok(canonical)
+    }
+
+    pub fn resolve_write_workspace_path(&self, relative: &str) -> Result<PathBuf, PolicyError> {
+        let candidate = self.resolve_workspace_path(relative)?;
+        let root = self.canonical_root()?;
+
+        if candidate.exists() {
+            let canonical =
+                fs::canonicalize(&candidate).map_err(|_| PolicyError::PathUnavailable)?;
+            if !canonical.starts_with(&root) {
+                return Err(PolicyError::SymlinkEscapeDenied);
+            }
+            return Ok(candidate);
+        }
+
+        let mut ancestor = candidate.parent().ok_or(PolicyError::PathUnavailable)?;
+        while !ancestor.exists() {
+            ancestor = ancestor.parent().ok_or(PolicyError::PathUnavailable)?;
+        }
+        let canonical_ancestor =
+            fs::canonicalize(ancestor).map_err(|_| PolicyError::PathUnavailable)?;
+        if !canonical_ancestor.starts_with(&root) {
+            return Err(PolicyError::SymlinkEscapeDenied);
+        }
+        Ok(candidate)
+    }
+
     pub fn validate_command(&self, program: &str) -> Result<(), PolicyError> {
         let base = Path::new(program)
             .file_name()
@@ -94,6 +149,9 @@ pub enum PolicyError {
     CommandDenied,
     CapabilityDenied,
     WriteTooLarge,
+    WorkspaceUnavailable,
+    PathUnavailable,
+    SymlinkEscapeDenied,
 }
 
 pub fn ensure_capability(policy: &ToolPolicy, cap: Capability) -> Result<(), PolicyError> {
