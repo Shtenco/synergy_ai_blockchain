@@ -67,10 +67,12 @@ require(
     "pub(crate) fn verify_envelope_authorization" in pq,
     "envelope-bound verifier must remain crate-internal",
 )
-require(
-    '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
-    "no-context authorization helper must exist only in test builds",
-)
+no_context_helper = "pub(crate) fn verify_authorization<" in pq
+if no_context_helper:
+    require(
+        '#[cfg(test)]\npub(crate) fn verify_authorization<' in pq,
+        "no-context authorization helper may exist only in test builds",
+    )
 require(
     "pub(crate) fn verify_authorization_with_context<" in pq,
     "raw context verifier must remain crate-internal",
