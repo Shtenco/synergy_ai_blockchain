@@ -119,6 +119,8 @@ impl SynaRewardState {
 #[derive(Debug, Clone, Copy)]
 pub struct SynaInferenceMintContext<'a> {
     pub checkpoint: &'a MvpCheckpoint,
+    pub peer_directory: &'a PeerDirectory,
+    pub identity_now: u64,
     pub outcome: &'a InferenceOutcome,
     pub job: &'a InferenceJob,
     pub plan: &'a InferenceExecutionPlan,
@@ -157,6 +159,14 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
     context.challenge.validate()?;
     policy.validate()?;
 
+    let node_set_root = context
+        .peer_directory
+        .commitment(context.identity_now)
+        .ok_or("live PQ identity node set required")?;
+    if node_set_root != context.checkpoint.node_set_root {
+        return Err("PQ identity node set does not match finalized checkpoint");
+    }
+
     if context.stage_authorizations.len() != context.plan.stages.len()
         || context.stage_validations.len() != context.plan.stages.len()
     {
@@ -170,6 +180,22 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         .zip(context.stage_authorizations.iter())
         .zip(context.stage_validations.iter())
     {
+        let registered = context
+            .peer_directory
+            .get(&authorized.receipt.worker_id, context.identity_now)
+            .ok_or("inference worker is not in finalized live node set")?;
+        let authorization_keyset = authorized
+            .authorization
+            .keyset_commitment()
+            .ok_or("inference worker PQ keyset commitment unavailable")?;
+        if registered.epoch != context.checkpoint.epoch
+            || registered.pq_identity_commitment != authorization_keyset
+            || validation.expected_worker_keyset_commitment
+                != registered.pq_identity_commitment
+        {
+            return Err("inference worker PQ identity does not match finalized registry");
+        }
+
         if !verify_inference_receipt(
             signature_verifier,
             assignment,
@@ -192,6 +218,22 @@ pub fn authorize_verified_inference_reward_and_mint<V: ContextSignatureVerifier>
         .iter()
         .zip(context.verifier_validations.iter())
     {
+        let registered = context
+            .peer_directory
+            .get(&authorized.receipt.verifier_id, context.identity_now)
+            .ok_or("verifier is not in finalized live node set")?;
+        let authorization_keyset = authorized
+            .authorization
+            .keyset_commitment()
+            .ok_or("verifier PQ keyset commitment unavailable")?;
+        if registered.epoch != context.checkpoint.epoch
+            || registered.pq_identity_commitment != authorization_keyset
+            || validation.expected_verifier_keyset_commitment
+                != registered.pq_identity_commitment
+        {
+            return Err("verifier PQ identity does not match finalized registry");
+        }
+
         if !verify_verifier_receipt(
             signature_verifier,
             context.challenge,
@@ -757,6 +799,8 @@ mod tests {
     ) -> Result<SynaMintAuthorization, &'static str> {
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
@@ -852,6 +896,8 @@ mod tests {
 
         let context = SynaInferenceMintContext {
             checkpoint: &fixture.checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
             outcome: &fixture.outcome,
             job: &fixture.job,
             plan: &fixture.plan,
