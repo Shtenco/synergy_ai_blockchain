@@ -1103,6 +1103,69 @@ mod tests {
     }
 
     #[test]
+    fn self_selected_valid_pq_key_cannot_bypass_finalized_node_registry() {
+        let fixture = fixture();
+        let original_receipt = fixture.stage_authorizations[0].receipt.clone();
+        let envelope = AuthorizationEnvelope {
+            chain_id: fixture.checkpoint.chain_id,
+            domain: AuthorizationDomain::InferenceReceipt,
+            epoch: fixture.checkpoint.epoch,
+            nonce: 1,
+            expires_at: 100,
+            payload_commitment: original_receipt.authorization_commitment().unwrap(),
+        };
+        let attacker_authorization = signed_pq_authorization(&envelope, 99);
+        let attacker_validation = InferenceReceiptValidationContext {
+            expected_chain_id: fixture.checkpoint.chain_id,
+            expected_epoch: fixture.checkpoint.epoch,
+            expected_nonce: 1,
+            expected_worker_id: original_receipt.worker_id,
+            expected_worker_keyset_commitment: attacker_authorization
+                .keyset_commitment()
+                .unwrap(),
+            now: fixture.identity_now,
+            max_future_seconds: 60,
+        };
+        let attacker_receipts = vec![InferenceReceiptAuthorization {
+            chain_id: fixture.checkpoint.chain_id,
+            epoch: fixture.checkpoint.epoch,
+            nonce: 1,
+            expires_at: 100,
+            receipt: original_receipt,
+            authorization: attacker_authorization,
+        }];
+        let attacker_validations = vec![attacker_validation];
+
+        let context = SynaInferenceMintContext {
+            checkpoint: &fixture.checkpoint,
+            peer_directory: &fixture.peer_directory,
+            identity_now: fixture.identity_now,
+            outcome: &fixture.outcome,
+            job: &fixture.job,
+            plan: &fixture.plan,
+            stage_authorizations: &attacker_receipts,
+            stage_validations: &attacker_validations,
+            settlement: &fixture.settlement,
+            challenge: &fixture.challenge,
+            verifier_authorizations: &fixture.verifier_authorizations,
+            verifier_validations: &fixture.verifier_validations,
+        };
+
+        let mut rewards = SynaRewardState::default();
+        let mut supply = empty_supply();
+        assert!(authorize_verified_inference_reward_and_mint(
+            &BindingTestVerifier,
+            &fixture.claim,
+            &context,
+            &policy(),
+            &mut rewards,
+            &mut supply,
+        )
+        .is_err());
+        assert_eq!(supply.total_supply, 0);
+    }
+
+    #[test]
     fn wrong_registered_worker_keyset_blocks_mint() {
         let fixture = fixture();
         let mut validations = fixture.stage_validations.clone();
