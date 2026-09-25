@@ -10,7 +10,6 @@ pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
 pub mod evm_compat;
-pub mod evm_compat;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -24,7 +23,6 @@ pub mod payment_funding;
 pub mod payments;
 pub mod peer_discovery;
 pub mod pi_pq;
-pub mod pi_pq;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
@@ -33,7 +31,6 @@ pub mod scheduling;
 pub mod service_planes;
 pub mod slashing;
 pub mod storage;
-pub mod syna;
 pub mod syna_emission;
 pub mod syna_reward;
 pub mod transport_record;
@@ -77,7 +74,6 @@ pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
 };
-pub use evm_compat::{EvmBridgeProofReceipt, EvmCompatibilityProfile, EvmNetworkClass, EVM_COMPAT_DOMAIN};
 pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
     GovernanceValidationContext,
@@ -130,7 +126,6 @@ pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use peer_discovery::{
     NodeRecord, PeerDirectory, MAX_MVP_PEERS, NODE_RECORD_DOMAIN, NODE_SET_DOMAIN,
 };
-pub use pi_pq::{PiPqEvidence, PI_PQ_EVIDENCE_DOMAIN};
 pub use pq::{
     authorization_keyset_commitment, primary_account_identity_commitment, sign_envelope_evidence,
     AuthPolicy, AuthScheme, AuthorizationDomain, AuthorizationEnvelope, AuthorizationReplayState,
@@ -163,7 +158,6 @@ pub use storage::{
     ErasurePlacementReceipt, ProofOfStorageReceipt, StorageBid, StorageClass,
     StorageProofAuthorization, StorageProofValidationContext,
 };
-pub use syna::{authorize_syna_inference_mint_and_consume, SynaClaimState, SynaInferenceClaim, SynaMintAuthorization, SynaRewardPolicy, SYNA_REWARD_CLAIM_DOMAIN};
 pub use transport_record::{
     decrypt_transport_record, encrypt_transport_record, read_encrypted_transport_frame,
     write_encrypted_transport_frame, EncryptedTransportRecord,
