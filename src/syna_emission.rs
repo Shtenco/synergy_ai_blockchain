@@ -3,6 +3,10 @@
 //! Proof of useful inference establishes eligibility; this policy bounds the
 //! quantity. AI output never chooses its own reward amount.
 
+use sha2::{Digest, Sha256};
+
+pub const SYNA_SUPPLY_STATE_DOMAIN: &[u8] = b"SYNERGY/SYNA-SUPPLY-STATE/V1\0";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaEmissionPolicy {
     pub version: u32,
@@ -49,6 +53,19 @@ pub struct SynaSupplyState {
 }
 
 impl SynaSupplyState {
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        if self.policy_version == 0 || self.current_epoch == 0 {
+            return None;
+        }
+        let mut h = Sha256::new();
+        h.update(SYNA_SUPPLY_STATE_DOMAIN);
+        h.update(self.policy_version.to_be_bytes());
+        h.update(self.current_epoch.to_be_bytes());
+        h.update(self.total_supply.to_be_bytes());
+        h.update(self.epoch_emission.to_be_bytes());
+        Some(h.finalize().into())
+    }
+
     pub fn mint_bounded(
         &mut self,
         policy: &SynaEmissionPolicy,
@@ -121,6 +138,7 @@ mod tests {
         }
         assert!(s.mint_bounded(&p, 1, 1).is_err());
         assert!(s.mint_bounded(&p, 2, 100).is_ok());
+        assert!(s.commitment().is_some());
     }
 
     #[test]
