@@ -326,7 +326,8 @@ mod tests {
         SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
     use crate::{
-        InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, VerifierReceipt,
+        InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, NodeRecord,
+        VerifierReceipt,
     };
 
     #[derive(Clone, Copy)]
@@ -538,6 +539,8 @@ mod tests {
         outcome: InferenceOutcome,
         settlement: ComputeSettlement,
         checkpoint: MvpCheckpoint,
+        peer_directory: PeerDirectory,
+        identity_now: u64,
         verifier_authorizations: Vec<VerifierReceiptAuthorization>,
         verifier_validations: Vec<VerifierReceiptValidationContext>,
         claim: SynaRewardClaim,
@@ -633,9 +636,70 @@ mod tests {
         .unwrap();
         let inference_root = outcome.commitment().unwrap();
 
+        let chain_id = [10; 32];
+        let epoch = 1;
+        let identity_now = 50;
+
+        let (stage_authorization, stage_validation) =
+            authorize_stage(raw_stage, chain_id, epoch, 1);
+
+        let mut verifier_authorizations = Vec::new();
+        let mut verifier_validations = Vec::new();
+        for (i, receipt) in raw_verifiers.into_iter().enumerate() {
+            let nonce = 10 + u64::try_from(i).unwrap();
+            let (authorized, validation) =
+                authorize_verifier(receipt, &challenge, chain_id, epoch, nonce);
+            verifier_authorizations.push(authorized);
+            verifier_validations.push(validation);
+        }
+
+        let mut peer_directory = PeerDirectory::default();
+        let worker_keyset = stage_authorization
+            .authorization
+            .keyset_commitment()
+            .unwrap();
+        peer_directory
+            .upsert(
+                NodeRecord {
+                    node_id: settlement.worker_id,
+                    endpoint_root: [40; 32],
+                    transport_keyset_root: [41; 32],
+                    pq_identity_commitment: worker_keyset,
+                    capability_root: [42; 32],
+                    epoch,
+                    sequence: 1,
+                    expires_at: 100,
+                },
+                identity_now,
+            )
+            .unwrap();
+
+        for (i, authorized) in verifier_authorizations.iter().enumerate() {
+            let offset = u8::try_from(i).unwrap();
+            peer_directory
+                .upsert(
+                    NodeRecord {
+                        node_id: authorized.receipt.verifier_id,
+                        endpoint_root: [50 + offset; 32],
+                        transport_keyset_root: [60 + offset; 32],
+                        pq_identity_commitment: authorized
+                            .authorization
+                            .keyset_commitment()
+                            .unwrap(),
+                        capability_root: [70 + offset; 32],
+                        epoch,
+                        sequence: 1,
+                        expires_at: 100,
+                    },
+                    identity_now,
+                )
+                .unwrap();
+        }
+
+        let node_set_root = peer_directory.commitment(identity_now).unwrap();
         let checkpoint = MvpCheckpoint {
-            chain_id: [10; 32],
-            epoch: 1,
+            chain_id,
+            epoch,
             sequence: 1,
             previous_checkpoint: [0; 32],
             model_root: job.model_root,
@@ -647,26 +711,8 @@ mod tests {
             storage_root: [17; 32],
             settlement_root,
             scheduler_root: [19; 32],
-            node_set_root: [20; 32],
+            node_set_root,
         };
-
-        let (stage_authorization, stage_validation) =
-            authorize_stage(raw_stage, checkpoint.chain_id, checkpoint.epoch, 1);
-
-        let mut verifier_authorizations = Vec::new();
-        let mut verifier_validations = Vec::new();
-        for (i, receipt) in raw_verifiers.into_iter().enumerate() {
-            let nonce = 10 + u64::try_from(i).unwrap();
-            let (authorized, validation) = authorize_verifier(
-                receipt,
-                &challenge,
-                checkpoint.chain_id,
-                checkpoint.epoch,
-                nonce,
-            );
-            verifier_authorizations.push(authorized);
-            verifier_validations.push(validation);
-        }
 
         let claim = SynaRewardClaim {
             claim_id: [21; 32],
@@ -693,6 +739,8 @@ mod tests {
             outcome,
             settlement,
             checkpoint,
+            peer_directory,
+            identity_now,
             verifier_authorizations,
             verifier_validations,
             claim,
