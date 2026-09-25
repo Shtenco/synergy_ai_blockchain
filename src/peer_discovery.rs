@@ -67,10 +67,10 @@ impl PeerDirectory {
         }
         if self.records.values().any(|existing| {
             existing.node_id != r.node_id
-                && existing.live(now)
+                && existing.epoch == r.epoch
                 && existing.pq_identity_commitment == r.pq_identity_commitment
         }) {
-            return Err("PQ identity commitment already registered to another node");
+            return Err("PQ identity commitment already registered in this epoch");
         }
         match self.records.get(&r.node_id) {
             Some(old)
@@ -191,9 +191,27 @@ mod tests {
 
         assert_eq!(
             d.upsert(second, 1),
-            Err("PQ identity commitment already registered to another node")
+            Err("PQ identity commitment already registered in this epoch")
         );
         assert_eq!(d.records.len(), 1);
+    }
+
+    #[test]
+    fn expired_identity_cannot_be_reused_by_another_node_in_same_epoch() {
+        let mut d = PeerDirectory::default();
+        d.upsert(r(1), 10).unwrap();
+
+        let mut second = r(1);
+        second.node_id = [9; 32];
+        second.endpoint_root = [8; 32];
+        second.transport_keyset_root = [7; 32];
+        second.capability_root = [6; 32];
+        second.expires_at = 200;
+
+        assert_eq!(
+            d.upsert(second, 101),
+            Err("PQ identity commitment already registered in this epoch")
+        );
     }
 
     #[test]
