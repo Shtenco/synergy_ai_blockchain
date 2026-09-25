@@ -1476,7 +1476,7 @@ require(
 require(
     "pub struct ServiceFinalityBatch" in service_planes
     and "MAX_SERVICE_FINALITY_ITEMS: usize = 65_536" in service_planes
-    and "duplicate service finality item" in service_planes
+    and "conflicting service finality subject" in service_planes
     and "ordered.sort_by_key" in service_planes
     and "service finality root mismatch" in service_planes
     and "pub(crate) fn verify_service_plane_checkpoint_and_consume" in service_planes
