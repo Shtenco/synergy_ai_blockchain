@@ -12,6 +12,7 @@ pub const SYNA_MINT_TRANSITION_DOMAIN: &[u8] = b"SYNERGY/SYNA-MINT-TRANSITION/V1
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynaMintTransition {
+    pub authorization_root: [u8; 32],
     pub claim_id: [u8; 32],
     pub worker_id: [u8; 32],
     pub amount: u128,
@@ -32,13 +33,14 @@ impl SynaMintTransition {
         pre_supply: &SynaSupplyState,
         post_supply: &SynaSupplyState,
     ) -> Result<(), &'static str> {
-        if self.claim_id != authorization.claim_id
-            || self.worker_id != authorization.worker_id
-            || self.amount != authorization.amount
-            || self.epoch != authorization.epoch
-            || self.checkpoint_root != authorization.checkpoint_root
-            || self.pre_supply_state_root != authorization.pre_supply_state_root
-            || self.supply_state_root != authorization.supply_state_root
+        if self.authorization_root != authorization.commitment()
+            || self.claim_id != authorization.claim_id()
+            || self.worker_id != authorization.worker_id()
+            || self.amount != authorization.amount()
+            || self.epoch != authorization.epoch()
+            || self.checkpoint_root != authorization.checkpoint_root()
+            || self.pre_supply_state_root != authorization.pre_supply_state_root()
+            || self.supply_state_root != authorization.supply_state_root()
             || self.amount == 0
         {
             return Err("SYNA mint transition authorization mismatch");
@@ -75,6 +77,7 @@ impl SynaMintTransition {
         self.validate(authorization, pre_supply, post_supply).ok()?;
         let mut h = Sha256::new();
         h.update(SYNA_MINT_TRANSITION_DOMAIN);
+        h.update(self.authorization_root);
         h.update(self.claim_id);
         h.update(self.worker_id);
         h.update(self.amount.to_be_bytes());
@@ -98,24 +101,25 @@ pub fn build_syna_mint_transition(
 ) -> Result<SynaMintTransition, &'static str> {
     let total_supply_before = pre_supply.total_supply;
     let account_balance_after = account_balance_before
-        .checked_add(authorization.amount)
+        .checked_add(authorization.amount())
         .ok_or("SYNA account balance overflow")?;
     let total_supply_after = total_supply_before
-        .checked_add(authorization.amount)
+        .checked_add(authorization.amount())
         .ok_or("SYNA total supply transition overflow")?;
 
     let transition = SynaMintTransition {
-        claim_id: authorization.claim_id,
-        worker_id: authorization.worker_id,
-        amount: authorization.amount,
-        epoch: authorization.epoch,
+        authorization_root: authorization.commitment(),
+        claim_id: authorization.claim_id(),
+        worker_id: authorization.worker_id(),
+        amount: authorization.amount(),
+        epoch: authorization.epoch(),
         account_balance_before,
         account_balance_after,
         total_supply_before,
         total_supply_after,
-        pre_supply_state_root: authorization.pre_supply_state_root,
-        supply_state_root: authorization.supply_state_root,
-        checkpoint_root: authorization.checkpoint_root,
+        pre_supply_state_root: authorization.pre_supply_state_root(),
+        supply_state_root: authorization.supply_state_root(),
+        checkpoint_root: authorization.checkpoint_root(),
     };
     transition.validate(authorization, pre_supply, post_supply)?;
     Ok(transition)
@@ -143,19 +147,27 @@ mod tests {
         }
     }
 
+    fn authorization_with_worker(
+        pre: &SynaSupplyState,
+        post: &SynaSupplyState,
+        worker_id: [u8; 32],
+    ) -> SynaMintAuthorization {
+        SynaMintAuthorization::test_only(
+            [1; 32],
+            [2; 32],
+            worker_id,
+            10,
+            7,
+            [4; 32],
+            [5; 32],
+            [6; 32],
+            pre.commitment().unwrap(),
+            post.commitment().unwrap(),
+        )
+    }
+
     fn authorization(pre: &SynaSupplyState, post: &SynaSupplyState) -> SynaMintAuthorization {
-        SynaMintAuthorization {
-            claim_root: [1; 32],
-            claim_id: [2; 32],
-            worker_id: [3; 32],
-            amount: 10,
-            epoch: 7,
-            checkpoint_root: [4; 32],
-            verifier_set_root: [5; 32],
-            settlement_root: [6; 32],
-            pre_supply_state_root: pre.commitment().unwrap(),
-            supply_state_root: post.commitment().unwrap(),
-        }
+        authorization_with_worker(pre, post, [3; 32])
     }
 
     #[test]
@@ -180,6 +192,16 @@ mod tests {
     }
 
     #[test]
+    fn fabricated_authorization_root_is_rejected() {
+        let pre = pre_supply();
+        let post = post_supply();
+        let a = authorization(&pre, &post);
+        let mut t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
+        t.authorization_root[0] ^= 1;
+        assert!(t.validate(&a, &pre, &post).is_err());
+    }
+
+    #[test]
     fn fabricated_previous_supply_state_is_rejected() {
         let pre = pre_supply();
         let post = post_supply();
@@ -197,8 +219,7 @@ mod tests {
         let post = post_supply();
         let a = authorization(&pre, &post);
         let t = build_syna_mint_transition(&a, 25, &pre, &post).unwrap();
-        let mut wrong = a;
-        wrong.worker_id = [9; 32];
+        let wrong = authorization_with_worker(&pre, &post, [9; 32]);
         assert!(t.validate(&wrong, &pre, &post).is_err());
     }
 }
