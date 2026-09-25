@@ -744,15 +744,17 @@ pub trait ContextSignatureVerifier {
 pub struct PqSigningKeyHandle([u8; 32]);
 
 impl PqSigningKeyHandle {
+    #[cfg(feature = "reference-pq")]
     pub(crate) fn from_random_bytes(bytes: [u8; 32]) -> Option<Self> {
         (bytes != [0u8; 32]).then_some(Self(bytes))
     }
 
+    #[cfg(feature = "reference-pq")]
     pub(crate) fn as_id_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "reference-pq"))]
     pub(crate) fn is_zero(&self) -> bool {
         self.0 == [0u8; 32]
     }
