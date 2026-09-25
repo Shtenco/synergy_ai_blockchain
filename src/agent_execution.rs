@@ -2,6 +2,12 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
+};
+
 pub const AGENT_TASK_DOMAIN: &[u8] = b"SYNERGY/AGENT-TASK/V1";
 pub const AGENT_EXECUTION_RECEIPT_DOMAIN: &[u8] = b"SYNERGY/AGENT-EXECUTION-RECEIPT/V1";
 
@@ -105,9 +111,138 @@ impl AgentExecutionReceipt {
     }
 }
 
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentExecutionAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub receipt: AgentExecutionReceipt,
+    pub authorization: HybridAuthorization,
+}
+
+impl AgentExecutionAuthorization {
+    pub fn envelope(&self) -> AuthorizationEnvelope {
+        AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::AgentExecutionReceipt,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.receipt.root(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentExecutionValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_worker_node_id: [u8; 32],
+    pub expected_worker_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_agent_execution_receipt<V: ContextSignatureVerifier>(
+    verifier: &V,
+    task: &AgentTaskCommitment,
+    authorized: &AgentExecutionAuthorization,
+    validation: &AgentExecutionValidationContext,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.receipt.worker_node_id != validation.expected_worker_node_id
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_worker_keyset_commitment)
+        || authorized.receipt.validate_against(task).is_err()
+    {
+        return false;
+    }
+
+    let envelope = authorized.envelope();
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::AgentExecutionReceipt,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+
+    verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    )
+}
+
+pub fn verify_agent_execution_receipt_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    task: &AgentTaskCommitment,
+    authorized: &AgentExecutionAuthorization,
+    validation: &AgentExecutionValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if !verify_agent_execution_receipt(verifier, task, authorized, validation) {
+        return false;
+    }
+
+    replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &authorized.envelope(),
+        validation.expected_worker_node_id,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{
+        AuthScheme, ContextSignatureVerifier, SignatureEvidence, ML_DSA_87_PUBLIC_KEY_BYTES,
+        ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
+
+    #[derive(Clone)]
+    struct ExpectedVerifier {
+        message: Vec<u8>,
+        context: Vec<u8>,
+    }
+
+    impl ContextSignatureVerifier for ExpectedVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            message == self.message && context == self.context
+        }
+    }
+
+    fn pq_only_authorization() -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![0x31; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![0x32; ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![0x33; SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![0x34; SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
 
     fn task() -> AgentTaskCommitment {
         AgentTaskCommitment {
@@ -161,4 +296,103 @@ mod tests {
             Err(AgentReceiptError::ResourceLimitExceeded)
         );
     }
+
+    #[test]
+    fn pq_authorized_receipt_consumes_nonce_once() {
+        let task = task();
+        let auth = pq_only_authorization();
+        let authorized = AgentExecutionAuthorization {
+            chain_id: [0xA1; 32],
+            epoch: 7,
+            nonce: 9,
+            expires_at: 1_100,
+            receipt: receipt(&task),
+            authorization: auth.clone(),
+        };
+        let envelope = authorized.envelope();
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("agent receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("agent receipt context"),
+        };
+        let keyset = auth.keyset_commitment().expect("agent worker keyset");
+        let validation = AgentExecutionValidationContext {
+            expected_chain_id: [0xA1; 32],
+            expected_epoch: 7,
+            expected_nonce: 9,
+            expected_worker_node_id: authorized.receipt.worker_node_id,
+            expected_worker_keyset_commitment: keyset,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+        let mut replay = AuthorizationReplayState::new_for_subject(
+            [0xA1; 32],
+            AuthorizationDomain::AgentExecutionReceipt,
+            AuthPolicy::PqOnly,
+            authorized.receipt.worker_node_id,
+            7,
+            9,
+        )
+        .expect("agent replay state");
+
+        assert!(verify_agent_execution_receipt_and_consume(
+            &verifier,
+            &task,
+            &authorized,
+            &validation,
+            &mut replay,
+        ));
+        assert_eq!(replay.next_nonce(), 10);
+        assert!(!verify_agent_execution_receipt_and_consume(
+            &verifier,
+            &task,
+            &authorized,
+            &validation,
+            &mut replay,
+        ));
+    }
+
+    #[test]
+    fn pq_authorized_receipt_rejects_wrong_registered_keyset() {
+        let task = task();
+        let auth = pq_only_authorization();
+        let authorized = AgentExecutionAuthorization {
+            chain_id: [0xA1; 32],
+            epoch: 7,
+            nonce: 9,
+            expires_at: 1_100,
+            receipt: receipt(&task),
+            authorization: auth.clone(),
+        };
+        let envelope = authorized.envelope();
+        let verifier = ExpectedVerifier {
+            message: envelope
+                .canonical_message(AuthPolicy::PqOnly)
+                .expect("agent receipt message"),
+            context: envelope
+                .fips_signature_context(AuthPolicy::PqOnly)
+                .expect("agent receipt context"),
+        };
+        let mut wrong_keyset = auth.keyset_commitment().expect("agent worker keyset");
+        wrong_keyset[0] ^= 1;
+        let validation = AgentExecutionValidationContext {
+            expected_chain_id: [0xA1; 32],
+            expected_epoch: 7,
+            expected_nonce: 9,
+            expected_worker_node_id: authorized.receipt.worker_node_id,
+            expected_worker_keyset_commitment: wrong_keyset,
+            now: 1_000,
+            max_future_seconds: 200,
+        };
+        assert!(!verify_agent_execution_receipt(
+            &verifier,
+            &task,
+            &authorized,
+            &validation,
+        ));
+    }
+
 }
