@@ -7,6 +7,7 @@ pub const MESH_ADDRESS_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/ADDRESS/V1\0";
 pub const MESH_ROUTE_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/ROUTE/V1\0";
 pub const MESH_PACKET_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/PACKET/V1\0";
 pub const MESH_FLOW_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/FLOW/V1\0";
+pub const MESH_HOP_APPLICATION_DOMAIN: &[u8] = b"SYNERGY/PQ-MESH/HOP-APPLICATION/V1\0";
 pub const MAX_MESH_HOPS: usize = 16;
 pub const MAX_MESH_ROUTES: usize = 4096;
 pub const MAX_MESH_PACKET_BYTES: usize = 4 * 1024 * 1024;
@@ -251,6 +252,25 @@ impl MeshReplayState {
     }
 }
 
+pub fn mesh_hop_application_root(
+    packet: &MeshPacket,
+    route: &MeshRoute,
+    current: MeshAddress,
+    next: MeshAddress,
+) -> Option<[u8; 32]> {
+    packet.validate_against_route(route).ok()?;
+    if packet.current_hop(route)? != current || route.next_hop(current)? != next {
+        return None;
+    }
+    let mut h = Sha256::new();
+    h.update(MESH_HOP_APPLICATION_DOMAIN);
+    h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+    h.update(packet.commitment(route)?);
+    h.update(current.0);
+    h.update(next.0);
+    Some(h.finalize().into())
+}
+
 pub fn mesh_flow_root(
     source: MeshAddress,
     destination: MeshAddress,
@@ -345,6 +365,17 @@ mod tests {
         let b = MeshAddress::from_pq_identity([2;32],[32;32]).unwrap();
         assert_eq!(table.route(a,b).unwrap().hops, vec![a,b]);
         assert!(table.route(b,a).is_some());
+    }
+
+    #[test]
+    fn hop_application_root_binds_exact_forwarding_edge() {
+        let r=route();
+        let p=MeshPacket::new(&r,[5;32],1,[6;32],vec![7;8]).unwrap();
+        let a=mesh_hop_application_root(&p,&r,addr(1),addr(2)).unwrap();
+        assert!(mesh_hop_application_root(&p,&r,addr(1),addr(3)).is_none());
+        let mut p2=p.clone(); p2.sequence=2;
+        let b=mesh_hop_application_root(&p2,&r,addr(1),addr(2)).unwrap();
+        assert_ne!(a,b);
     }
 
     #[test]
