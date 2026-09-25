@@ -88,7 +88,7 @@ pub use inference::{
     verify_inference_receipt_and_consume, InferenceExecutionPlan, InferenceJob, InferenceJobState,
     InferenceOutcome, InferenceReceiptAuthorization, InferenceReceiptValidationContext,
     InferenceStageAssignment, InferenceStageKind, InferenceStageReceipt, InferenceWorkAggregate,
-    INFERENCE_OUTCOME_DOMAIN, INFERENCE_WORK_SET_DOMAIN,
+    INFERENCE_OUTCOME_DOMAIN, INFERENCE_PLAN_DOMAIN, INFERENCE_WORK_SET_DOMAIN,
 };
 pub use kv_cache::{
     verify_kv_replica_receipt_and_consume, KvCacheLease, KvReplicaReceipt,
