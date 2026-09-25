@@ -158,6 +158,51 @@ mod tests {
     }
 
     #[test]
+    fn global_supply_cap_is_enforced_without_partial_mutation() {
+        let p = policy();
+        let mut s = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 2,
+            total_supply: 9_950,
+            epoch_emission: 0,
+        };
+        let before = s.clone();
+
+        assert!(s.mint_bounded(&p, 2, 100).is_err());
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn epoch_cannot_move_backward_without_partial_mutation() {
+        let p = policy();
+        let mut s = SynaSupplyState {
+            policy_version: 1,
+            current_epoch: 3,
+            total_supply: 100,
+            epoch_emission: 10,
+        };
+        let before = s.clone();
+
+        assert!(s.mint_bounded(&p, 2, 10).is_err());
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn policy_version_mismatch_is_fail_closed() {
+        let p = policy();
+        let mut s = SynaSupplyState {
+            policy_version: 2,
+            current_epoch: 1,
+            total_supply: 0,
+            epoch_emission: 0,
+        };
+        let before = s.clone();
+
+        assert!(s.mint_bounded(&p, 1, 10).is_err());
+        assert_eq!(s, before);
+    }
+
+    #[test]
     fn model_cannot_self_select_unbounded_reward() {
         let p = policy();
         assert_eq!(p.reward_for_useful_work(5), None);
