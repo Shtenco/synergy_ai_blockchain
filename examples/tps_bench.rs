@@ -1,5 +1,9 @@
 use std::time::Instant;
-use synergy_pq_evm_core::{AgenticEconomyState, Asset};
+use sha2::{Digest, Sha256};
+use synergy_pq_evm_core::{
+    AgenticEconomyReplayState, AgenticEconomyState, AgenticEconomyTransitionReceipt, Asset,
+    EconomyAccountingSnapshot, EconomyDecision,
+};
 
 fn rate(n: u64, secs: f64) -> f64 {
     n as f64 / secs
@@ -55,7 +59,43 @@ fn main() {
     }
     let committed_secs = t3.elapsed().as_secs_f64();
 
-    println!("benchmark=synergy_execution_tps_v1");
+    let accounting = EconomyAccountingSnapshot {
+        hard_nav_micro: 100_000_000,
+        collateral_nav_micro: 120_000_000,
+        gross_tvl_micro: 200_000_000,
+        net_external_capital_flow_micro: 10_000_000,
+        realized_external_pnl_micro: 2_000_000,
+        gas_paid_micro: 1_000,
+        syna_supply_micro: 72_000_000,
+    };
+    let mut replay = AgenticEconomyReplayState::genesis([1u8; 32]).expect("replay genesis");
+    let t4 = Instant::now();
+    let mut receipt_rolling = [0u8; 32];
+    for i in 0..n {
+        let mut h = Sha256::new();
+        h.update(b"SYNERGY/TPS/POST-STATE/V1");
+        h.update((i + 1).to_be_bytes());
+        let post: [u8; 32] = h.finalize().into();
+        let receipt = AgenticEconomyTransitionReceipt {
+            chain_id: 777_777,
+            sequence: i + 1,
+            source_block: i + 1,
+            decision: EconomyDecision::Trader {
+                actor: (i % 6) as u16,
+                action: (i % 32) as u8,
+            },
+            model_checkpoint_root: [7; 32],
+            observation_root: [8; 32],
+            pre_state_root: replay.state_root,
+            post_state_root: post,
+            action_log_root: [9; 32],
+            accounting,
+        };
+        receipt_rolling = replay.consume(&receipt).expect("receipt consume");
+    }
+    let receipt_secs = t4.elapsed().as_secs_f64();
+
+    println!("benchmark=synergy_execution_tps_v2");
     println!("transactions={n}");
     println!("transfer_seconds={transfer_secs:.6}");
     println!("transfer_tps={:.2}", rate(n, transfer_secs));
@@ -64,6 +104,9 @@ fn main() {
     println!("committed_action_seconds={committed_secs:.6}");
     println!("committed_action_tps={:.2}", rate(n, committed_secs));
     println!("committed_rolling={}", hex::encode(rolling));
+    println!("receipt_seconds={receipt_secs:.6}");
+    println!("receipt_tps={:.2}", rate(n, receipt_secs));
+    println!("receipt_rolling={}", hex::encode(receipt_rolling));
     println!("transfer_commitment={}", hex::encode(transfer_commitment));
     println!("agent_commitment={}", hex::encode(agent_commitment));
 }
