@@ -2,6 +2,7 @@
 
 pub mod agent_execution;
 pub mod agent_mesh;
+pub mod agent_reward;
 pub mod agentic_economy;
 
 pub mod autopilot;
