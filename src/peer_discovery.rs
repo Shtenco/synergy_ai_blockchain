@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 pub const NODE_RECORD_DOMAIN: &[u8] = b"SYNERGY/NODE-RECORD/V1\0";
 pub const NODE_SET_DOMAIN: &[u8] = b"SYNERGY/NODE-SET/V1\0";
+pub const NODE_SET_SNAPSHOT_DOMAIN: &[u8] = b"SYNERGY/NODE-SET-SNAPSHOT/V1\0";
 pub const MAX_MVP_PEERS: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +55,58 @@ impl NodeRecord {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeSetSnapshot {
+    pub epoch: u64,
+    pub records: Vec<NodeRecord>,
+}
+
+impl NodeSetSnapshot {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.epoch == 0 || self.records.is_empty() || self.records.len() > MAX_MVP_PEERS {
+            return Err("invalid node-set snapshot bounds");
+        }
+
+        let mut previous_node_id: Option<[u8; 32]> = None;
+        let mut pq_identities = std::collections::BTreeSet::new();
+        for record in &self.records {
+            record.validate()?;
+            if record.epoch != self.epoch {
+                return Err("node-set snapshot mixes epochs");
+            }
+            if previous_node_id.is_some_and(|previous| record.node_id <= previous) {
+                return Err("node-set snapshot records must be strictly ordered");
+            }
+            if !pq_identities.insert(record.pq_identity_commitment) {
+                return Err("node-set snapshot contains duplicate PQ identity");
+            }
+            previous_node_id = Some(record.node_id);
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, id: &[u8; 32]) -> Option<&NodeRecord> {
+        self.records
+            .binary_search_by_key(id, |record| record.node_id)
+            .ok()
+            .and_then(|index| self.records.get(index))
+    }
+
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        self.validate().ok()?;
+        let count = u64::try_from(self.records.len()).ok()?;
+        let mut h = Sha256::new();
+        h.update(NODE_SET_SNAPSHOT_DOMAIN);
+        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        h.update(self.epoch.to_be_bytes());
+        h.update(count.to_be_bytes());
+        for record in &self.records {
+            h.update(record.commitment()?);
+        }
+        Some(h.finalize().into())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PeerDirectory {
     records: BTreeMap<[u8; 32], NodeRecord>,
@@ -95,43 +148,19 @@ impl PeerDirectory {
         self.records.values().filter(|r| r.live(now)).collect()
     }
 
-    pub fn get_at_epoch(&self, id: &[u8; 32], epoch: u64) -> Option<&NodeRecord> {
+    pub fn snapshot(&self, epoch: u64) -> Option<NodeSetSnapshot> {
         if epoch == 0 {
             return None;
         }
-        self.records
-            .get(id)
-            .filter(|record| record.epoch == epoch && record.validate().is_ok())
-    }
-
-    pub fn epoch_nodes(&self, epoch: u64) -> Vec<&NodeRecord> {
-        if epoch == 0 {
-            return Vec::new();
-        }
-        self.records
+        let records: Vec<NodeRecord> = self
+            .records
             .values()
-            .filter(|record| record.epoch == epoch && record.validate().is_ok())
-            .collect()
-    }
-
-    pub fn commitment_for_epoch(&self, epoch: u64) -> Option<[u8; 32]> {
-        if epoch == 0 {
-            return None;
-        }
-        let nodes = self.epoch_nodes(epoch);
-        if nodes.is_empty() {
-            return None;
-        }
-        let count = u64::try_from(nodes.len()).ok()?;
-        let mut h = Sha256::new();
-        h.update(NODE_SET_DOMAIN);
-        h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
-        h.update(epoch.to_be_bytes());
-        h.update(count.to_be_bytes());
-        for record in nodes {
-            h.update(record.commitment()?);
-        }
-        Some(h.finalize().into())
+            .filter(|record| record.epoch == epoch)
+            .cloned()
+            .collect();
+        let snapshot = NodeSetSnapshot { epoch, records };
+        snapshot.validate().ok()?;
+        Some(snapshot)
     }
 
     pub fn commitment(&self, now: u64) -> Option<[u8; 32]> {
@@ -219,14 +248,32 @@ mod tests {
         let mut d = PeerDirectory::default();
         d.upsert(r(1), 10).unwrap();
 
-        let epoch_root_before = d.commitment_for_epoch(1).unwrap();
+        let snapshot = d.snapshot(1).unwrap();
+        let root_before = snapshot.commitment().unwrap();
+        assert_eq!(snapshot.get(&[1; 32]).unwrap().node_id, [1; 32]);
+
         assert!(d.commitment(10).is_some());
         assert!(d.commitment(101).is_some());
-        let epoch_root_after = d.commitment_for_epoch(1).unwrap();
 
-        assert_eq!(epoch_root_before, epoch_root_after);
-        assert!(d.get_at_epoch(&[1; 32], 1).is_some());
-        assert!(d.get_at_epoch(&[1; 32], 2).is_none());
+        let root_after = snapshot.commitment().unwrap();
+        assert_eq!(root_before, root_after);
+    }
+
+    #[test]
+    fn snapshot_rejects_duplicate_pq_identity_even_if_constructed_externally() {
+        let first = r(1);
+        let mut second = r(1);
+        second.node_id = [9; 32];
+        second.endpoint_root = [8; 32];
+        second.transport_keyset_root = [7; 32];
+        second.capability_root = [6; 32];
+
+        let snapshot = NodeSetSnapshot {
+            epoch: 1,
+            records: vec![first, second],
+        };
+        assert!(snapshot.validate().is_err());
+        assert!(snapshot.commitment().is_none());
     }
 
     #[test]
