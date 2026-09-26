@@ -302,7 +302,7 @@ impl EthereumLightClientStore {
             return Err("Ethereum finalized-header branch invalid");
         }
 
-        if let Some(next) = &update.next_sync_committee {
+        let verified_next = if let Some(next) = &update.next_sync_committee {
             next.validate()?;
             let next_gindex = next_sync_committee_gindex(attested_slot);
             if !verify_merkle_branch(
@@ -313,19 +313,25 @@ impl EthereumLightClientStore {
             ) {
                 return Err("Ethereum next sync committee branch invalid");
             }
-            if signature_period == store_period {
-                self.next_sync_committee = Some(next.clone());
-            }
-        }
+            Some(next.clone())
+        } else {
+            None
+        };
 
         let finalized_period = sync_committee_period(finalized_slot);
         if finalized_period > store_period {
-            let next = self
+            let current = self
                 .next_sync_committee
                 .clone()
                 .ok_or("cannot rotate Ethereum sync committee without verified next committee")?;
-            self.current_sync_committee = next;
-            self.next_sync_committee = None;
+            let future = verified_next
+                .ok_or("period transition requires a verified future sync committee")?;
+            self.current_sync_committee = current;
+            self.next_sync_committee = Some(future);
+        } else if self.next_sync_committee.is_none() {
+            if let Some(next) = verified_next {
+                self.next_sync_committee = Some(next);
+            }
         }
 
         self.finalized_header = update.finalized_header.clone();
@@ -380,7 +386,8 @@ fn fork_version_for_epoch(epoch: u64) -> [u8; 4] {
 }
 
 fn compute_domain(signature_slot: u64) -> [u8; 32] {
-    let epoch = signature_slot / ETH_SLOTS_PER_EPOCH;
+    let fork_version_slot = signature_slot.saturating_sub(1);
+    let epoch = fork_version_slot / ETH_SLOTS_PER_EPOCH;
     let fork_version = fork_version_for_epoch(epoch);
     let mut version_chunk = [0u8; 32];
     version_chunk[..4].copy_from_slice(&fork_version);
@@ -502,6 +509,24 @@ mod tests {
         };
         assert_ne!(h.hash_tree_root(), [0; 32]);
         assert_eq!(h.hash_tree_root(), h.hash_tree_root());
+    }
+
+    #[test]
+    fn signature_domain_uses_pre_signature_slot_fork() {
+        let boundary_slot = ETH_FULU_FORK_EPOCH * ETH_SLOTS_PER_EPOCH;
+        assert_eq!(
+            compute_domain(boundary_slot),
+            {
+                let mut version_chunk = [0u8; 32];
+                version_chunk[..4].copy_from_slice(&[0x05, 0, 0, 0]);
+                let fork_data_root =
+                    hash_pair(version_chunk, ETH_MAINNET_GENESIS_VALIDATORS_ROOT);
+                let mut domain = [0u8; 32];
+                domain[..4].copy_from_slice(&ETH_DOMAIN_SYNC_COMMITTEE);
+                domain[4..].copy_from_slice(&fork_data_root[..28]);
+                domain
+            }
+        );
     }
 
     #[test]
