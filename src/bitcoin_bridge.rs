@@ -637,4 +637,30 @@ mod tests {
         assert_eq!(checkpoint.block_time, 1_788_925_573);
         assert!(checkpoint.validate().is_ok());
     }
+
+    #[test]
+    fn real_mainnet_block_966144_extends_protocol_checkpoint() {
+        let header = header_from_hex(
+            "00000520e3722c9f551f869351ddc663a7520e3c0433ec6989740000000000000000000021cf969e6fe1a57adbddd252418d212667079f6100330c96d7eaf29c654eee013fd8a06a5e350217d1aa3732"
+        );
+        let proof = BitcoinMainnetHeaderProof {
+            headers: vec![header.clone()],
+        };
+        let tip = proof.verify().unwrap();
+        assert_eq!(tip.height, 966_144);
+        let mut display = tip.block_hash_internal;
+        display.reverse();
+        assert_eq!(
+            hex::encode(display),
+            "000000000000000000010a8fffd5112dba2e1910198d003453da3be093e4c2d0"
+        );
+
+        let mut tampered = header;
+        tampered.raw[79] ^= 1;
+        assert!(BitcoinMainnetHeaderProof {
+            headers: vec![tampered],
+        }
+        .verify()
+        .is_err());
+    }
 }
