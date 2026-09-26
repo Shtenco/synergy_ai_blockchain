@@ -176,6 +176,17 @@ pub struct EthereumFinalizedExecutionAnchor {
 }
 
 impl EthereumFinalizedExecutionAnchor {
+    pub(crate) fn from_verified_parts(
+        slot: u64,
+        beacon_root: [u8; 32],
+        state_root: [u8; 32],
+    ) -> Result<Self, &'static str> {
+        if slot == 0 || beacon_root == [0; 32] || state_root == [0; 32] {
+            return Err("invalid finalized Ethereum execution anchor");
+        }
+        Ok(Self { slot, beacon_root, state_root })
+    }
+
     pub fn slot(&self) -> u64 {
         self.slot
     }
@@ -208,11 +219,12 @@ pub struct EthereumLightClientStore {
 
 impl EthereumLightClientStore {
     pub fn finalized_execution_anchor(&self) -> EthereumFinalizedExecutionAnchor {
-        EthereumFinalizedExecutionAnchor {
-            slot: self.finalized_header.beacon.slot,
-            beacon_root: self.finalized_header.beacon.hash_tree_root(),
-            state_root: self.finalized_header.execution.execution_state_root,
-        }
+        EthereumFinalizedExecutionAnchor::from_verified_parts(
+            self.finalized_header.beacon.slot,
+            self.finalized_header.beacon.hash_tree_root(),
+            self.finalized_header.execution.execution_state_root,
+        )
+        .expect("verified light-client store must contain a nonzero finalized anchor")
     }
 
     pub fn initialize(bootstrap: EthereumLightClientBootstrap) -> Result<Self, &'static str> {
