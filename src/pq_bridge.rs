@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::bitcoin_bridge::BitcoinSpvProof;
 use crate::ethereum_proof::{EthereumAccountProof, EthereumStorageProof};
 use crate::pq::{
-    verify_authorization_with_context, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
     HybridAuthorization,
 };
@@ -266,7 +266,7 @@ impl BridgeClaimReplayState {
             now: validation.now,
             max_future_seconds: validation.max_future_seconds,
         };
-        if !verify_authorization_with_context(
+        if !verify_envelope_authorization(
             verifier,
             &authorized.authorization,
             &envelope,
