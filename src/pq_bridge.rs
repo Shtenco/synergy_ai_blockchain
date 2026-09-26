@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 
 use sha2::{Digest, Sha256};
 
-use crate::bitcoin_bridge::BitcoinSpvProof;
+use crate::bitcoin_bridge::BitcoinMainnetSpvProof;
+use crate::ethereum_light_client::EthereumFinalizedExecutionAnchor;
 use crate::ethereum_proof::{EthereumAccountProof, EthereumStorageProof};
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
@@ -20,42 +21,6 @@ pub enum BridgeSourceClass {
     EthereumL1,
     EthereumL2,
     EthereumL3,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifiedEvmStateAnchor {
-    pub chain_id: u64,
-    pub block_number: u64,
-    pub block_hash: [u8; 32],
-    pub state_root: [u8; 32],
-    pub finality_proof_root: [u8; 32],
-}
-
-impl VerifiedEvmStateAnchor {
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if self.chain_id == 0
-            || self.block_number == 0
-            || self.block_hash == [0; 32]
-            || self.state_root == [0; 32]
-            || self.finality_proof_root == [0; 32]
-        {
-            return Err("verified EVM state anchor fields required");
-        }
-        Ok(())
-    }
-
-    pub fn commitment(&self) -> Option<[u8; 32]> {
-        self.validate().ok()?;
-        let mut h = Sha256::new();
-        h.update(PQ_BRIDGE_DOMAIN);
-        h.update(b"EVM-ANCHOR");
-        h.update(self.chain_id.to_be_bytes());
-        h.update(self.block_number.to_be_bytes());
-        h.update(self.block_hash);
-        h.update(self.state_root);
-        h.update(self.finality_proof_root);
-        Some(h.finalize().into())
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,7 +61,7 @@ impl EvmSettlementHop {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmRecursiveSettlementProof {
-    pub anchor: VerifiedEvmStateAnchor,
+    pub anchor: EthereumFinalizedExecutionAnchor,
     pub hops: Vec<EvmSettlementHop>,
     pub target_chain_id: u64,
     pub target_event_or_state_root: [u8; 32],
@@ -104,7 +69,6 @@ pub struct EvmRecursiveSettlementProof {
 
 impl EvmRecursiveSettlementProof {
     pub fn verify(&self) -> Result<[u8; 32], &'static str> {
-        self.anchor.validate()?;
         if self.target_chain_id == 0 || self.target_event_or_state_root == [0; 32] {
             return Err("target EVM bridge state required");
         }
@@ -112,8 +76,8 @@ impl EvmRecursiveSettlementProof {
             return Err("bridge supports Ethereum L1 plus at most L2/L3 ancestry");
         }
 
-        let mut current_chain = self.anchor.chain_id;
-        let mut current_root = self.anchor.state_root;
+        let mut current_chain = 1u64;
+        let mut current_root = self.anchor.state_root();
         for hop in &self.hops {
             if hop.parent_chain_id != current_chain {
                 return Err("EVM settlement ancestry is disconnected");
@@ -128,7 +92,7 @@ impl EvmRecursiveSettlementProof {
         let mut h = Sha256::new();
         h.update(PQ_BRIDGE_DOMAIN);
         h.update(b"EVM-RECURSIVE");
-        h.update(self.anchor.commitment().ok_or("invalid EVM anchor")?);
+        h.update(self.anchor.commitment());
         for hop in &self.hops {
             h.update(hop.parent_chain_id.to_be_bytes());
             h.update(hop.child_chain_id.to_be_bytes());
@@ -153,7 +117,7 @@ impl EvmRecursiveSettlementProof {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BridgeSourceProof {
-    Bitcoin(BitcoinSpvProof),
+    Bitcoin(BitcoinMainnetSpvProof),
     Evm(EvmRecursiveSettlementProof),
 }
 
@@ -324,13 +288,8 @@ mod tests {
 
     #[test]
     fn settlement_depth_maps_to_l1_l2_l3() {
-        let anchor = VerifiedEvmStateAnchor {
-            chain_id: 1,
-            block_number: 1,
-            block_hash: [1; 32],
-            state_root: [2; 32],
-            finality_proof_root: [3; 32],
-        };
+        let anchor =
+            EthereumFinalizedExecutionAnchor::from_verified_parts(1, [1; 32], [2; 32]).unwrap();
         let p = EvmRecursiveSettlementProof {
             anchor,
             hops: vec![],
