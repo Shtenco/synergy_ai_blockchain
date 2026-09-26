@@ -33,5 +33,6 @@
     "real L2 settlement proof",
     "real L3 settlement proof"
   ],
-  "status": "IMPLEMENTED_AWAITING_EXECUTABLE_GATES"
+  "status": "IMPLEMENTED_AWAITING_EXECUTABLE_GATES",
+  "portable_ci": "TRIGGER_REQUESTED_ON_FOLLOWUP_COMMIT"
 }
