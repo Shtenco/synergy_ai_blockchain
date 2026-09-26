@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use sha2::{Digest, Sha256};
 
-use crate::bitcoin_bridge::BitcoinMainnetSpvProof;
+use crate::bitcoin_bridge::BitcoinVerifiedTxProof;
 use crate::ethereum_light_client::EthereumFinalizedExecutionAnchor;
 use crate::ethereum_proof::{EthereumAccountProof, EthereumStorageProof};
 use crate::pq::{
@@ -123,14 +123,14 @@ impl EvmRecursiveSettlementProof {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BridgeSourceProof {
-    Bitcoin(BitcoinMainnetSpvProof),
+    Bitcoin(BitcoinVerifiedTxProof),
     Evm(EvmRecursiveSettlementProof),
 }
 
 impl BridgeSourceProof {
     pub fn verify(&self) -> Result<([u8; 32], BridgeSourceClass), &'static str> {
         match self {
-            Self::Bitcoin(proof) => Ok((proof.verify()?, BridgeSourceClass::BitcoinL1)),
+            Self::Bitcoin(proof) => Ok((proof.commitment(), BridgeSourceClass::BitcoinL1)),
             Self::Evm(proof) => Ok((proof.verify()?, proof.source_class()?)),
         }
     }
