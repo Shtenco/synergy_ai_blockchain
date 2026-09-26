@@ -604,6 +604,52 @@ fn decode_storage_word(encoded: &[u8]) -> Result<[u8; 32], &'static str> {
 mod tests {
     use super::*;
 
+    fn profile(child: u64, code: u8) -> EvmSettlementProfile {
+        EvmSettlementProfile {
+            version: 1,
+            parent_chain_id: 1,
+            child_chain_id: child,
+            settlement_contract: [0x11; 20],
+            commitment_slot: [0x22; 32],
+            expected_code_hash: [code; 32],
+            scheme_kind: EvmSettlementSchemeKind::OpStackOutputRootV0,
+        }
+    }
+
+    #[test]
+    fn settlement_profile_binds_contract_code_hash() {
+        let a = profile(8453, 0x33).commitment().unwrap();
+        let b = profile(8453, 0x44).commitment().unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn settlement_registry_is_order_canonical_and_rejects_duplicate_chain_identity() {
+        let a = profile(8453, 0x33);
+        let mut b = profile(10, 0x44);
+        b.settlement_contract = [0x55; 20];
+
+        let r1 = EvmSettlementProfileRegistry {
+            version: 1,
+            profiles: vec![a.clone(), b.clone()],
+        }
+        .commitment()
+        .unwrap();
+        let r2 = EvmSettlementProfileRegistry {
+            version: 1,
+            profiles: vec![b, a.clone()],
+        }
+        .commitment()
+        .unwrap();
+        assert_eq!(r1, r2);
+
+        let dup = EvmSettlementProfileRegistry {
+            version: 1,
+            profiles: vec![a.clone(), a],
+        };
+        assert!(dup.commitment().is_err());
+    }
+
     #[test]
     fn op_stack_output_root_binds_full_v0_preimage() {
         let base = op_stack_output_root_v0([1; 32], [2; 32], [3; 32]);
