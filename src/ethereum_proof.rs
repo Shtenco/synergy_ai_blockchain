@@ -232,6 +232,19 @@ fn verify_node_reference(expected: &[u8], encoded_node: &[u8]) -> bool {
     }
 }
 
+
+pub fn decode_evm_block_header_state_root(
+    encoded_header: &[u8],
+) -> Result<[u8; 32], &'static str> {
+    let items = decode_list_items(encoded_header)?;
+    if items.len() < 4 || items[3].is_list || items[3].payload.len() != 32 {
+        return Err("EVM block header stateRoot field missing or malformed");
+    }
+    let mut root = [0u8; 32];
+    root.copy_from_slice(items[3].payload);
+    Ok(root)
+}
+
 pub fn verify_mpt_inclusion(
     root: [u8; 32],
     secure_key: &[u8],
