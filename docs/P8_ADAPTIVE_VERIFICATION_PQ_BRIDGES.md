@@ -74,6 +74,18 @@ Verifies Nitro assertion inputs, binds GlobalState.blockHash to the supplied L2 
 
 Every settlement-scheme preimage has its own canonical commitment, preventing type confusion.
 
+### Trusted settlement profile registry
+
+L2/L3 claimants cannot freely choose a settlement contract, storage slot or adapter. Each supported parent/child chain pair is defined by a consensus-configured EvmSettlementProfile containing:
+- parent and child chain IDs;
+- settlement contract address;
+- commitment storage slot;
+- expected proved contract codeHash;
+- allowed settlement adapter kind;
+- profile version.
+
+The canonical EvmSettlementProfileRegistry root is bound by PqBridgeValidationContext. A proof is rejected if its registry root differs from the configured root or if the proved account codeHash differs from the profile. The registry can contain multiple approved networks while each recursive proof consumes only the profile for its actual hops.
+
 ## PQ authorization
 
 Every external→SYNERGY claim binds:
