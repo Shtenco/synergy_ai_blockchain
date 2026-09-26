@@ -131,14 +131,6 @@ impl Uint256 {
         Some(Self(out))
     }
 
-    fn bit_len(self) -> usize {
-        for i in (0..4).rev() {
-            if self.0[i] != 0 {
-                return i * 64 + (64 - self.0[i].leading_zeros() as usize);
-            }
-        }
-        0
-    }
 }
 
 impl Ord for Uint256 {
@@ -406,6 +398,14 @@ pub struct BitcoinVerifiedTxProof {
 impl BitcoinVerifiedTxProof {
     pub fn txid_internal(&self) -> [u8; 32] {
         self.txid_internal
+    }
+
+    pub fn tx_block_hash_internal(&self) -> [u8; 32] {
+        self.tx_block_hash_internal
+    }
+
+    pub fn work_since_checkpoint(&self) -> [u8; 32] {
+        self.work_since_checkpoint
     }
 
     pub fn canonical_tip_hash_internal(&self) -> [u8; 32] {
