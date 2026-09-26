@@ -1351,6 +1351,9 @@ mod tests {
             AuthorizationDomain::KvReplicaReceipt.protocol_code(),
             AuthorizationDomain::TransportHandshake.protocol_code(),
             AuthorizationDomain::AutopilotLeaseTerminal.protocol_code(),
+            AuthorizationDomain::AgentExecutionReceipt.protocol_code(),
+            AuthorizationDomain::BridgeProof.protocol_code(),
+            AuthorizationDomain::AdaptiveVerificationReceipt.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
