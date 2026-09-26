@@ -394,6 +394,110 @@ impl BitcoinMainnetHeaderProof {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BitcoinVerifiedTxProof {
+    txid_internal: [u8; 32],
+    tx_block_hash_internal: [u8; 32],
+    canonical_tip_hash_internal: [u8; 32],
+    work_since_checkpoint: [u8; 32],
+    confirmations: u32,
+    proof_root: [u8; 32],
+}
+
+impl BitcoinVerifiedTxProof {
+    pub fn txid_internal(&self) -> [u8; 32] {
+        self.txid_internal
+    }
+
+    pub fn canonical_tip_hash_internal(&self) -> [u8; 32] {
+        self.canonical_tip_hash_internal
+    }
+
+    pub fn confirmations(&self) -> u32 {
+        self.confirmations
+    }
+
+    pub fn commitment(&self) -> [u8; 32] {
+        self.proof_root
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BitcoinMainnetChainState {
+    best_height: u32,
+    best_tip_hash_internal: [u8; 32],
+    best_work_since_checkpoint: [u8; 32],
+}
+
+impl Default for BitcoinMainnetChainState {
+    fn default() -> Self {
+        let checkpoint = bitcoin_mainnet_trusted_checkpoint();
+        Self {
+            best_height: checkpoint.height,
+            best_tip_hash_internal: checkpoint.block_hash_internal,
+            best_work_since_checkpoint: [0; 32],
+        }
+    }
+}
+
+impl BitcoinMainnetChainState {
+    pub fn best_height(&self) -> u32 {
+        self.best_height
+    }
+
+    pub fn best_tip_hash_internal(&self) -> [u8; 32] {
+        self.best_tip_hash_internal
+    }
+
+    pub fn best_work_since_checkpoint(&self) -> [u8; 32] {
+        self.best_work_since_checkpoint
+    }
+
+    pub fn verify_tx_and_adopt(
+        &mut self,
+        proof: &BitcoinMainnetSpvProof,
+    ) -> Result<BitcoinVerifiedTxProof, &'static str> {
+        let verified = proof.verify_details()?;
+        let candidate_work = Uint256::from_be_bytes(verified.tip.work_since_checkpoint);
+        let best_work = Uint256::from_be_bytes(self.best_work_since_checkpoint);
+
+        match candidate_work.cmp(&best_work) {
+            Ordering::Less => return Err("bitcoin proof is on a lower-work chain"),
+            Ordering::Equal => {
+                if verified.tip.block_hash_internal != self.best_tip_hash_internal {
+                    return Err("bitcoin equal-work competing tip rejected");
+                }
+            }
+            Ordering::Greater => {
+                self.best_height = verified.tip.height;
+                self.best_tip_hash_internal = verified.tip.block_hash_internal;
+                self.best_work_since_checkpoint = verified.tip.work_since_checkpoint;
+            }
+        }
+
+        if verified.tip.block_hash_internal != self.best_tip_hash_internal {
+            return Err("bitcoin transaction proof is not on canonical best chain");
+        }
+
+        Ok(BitcoinVerifiedTxProof {
+            txid_internal: proof.merkle.txid_internal,
+            tx_block_hash_internal: verified.tx_block_hash_internal,
+            canonical_tip_hash_internal: verified.tip.block_hash_internal,
+            work_since_checkpoint: verified.tip.work_since_checkpoint,
+            confirmations: verified.confirmations,
+            proof_root: verified.proof_root,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BitcoinSpvVerification {
+    tip: VerifiedBitcoinTip,
+    tx_block_hash_internal: [u8; 32],
+    confirmations: u32,
+    proof_root: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitcoinMainnetSpvProof {
     pub chain: BitcoinMainnetHeaderProof,
     pub tx_block_offset: u32,
@@ -402,7 +506,7 @@ pub struct BitcoinMainnetSpvProof {
 }
 
 impl BitcoinMainnetSpvProof {
-    pub fn verify(&self) -> Result<[u8; 32], &'static str> {
+    fn verify_details(&self) -> Result<BitcoinSpvVerification, &'static str> {
         if self.chain.headers.is_empty() || self.min_confirmations == 0 {
             return Err("bitcoin SPV proof requires post-checkpoint headers and confirmations");
         }
@@ -426,6 +530,8 @@ impl BitcoinMainnetSpvProof {
             return Err("bitcoin transaction merkle proof mismatch");
         }
 
+        let confirmations_u32 =
+            u32::try_from(confirmations).map_err(|_| "bitcoin confirmation count overflow")?;
         let mut h = Sha256::new();
         h.update(BTC_SPV_DOMAIN);
         h.update(self.merkle.txid_internal);
@@ -433,8 +539,17 @@ impl BitcoinMainnetSpvProof {
         h.update(tip.block_hash_internal);
         h.update(bitcoin_mainnet_minimum_chain_work());
         h.update(tip.work_since_checkpoint);
-        h.update(self.min_confirmations.to_be_bytes());
-        Ok(h.finalize().into())
+        h.update(confirmations_u32.to_be_bytes());
+        Ok(BitcoinSpvVerification {
+            tip,
+            tx_block_hash_internal: tx_header.block_hash(),
+            confirmations: confirmations_u32,
+            proof_root: h.finalize().into(),
+        })
+    }
+
+    pub fn verify(&self) -> Result<[u8; 32], &'static str> {
+        Ok(self.verify_details()?.proof_root)
     }
 }
 
@@ -637,6 +752,17 @@ mod tests {
         assert_eq!(checkpoint.bits, 0x1702355e);
         assert_eq!(checkpoint.block_time, 1_788_925_573);
         assert!(checkpoint.validate().is_ok());
+    }
+
+    #[test]
+    fn best_chain_state_starts_at_pinned_checkpoint() {
+        let state = BitcoinMainnetChainState::default();
+        assert_eq!(state.best_height(), 966_143);
+        assert_eq!(
+            state.best_tip_hash_internal(),
+            bitcoin_mainnet_trusted_checkpoint().block_hash_internal
+        );
+        assert_eq!(state.best_work_since_checkpoint(), [0; 32]);
     }
 
     #[test]
