@@ -34,5 +34,18 @@
     "real L3 settlement proof"
   ],
   "status": "IMPLEMENTED_AWAITING_EXECUTABLE_GATES",
-  "portable_ci": "TRIGGER_REQUESTED_ON_FOLLOWUP_COMMIT"
+  "portable_ci": "HOSTED_DIAGNOSTIC_ARTIFACT_GATE_ENABLED",
+  "production_hardening": {
+    "bitcoin_core_checkpoint_height": 966143,
+    "bitcoin_core_assumevalid_hash": "00000000000000000000748969ec33043c0e52a763c6dd5193861f559f2c72e3",
+    "bitcoin_retarget_validation": true,
+    "bitcoin_cumulative_chainwork": true,
+    "bitcoin_median_time_past": true,
+    "bitcoin_real_header_fixture_966144": true,
+    "ethereum_consensus_light_client": true,
+    "ethereum_sync_committee_bls": true,
+    "ethereum_finality_merkle_branch": true,
+    "ethereum_execution_state_root_proof": true,
+    "ethereum_bridge_anchor_sealed_to_light_client_store": true
+  }
 }
