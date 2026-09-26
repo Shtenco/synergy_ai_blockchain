@@ -297,23 +297,52 @@ pub struct VerifiedBitcoinTip {
     pub block_time: u32,
 }
 
+pub fn bitcoin_mainnet_trusted_checkpoint() -> BitcoinMainnetCheckpoint {
+    BitcoinMainnetCheckpoint {
+        height: 966_143,
+        block_hash_internal: [
+            0xe3, 0x72, 0x2c, 0x9f, 0x55, 0x1f, 0x86, 0x93,
+            0x51, 0xdd, 0xc6, 0x63, 0xa7, 0x52, 0x0e, 0x3c,
+            0x04, 0x33, 0xec, 0x69, 0x89, 0x74, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+        bits: 0x1702355e,
+        block_time: 1_788_925_573,
+        period_start_time: 1_788_640_367,
+        chain_work: bitcoin_mainnet_minimum_chain_work(),
+        recent_times: vec![
+            1_788_917_326,
+            1_788_917_796,
+            1_788_919_437,
+            1_788_919_710,
+            1_788_921_108,
+            1_788_922_141,
+            1_788_922_577,
+            1_788_924_176,
+            1_788_924_139,
+            1_788_925_028,
+            1_788_925_573,
+        ],
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitcoinMainnetHeaderProof {
-    pub checkpoint: BitcoinMainnetCheckpoint,
     pub headers: Vec<BitcoinHeader>,
 }
 
 impl BitcoinMainnetHeaderProof {
     pub fn verify(&self) -> Result<VerifiedBitcoinTip, &'static str> {
-        self.checkpoint.validate()?;
+        let checkpoint = bitcoin_mainnet_trusted_checkpoint();
+        checkpoint.validate()?;
 
-        let mut height = self.checkpoint.height;
-        let mut previous_hash = self.checkpoint.block_hash_internal;
-        let mut previous_bits = self.checkpoint.bits;
-        let mut previous_time = self.checkpoint.block_time;
-        let mut period_start_time = self.checkpoint.period_start_time;
-        let mut chain_work = Uint256::from_be_bytes(self.checkpoint.chain_work);
-        let mut recent_times = self.checkpoint.recent_times.clone();
+        let mut height = checkpoint.height;
+        let mut previous_hash = checkpoint.block_hash_internal;
+        let mut previous_bits = checkpoint.bits;
+        let mut previous_time = checkpoint.block_time;
+        let mut period_start_time = checkpoint.period_start_time;
+        let mut chain_work = Uint256::from_be_bytes(checkpoint.chain_work);
+        let mut recent_times = checkpoint.recent_times.clone();
 
         for header in &self.headers {
             let next_height = height.checked_add(1).ok_or("bitcoin height overflow")?;
@@ -592,5 +621,20 @@ mod tests {
         let target = compact_target(0x1d00ffff).unwrap();
         assert_eq!(target_to_compact(target), Some(0x1d00ffff));
         assert!(target <= bitcoin_mainnet_pow_limit());
+    }
+
+    #[test]
+    fn protocol_checkpoint_is_pinned_to_bitcoin_core_assumevalid() {
+        let checkpoint = bitcoin_mainnet_trusted_checkpoint();
+        assert_eq!(checkpoint.height, 966_143);
+        let mut display = checkpoint.block_hash_internal;
+        display.reverse();
+        assert_eq!(
+            hex::encode(display),
+            "00000000000000000000748969ec33043c0e52a763c6dd5193861f559f2c72e3"
+        );
+        assert_eq!(checkpoint.bits, 0x1702355e);
+        assert_eq!(checkpoint.block_time, 1_788_925_573);
+        assert!(checkpoint.validate().is_ok());
     }
 }
