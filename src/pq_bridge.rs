@@ -49,6 +49,51 @@ pub enum EvmSettlementScheme {
     },
 }
 
+impl EvmSettlementScheme {
+    pub fn commitment(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(PQ_BRIDGE_DOMAIN);
+        h.update(b"SETTLEMENT-SCHEME/V1");
+        match self {
+            Self::DirectStateRoot => {
+                h.update([1u8]);
+            }
+            Self::OpStackOutputRootV0 {
+                message_passer_storage_root,
+                l2_block_hash,
+            } => {
+                h.update([2u8]);
+                h.update(message_passer_storage_root);
+                h.update(l2_block_hash);
+            }
+            Self::ArbitrumNitroConfirmedAssertion {
+                parent_assertion_hash,
+                inbox_acc,
+                global_state_block_hash,
+                global_state_send_root,
+                inbox_position,
+                position_in_message,
+                machine_status,
+                end_history_root,
+                l2_header_rlp,
+            } => {
+                h.update([3u8]);
+                h.update(parent_assertion_hash);
+                h.update(inbox_acc);
+                h.update(global_state_block_hash);
+                h.update(global_state_send_root);
+                h.update(inbox_position.to_be_bytes());
+                h.update(position_in_message.to_be_bytes());
+                h.update([*machine_status]);
+                h.update(end_history_root);
+                h.update((l2_header_rlp.len() as u64).to_be_bytes());
+                h.update(l2_header_rlp);
+            }
+        }
+        h.finalize().into()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmSettlementHop {
     pub parent_chain_id: u64,
@@ -224,11 +269,7 @@ impl EvmRecursiveSettlementProof {
             h.update(hop.settlement_contract);
             h.update(hop.state_root_slot);
             h.update(hop.claimed_child_state_root);
-            h.update([match &hop.scheme {
-                EvmSettlementScheme::DirectStateRoot => 1,
-                EvmSettlementScheme::OpStackOutputRootV0 { .. } => 2,
-                EvmSettlementScheme::ArbitrumNitroConfirmedAssertion { .. } => 3,
-            }]);
+            h.update(hop.scheme.commitment());
         }
         h.update(self.target_chain_id.to_be_bytes());
         h.update(self.target_event_or_state_root);
