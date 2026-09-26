@@ -32,7 +32,10 @@
     "arbitrum_nitro_confirmed_assertion_adapter": true,
     "settlement_scheme_type_confusion_protection": true,
     "pq_bridge_claim_authorization": true,
-    "bridge_claim_replay_protection": true
+    "bridge_claim_replay_protection": true,
+    "settlement_profile_registry": true,
+    "settlement_contract_code_hash_binding": true,
+    "consensus_expected_profile_registry_root": true
   },
   "pinned_external_consensus_data": {
     "bitcoin_core_checkpoint_height": 966143,
