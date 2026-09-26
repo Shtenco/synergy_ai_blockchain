@@ -67,7 +67,7 @@ pub use adaptive_verification::{
     ADAPTIVE_SAMPLE_DOMAIN, ADAPTIVE_SHARD_SET_DOMAIN,
 };
 pub use bitcoin_bridge::{
-    bitcoin_mainnet_minimum_chain_work, BitcoinHeader, BitcoinMainnetCheckpoint,
+    bitcoin_mainnet_minimum_chain_work, bitcoin_mainnet_trusted_checkpoint, BitcoinHeader, BitcoinMainnetCheckpoint,
     BitcoinMainnetHeaderProof, BitcoinMainnetSpvProof, BitcoinMerkleProof, VerifiedBitcoinTip,
     BITCOIN_RETARGET_INTERVAL, BITCOIN_TARGET_SPACING_SECONDS,
     BITCOIN_TARGET_TIMESPAN_SECONDS, BTC_SPV_DOMAIN,
