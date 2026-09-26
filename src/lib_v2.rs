@@ -60,8 +60,10 @@ pub use agent_execution::{
 };
 pub use adaptive_verification::{
     deterministic_sample_indices, evaluate_adaptive_samples, resolve_full_recompute,
-    AdaptiveVerificationCertificate, AdaptiveVerificationOutcome, AdaptiveVerificationPolicy,
-    AdaptiveVerifierBundle, SampledShardReceipt, ADAPTIVE_CERT_DOMAIN, ADAPTIVE_SAMPLE_DOMAIN,
+    shard_set_commitment, verify_adaptive_bundle_and_consume, AdaptiveBundleAuthorization,
+    AdaptiveBundleValidationContext, AdaptiveVerificationCertificate, AdaptiveVerificationOutcome,
+    AdaptiveVerificationPolicy, AdaptiveVerifierBundle, SampledShardReceipt, ADAPTIVE_CERT_DOMAIN,
+    ADAPTIVE_SAMPLE_DOMAIN, ADAPTIVE_SHARD_SET_DOMAIN,
 };
 pub use bitcoin_bridge::{
     BitcoinHeader, BitcoinMerkleProof, BitcoinSpvProof, BTC_SPV_DOMAIN,
@@ -74,6 +76,7 @@ pub use pq_bridge::{
     EvmSettlementHop, PqBridgeAuthorization, PqBridgeClaim, PqBridgeValidationContext,
     VerifiedEvmStateAnchor, PQ_BRIDGE_DOMAIN,
 };
+pub use agent_reward::authorize_adaptive_agent_reward_and_mint;
 pub use agentic_economy::{
     decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
     AgenticEconomyTransitionReceipt, Asset, CbPolicy, EconomyAccount, EconomyAccountingSnapshot,
