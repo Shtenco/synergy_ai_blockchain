@@ -17,6 +17,7 @@ pub mod consensus;
 pub mod discovery;
 pub mod evm_compat;
 pub mod ethereum_proof;
+pub mod ethereum_light_client;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -66,15 +67,25 @@ pub use adaptive_verification::{
     ADAPTIVE_SAMPLE_DOMAIN, ADAPTIVE_SHARD_SET_DOMAIN,
 };
 pub use bitcoin_bridge::{
-    BitcoinHeader, BitcoinMerkleProof, BitcoinSpvProof, BTC_SPV_DOMAIN,
+    bitcoin_mainnet_minimum_chain_work, BitcoinHeader, BitcoinMainnetCheckpoint,
+    BitcoinMainnetHeaderProof, BitcoinMainnetSpvProof, BitcoinMerkleProof, VerifiedBitcoinTip,
+    BITCOIN_RETARGET_INTERVAL, BITCOIN_TARGET_SPACING_SECONDS,
+    BITCOIN_TARGET_TIMESPAN_SECONDS, BTC_SPV_DOMAIN,
 };
 pub use ethereum_proof::{
     keccak256, verify_mpt_inclusion, EthereumAccountProof, EthereumStorageProof, ETH_MPT_DOMAIN,
 };
+pub use ethereum_light_client::{
+    verify_merkle_branch, BeaconBlockHeader, EthereumFinalizedExecutionAnchor,
+    EthereumLightClientBootstrap, EthereumLightClientHeader, EthereumLightClientStore,
+    EthereumLightClientUpdate, ExecutionStateWitness, SyncAggregate, SyncCommittee,
+    ETH_MAINNET_GENESIS_VALIDATORS_ROOT, ETH_MIN_FINALITY_PARTICIPANTS,
+    ETH_SLOTS_PER_SYNC_COMMITTEE_PERIOD, ETH_SYNC_COMMITTEE_SIZE,
+};
 pub use pq_bridge::{
     BridgeClaimReplayState, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
     EvmSettlementHop, PqBridgeAuthorization, PqBridgeClaim, PqBridgeValidationContext,
-    VerifiedEvmStateAnchor, PQ_BRIDGE_DOMAIN,
+    PQ_BRIDGE_DOMAIN,
 };
 pub use agent_reward::authorize_adaptive_agent_reward_and_mint;
 pub use agentic_economy::{
