@@ -150,8 +150,56 @@ impl SyncAggregate {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EthereumMainnetTrustPolicy {
+    pub trusted_slot: u64,
+    pub trusted_beacon_root: [u8; 32],
+    pub valid_until_slot: u64,
+}
+
+impl EthereumMainnetTrustPolicy {
+    pub fn validate(&self, current_slot: u64) -> Result<(), &'static str> {
+        if self.trusted_slot == 0
+            || self.trusted_beacon_root == [0; 32]
+            || self.valid_until_slot <= self.trusted_slot
+            || current_slot < self.trusted_slot
+            || current_slot > self.valid_until_slot
+        {
+            return Err("Ethereum weak-subjectivity trust policy is invalid or expired");
+        }
+        Ok(())
+    }
+
+    pub fn commitment(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(b"SYNERGY/ETH-MAINNET-TRUST-POLICY/V1\0");
+        h.update(self.trusted_slot.to_be_bytes());
+        h.update(self.trusted_beacon_root);
+        h.update(self.valid_until_slot.to_be_bytes());
+        h.finalize().into()
+    }
+}
+
+pub fn ethereum_mainnet_checkpoint_2026_09_16(
+    valid_until_slot: u64,
+) -> Result<EthereumMainnetTrustPolicy, &'static str> {
+    let policy = EthereumMainnetTrustPolicy {
+        trusted_slot: 15_230_720,
+        trusted_beacon_root: [
+            0xec, 0x14, 0x12, 0xdc, 0xc0, 0x5d, 0x08, 0xed,
+            0x69, 0x40, 0x97, 0x5e, 0xee, 0x69, 0x02, 0x65,
+            0x13, 0xe5, 0xb3, 0x2d, 0x92, 0x01, 0x95, 0x32,
+            0x25, 0xa7, 0xc6, 0x39, 0x50, 0xe3, 0x65, 0x6b,
+        ],
+        valid_until_slot,
+    };
+    if valid_until_slot <= policy.trusted_slot {
+        return Err("Ethereum checkpoint expiry must advance past trusted slot");
+    }
+    Ok(policy)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EthereumLightClientBootstrap {
-    pub trusted_block_root: [u8; 32],
     pub header: EthereumLightClientHeader,
     pub current_sync_committee: SyncCommittee,
     pub current_sync_committee_branch: Vec<[u8; 32]>,
@@ -228,11 +276,18 @@ impl EthereumLightClientStore {
         )
     }
 
-    pub fn initialize(bootstrap: EthereumLightClientBootstrap) -> Result<Self, &'static str> {
+    pub fn initialize(
+        bootstrap: EthereumLightClientBootstrap,
+        trust_policy: &EthereumMainnetTrustPolicy,
+        current_slot: u64,
+    ) -> Result<Self, &'static str> {
+        trust_policy.validate(current_slot)?;
         bootstrap.header.validate()?;
         bootstrap.current_sync_committee.validate()?;
-        if bootstrap.header.beacon.hash_tree_root() != bootstrap.trusted_block_root {
-            return Err("Ethereum weak-subjectivity bootstrap root mismatch");
+        if bootstrap.header.beacon.slot != trust_policy.trusted_slot
+            || bootstrap.header.beacon.hash_tree_root() != trust_policy.trusted_beacon_root
+        {
+            return Err("Ethereum weak-subjectivity bootstrap does not match chain trust policy");
         }
         let gindex = current_sync_committee_gindex(bootstrap.header.beacon.slot);
         if !verify_merkle_branch(
@@ -549,6 +604,18 @@ mod tests {
         let root = hash_pair(leaf, sibling);
         assert!(verify_merkle_branch(leaf, &[sibling], 2, root));
         assert!(!verify_merkle_branch(leaf, &[sibling], 3, root));
+    }
+
+    #[test]
+    fn deployment_checkpoint_is_policy_bound_and_expiring() {
+        let policy = ethereum_mainnet_checkpoint_2026_09_16(15_400_000).unwrap();
+        assert_eq!(policy.trusted_slot, 15_230_720);
+        assert_eq!(
+            hex::encode(policy.trusted_beacon_root),
+            "ec1412dcc05d08ed6940975eee69026513e5b32d9201953225a7c63950e3656b"
+        );
+        assert!(policy.validate(15_300_000).is_ok());
+        assert!(policy.validate(15_500_000).is_err());
     }
 
     #[test]
