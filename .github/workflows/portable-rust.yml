@@ -13,17 +13,53 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.85.0"
           components: rustfmt, clippy
-      - name: cargo fmt
-        run: cargo fmt --all -- --check
-      - name: cargo check
-        run: cargo check --all-targets
-      - name: cargo test default
-        run: cargo test --all-targets
-      - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: cargo test reference-pq
-        run: cargo test --all-targets --features reference-pq
+
+      - name: Run Rust gates and capture log
+        id: gates
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          : > rust-gate.log
+          status=0
+
+          run_gate() {
+            echo "===== $1 =====" | tee -a rust-gate.log
+            shift
+            "$@" 2>&1 | tee -a rust-gate.log
+            rc=${PIPESTATUS[0]}
+            echo "===== exit=$rc =====" | tee -a rust-gate.log
+            if [ "$rc" -ne 0 ]; then status="$rc"; fi
+          }
+
+          run_gate fmt cargo fmt --all -- --check
+          run_gate check cargo check --all-targets
+          run_gate test-default cargo test --all-targets
+          run_gate clippy cargo clippy --all-targets -- -D warnings
+          run_gate test-reference-pq cargo test --all-targets --features reference-pq
+
+          echo "$status" > rust-gate.status
+          exit "$status"
+
+      - name: Upload Rust gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-gate-log
+          path: |
+            rust-gate.log
+            rust-gate.status
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail workflow when Rust gates failed
+        if: always()
+        shell: bash
+        run: |
+          test -f rust-gate.status
+          test "$(cat rust-gate.status)" = "0"
