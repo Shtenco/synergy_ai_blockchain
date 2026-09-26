@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::bitcoin_bridge::BitcoinVerifiedTxProof;
 use crate::ethereum_light_client::EthereumFinalizedExecutionAnchor;
-use crate::ethereum_proof::{EthereumAccountProof, EthereumStorageProof};
+use crate::ethereum_proof::{decode_evm_block_header_state_root, keccak256, EthereumAccountProof, EthereumStorageProof};
 use crate::pq::{
     verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
     AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
@@ -30,12 +30,34 @@ pub enum BridgeDirection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EvmSettlementScheme {
+    DirectStateRoot,
+    OpStackOutputRootV0 {
+        message_passer_storage_root: [u8; 32],
+        l2_block_hash: [u8; 32],
+    },
+    ArbitrumNitroConfirmedAssertion {
+        parent_assertion_hash: [u8; 32],
+        inbox_acc: [u8; 32],
+        global_state_block_hash: [u8; 32],
+        global_state_send_root: [u8; 32],
+        inbox_position: u64,
+        position_in_message: u64,
+        machine_status: u8,
+        end_history_root: [u8; 32],
+        l2_header_rlp: Vec<u8>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmSettlementHop {
     pub parent_chain_id: u64,
     pub child_chain_id: u64,
     pub settlement_contract: [u8; 20],
+    /// Parent-chain storage slot containing the scheme-specific finalized commitment.
     pub state_root_slot: [u8; 32],
     pub claimed_child_state_root: [u8; 32],
+    pub scheme: EvmSettlementScheme,
     pub account_proof: EthereumAccountProof,
     pub storage_proof: EthereumStorageProof,
 }
@@ -57,12 +79,109 @@ impl EvmSettlementHop {
         self.account_proof.verify()?;
         let storage_root = self.account_proof.storage_root()?;
         self.storage_proof.verify(storage_root)?;
+        let stored = decode_storage_word(&self.storage_proof.value_rlp)?;
 
-        if decode_storage_word(&self.storage_proof.value_rlp)? != self.claimed_child_state_root {
-            return Err("settlement storage value does not match child state root");
+        let expected = match &self.scheme {
+            EvmSettlementScheme::DirectStateRoot => self.claimed_child_state_root,
+            EvmSettlementScheme::OpStackOutputRootV0 {
+                message_passer_storage_root,
+                l2_block_hash,
+            } => {
+                if *message_passer_storage_root == [0; 32] || *l2_block_hash == [0; 32] {
+                    return Err("invalid OP Stack output-root preimage");
+                }
+                op_stack_output_root_v0(
+                    self.claimed_child_state_root,
+                    *message_passer_storage_root,
+                    *l2_block_hash,
+                )
+            }
+            EvmSettlementScheme::ArbitrumNitroConfirmedAssertion {
+                parent_assertion_hash,
+                inbox_acc,
+                global_state_block_hash,
+                global_state_send_root,
+                inbox_position,
+                position_in_message,
+                machine_status,
+                end_history_root,
+                l2_header_rlp,
+            } => {
+                if *parent_assertion_hash == [0; 32]
+                    || *inbox_acc == [0; 32]
+                    || *global_state_block_hash == [0; 32]
+                    || *global_state_send_root == [0; 32]
+                    || *end_history_root == [0; 32]
+                    || l2_header_rlp.is_empty()
+                    || *machine_status > 2
+                {
+                    return Err("invalid Arbitrum Nitro assertion preimage");
+                }
+                if keccak256(l2_header_rlp) != *global_state_block_hash {
+                    return Err("Arbitrum GlobalState block hash does not match L2 header");
+                }
+                if decode_evm_block_header_state_root(l2_header_rlp)?
+                    != self.claimed_child_state_root
+                {
+                    return Err("Arbitrum L2 header state root mismatch");
+                }
+                arbitrum_nitro_assertion_hash(
+                    *parent_assertion_hash,
+                    *inbox_acc,
+                    *global_state_block_hash,
+                    *global_state_send_root,
+                    *inbox_position,
+                    *position_in_message,
+                    *machine_status,
+                    *end_history_root,
+                )
+            }
+        };
+
+        if stored != expected {
+            return Err("parent settlement commitment mismatch");
         }
         Ok(self.claimed_child_state_root)
     }
+}
+
+pub fn op_stack_output_root_v0(
+    state_root: [u8; 32],
+    message_passer_storage_root: [u8; 32],
+    l2_block_hash: [u8; 32],
+) -> [u8; 32] {
+    let mut preimage = [0u8; 128];
+    preimage[32..64].copy_from_slice(&state_root);
+    preimage[64..96].copy_from_slice(&message_passer_storage_root);
+    preimage[96..128].copy_from_slice(&l2_block_hash);
+    keccak256(&preimage)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn arbitrum_nitro_assertion_hash(
+    parent_assertion_hash: [u8; 32],
+    inbox_acc: [u8; 32],
+    block_hash: [u8; 32],
+    send_root: [u8; 32],
+    inbox_position: u64,
+    position_in_message: u64,
+    machine_status: u8,
+    end_history_root: [u8; 32],
+) -> [u8; 32] {
+    let mut encoded = [0u8; 192];
+    encoded[0..32].copy_from_slice(&block_hash);
+    encoded[32..64].copy_from_slice(&send_root);
+    encoded[88..96].copy_from_slice(&inbox_position.to_be_bytes());
+    encoded[120..128].copy_from_slice(&position_in_message.to_be_bytes());
+    encoded[159] = machine_status;
+    encoded[160..192].copy_from_slice(&end_history_root);
+    let after_state_hash = keccak256(&encoded);
+
+    let mut packed = [0u8; 96];
+    packed[..32].copy_from_slice(&parent_assertion_hash);
+    packed[32..64].copy_from_slice(&after_state_hash);
+    packed[64..].copy_from_slice(&inbox_acc);
+    keccak256(&packed)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -105,6 +224,11 @@ impl EvmRecursiveSettlementProof {
             h.update(hop.settlement_contract);
             h.update(hop.state_root_slot);
             h.update(hop.claimed_child_state_root);
+            h.update([match hop.scheme {
+                EvmSettlementScheme::DirectStateRoot => 1,
+                EvmSettlementScheme::OpStackOutputRootV0 { .. } => 2,
+                EvmSettlementScheme::ArbitrumNitroConfirmedAssertion { .. } => 3,
+            }]);
         }
         h.update(self.target_chain_id.to_be_bytes());
         h.update(self.target_event_or_state_root);
