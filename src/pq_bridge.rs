@@ -372,9 +372,6 @@ impl EvmRecursiveSettlementProof {
         }
 
         self.settlement_profiles.commitment()?;
-        if self.settlement_profiles.profiles.len() != self.hops.len() {
-            return Err("settlement profile count must match proof hop count");
-        }
 
         let mut current_chain = 1u64;
         let mut current_root = self.anchor.state_root();
