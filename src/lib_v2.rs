@@ -4,6 +4,7 @@ pub mod agent_execution;
 pub mod agent_mesh;
 pub mod agent_reward;
 pub mod agentic_economy;
+pub mod adaptive_verification;
 
 pub mod autopilot;
 pub mod autopilot_budget;
@@ -15,6 +16,7 @@ pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
 pub mod evm_compat;
+pub mod ethereum_proof;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -31,8 +33,10 @@ pub mod network;
 pub mod nexus;
 pub mod payment_funding;
 pub mod payments;
+pub mod pq_bridge;
 pub mod peer_discovery;
 pub mod pi_pq;
+pub mod bitcoin_bridge;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
@@ -53,6 +57,22 @@ pub mod verification;
 pub use agent_execution::{
     AgentExecutionReceipt, AgentReceiptError, AgentTaskCommitment, AGENT_EXECUTION_RECEIPT_DOMAIN,
     AGENT_TASK_DOMAIN,
+};
+pub use adaptive_verification::{
+    deterministic_sample_indices, evaluate_adaptive_samples, resolve_full_recompute,
+    AdaptiveVerificationCertificate, AdaptiveVerificationOutcome, AdaptiveVerificationPolicy,
+    AdaptiveVerifierBundle, SampledShardReceipt, ADAPTIVE_CERT_DOMAIN, ADAPTIVE_SAMPLE_DOMAIN,
+};
+pub use bitcoin_bridge::{
+    BitcoinHeader, BitcoinMerkleProof, BitcoinSpvProof, BTC_SPV_DOMAIN,
+};
+pub use ethereum_proof::{
+    keccak256, verify_mpt_inclusion, EthereumAccountProof, EthereumStorageProof, ETH_MPT_DOMAIN,
+};
+pub use pq_bridge::{
+    BridgeClaimReplayState, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
+    EvmSettlementHop, PqBridgeAuthorization, PqBridgeClaim, PqBridgeValidationContext,
+    VerifiedEvmStateAnchor, PQ_BRIDGE_DOMAIN,
 };
 pub use agentic_economy::{
     decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
