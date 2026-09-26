@@ -169,6 +169,37 @@ pub struct EthereumLightClientUpdate {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EthereumFinalizedExecutionAnchor {
+    slot: u64,
+    beacon_root: [u8; 32],
+    state_root: [u8; 32],
+}
+
+impl EthereumFinalizedExecutionAnchor {
+    pub fn slot(&self) -> u64 {
+        self.slot
+    }
+
+    pub fn beacon_root(&self) -> [u8; 32] {
+        self.beacon_root
+    }
+
+    pub fn state_root(&self) -> [u8; 32] {
+        self.state_root
+    }
+
+    pub fn commitment(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(b"SYNERGY/ETH-FINALIZED-EXECUTION-ANCHOR/V1\0");
+        h.update(1u64.to_be_bytes());
+        h.update(self.slot.to_be_bytes());
+        h.update(self.beacon_root);
+        h.update(self.state_root);
+        h.finalize().into()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EthereumLightClientStore {
     pub finalized_header: EthereumLightClientHeader,
     pub current_sync_committee: SyncCommittee,
@@ -176,6 +207,14 @@ pub struct EthereumLightClientStore {
 }
 
 impl EthereumLightClientStore {
+    pub fn finalized_execution_anchor(&self) -> EthereumFinalizedExecutionAnchor {
+        EthereumFinalizedExecutionAnchor {
+            slot: self.finalized_header.beacon.slot,
+            beacon_root: self.finalized_header.beacon.hash_tree_root(),
+            state_root: self.finalized_header.execution.execution_state_root,
+        }
+    }
+
     pub fn initialize(bootstrap: EthereumLightClientBootstrap) -> Result<Self, &'static str> {
         bootstrap.header.validate()?;
         bootstrap.current_sync_committee.validate()?;
