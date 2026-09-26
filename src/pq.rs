@@ -146,6 +146,7 @@ pub enum AuthorizationDomain {
     TransportHandshake,
     AutopilotLeaseTerminal,
     AgentExecutionReceipt,
+    BridgeProof,
 }
 
 impl AuthorizationDomain {
@@ -174,6 +175,7 @@ impl AuthorizationDomain {
             Self::TransportHandshake => 16,
             Self::AutopilotLeaseTerminal => 17,
             Self::AgentExecutionReceipt => 18,
+            Self::BridgeProof => 19,
         }
     }
 }
