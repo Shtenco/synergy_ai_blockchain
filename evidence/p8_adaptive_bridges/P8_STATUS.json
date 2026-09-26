@@ -1,0 +1,37 @@
+{
+  "milestone": "P8 ADAPTIVE VERIFICATION + PQ OMNICHAIN BRIDGES",
+  "branch": "feat/p8-adaptive-verification-pq-bridges",
+  "implemented_in_code": {
+    "deterministic_shard_sampling": true,
+    "adaptive_sample_certificate": true,
+    "sample_mismatch_escalates": true,
+    "strict_full_recompute_fallback_preserved": true,
+    "pq_authorized_sample_bundles": true,
+    "adaptive_syna_reward_path": true,
+    "bitcoin_header_pow_verifier": true,
+    "bitcoin_merkle_inclusion": true,
+    "bitcoin_spv_header_ancestry": true,
+    "ethereum_keccak256": true,
+    "ethereum_rlp_parser": true,
+    "ethereum_mpt_inclusion": true,
+    "ethereum_account_proof": true,
+    "ethereum_storage_proof": true,
+    "evm_recursive_l1_l2_l3_settlement": true,
+    "pq_bridge_claim_authorization": true,
+    "bridge_claim_replay_protection": true
+  },
+  "runner": {
+    "DESKTOP-C8GUE41": "OFFLINE_DURING_IMPLEMENTATION"
+  },
+  "verification_status": "NOT_GREEN_UNTIL_COMPILE_AND_PHYSICAL_GATES_RUN",
+  "production_hardening_remaining": [
+    "Bitcoin difficulty-transition and cumulative-chainwork/checkpoint policy",
+    "embedded Ethereum consensus light-client finality verification",
+    "real eth_getProof fixtures",
+    "real BTC testnet SPV proof",
+    "real ETH L1 finalized proof",
+    "real L2 settlement proof",
+    "real L3 settlement proof"
+  ],
+  "status": "IMPLEMENTED_AWAITING_EXECUTABLE_GATES"
+}
