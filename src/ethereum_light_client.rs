@@ -218,13 +218,14 @@ pub struct EthereumLightClientStore {
 }
 
 impl EthereumLightClientStore {
-    pub fn finalized_execution_anchor(&self) -> EthereumFinalizedExecutionAnchor {
+    pub fn finalized_execution_anchor(
+        &self,
+    ) -> Result<EthereumFinalizedExecutionAnchor, &'static str> {
         EthereumFinalizedExecutionAnchor::from_verified_parts(
             self.finalized_header.beacon.slot,
             self.finalized_header.beacon.hash_tree_root(),
             self.finalized_header.execution.execution_state_root,
         )
-        .expect("verified light-client store must contain a nonzero finalized anchor")
     }
 
     pub fn initialize(bootstrap: EthereumLightClientBootstrap) -> Result<Self, &'static str> {
