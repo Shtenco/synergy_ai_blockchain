@@ -9,43 +9,56 @@
     "pq_authorized_sample_bundles": true,
     "adaptive_syna_reward_path": true,
     "bitcoin_header_pow_verifier": true,
+    "bitcoin_mainnet_retarget_validation": true,
+    "bitcoin_median_time_past": true,
+    "bitcoin_best_chain_state": true,
+    "bitcoin_cumulative_work_since_checkpoint": true,
+    "bitcoin_core_checkpoint_966143": true,
+    "bitcoin_real_header_fixture_966144": true,
     "bitcoin_merkle_inclusion": true,
-    "bitcoin_spv_header_ancestry": true,
     "ethereum_keccak256": true,
     "ethereum_rlp_parser": true,
     "ethereum_mpt_inclusion": true,
     "ethereum_account_proof": true,
     "ethereum_storage_proof": true,
+    "ethereum_consensus_light_client": true,
+    "ethereum_sync_committee_bls": true,
+    "ethereum_finality_branch": true,
+    "ethereum_execution_state_root_proof": true,
+    "ethereum_weak_subjectivity_policy": true,
+    "ethereum_light_client_sealed_bridge_anchor": true,
     "evm_recursive_l1_l2_l3_settlement": true,
+    "op_stack_output_root_v0_adapter": true,
+    "arbitrum_nitro_confirmed_assertion_adapter": true,
+    "settlement_scheme_type_confusion_protection": true,
     "pq_bridge_claim_authorization": true,
     "bridge_claim_replay_protection": true
   },
-  "runner": {
-    "DESKTOP-C8GUE41": "OFFLINE_DURING_IMPLEMENTATION"
-  },
-  "verification_status": "NOT_GREEN_UNTIL_COMPILE_AND_PHYSICAL_GATES_RUN",
-  "production_hardening_remaining": [
-    "Bitcoin difficulty-transition and cumulative-chainwork/checkpoint policy",
-    "embedded Ethereum consensus light-client finality verification",
-    "real eth_getProof fixtures",
-    "real BTC testnet SPV proof",
-    "real ETH L1 finalized proof",
-    "real L2 settlement proof",
-    "real L3 settlement proof"
-  ],
-  "status": "IMPLEMENTED_AWAITING_EXECUTABLE_GATES",
-  "portable_ci": "HOSTED_DIAGNOSTIC_ARTIFACT_GATE_ENABLED",
-  "production_hardening": {
+  "pinned_external_consensus_data": {
     "bitcoin_core_checkpoint_height": 966143,
     "bitcoin_core_assumevalid_hash": "00000000000000000000748969ec33043c0e52a763c6dd5193861f559f2c72e3",
-    "bitcoin_retarget_validation": true,
-    "bitcoin_cumulative_chainwork": true,
-    "bitcoin_median_time_past": true,
-    "bitcoin_real_header_fixture_966144": true,
-    "ethereum_consensus_light_client": true,
-    "ethereum_sync_committee_bls": true,
-    "ethereum_finality_merkle_branch": true,
-    "ethereum_execution_state_root_proof": true,
-    "ethereum_bridge_anchor_sealed_to_light_client_store": true
-  }
+    "ethereum_mainnet_genesis_validators_root": "4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95",
+    "ethereum_weak_subjectivity_checkpoint_slot": 15230720,
+    "ethereum_weak_subjectivity_checkpoint_root": "ec1412dcc05d08ed6940975eee69026513e5b32d9201953225a7c63950e3656b"
+  },
+  "runner": {
+    "DESKTOP-C8GUE41": "OFFLINE"
+  },
+  "github_hosted_ci": {
+    "workflow": "Portable Rust gates",
+    "latest_observation": "JOB_FAILED_BEFORE_FIRST_STEP",
+    "job_steps": 0,
+    "artifacts": 0,
+    "classification": "RUNNER_OR_ACCOUNT_INFRASTRUCTURE_BLOCKER_NOT_EXECUTABLE_CODE_RESULT"
+  },
+  "remaining_production_evidence": [
+    "successful Rust fmt/check/test/clippy/reference-pq executable gate",
+    "live Ethereum finalized light-client fixture",
+    "live eth_getProof fixture against finalized execution state",
+    "live OP Stack settlement fixture",
+    "live Arbitrum Nitro or Orbit confirmed assertion fixture",
+    "final physical Windows regression"
+  ],
+  "verification_status": "CODE_HARDENED_NOT_GREEN_UNTIL_EXECUTABLE_GATES_RUN",
+  "status": "P8_PRODUCTION_HARDENING_IMPLEMENTED_EXECUTABLE_EVIDENCE_BLOCKED"
 }
