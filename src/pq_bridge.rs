@@ -224,7 +224,7 @@ impl EvmRecursiveSettlementProof {
             h.update(hop.settlement_contract);
             h.update(hop.state_root_slot);
             h.update(hop.claimed_child_state_root);
-            h.update([match hop.scheme {
+            h.update([match &hop.scheme {
                 EvmSettlementScheme::DirectStateRoot => 1,
                 EvmSettlementScheme::OpStackOutputRootV0 { .. } => 2,
                 EvmSettlementScheme::ArbitrumNitroConfirmedAssertion { .. } => 3,
