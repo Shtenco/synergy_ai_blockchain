@@ -94,6 +94,115 @@ impl EvmSettlementScheme {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum EvmSettlementSchemeKind {
+    DirectStateRoot,
+    OpStackOutputRootV0,
+    ArbitrumNitroConfirmedAssertion,
+}
+
+impl EvmSettlementScheme {
+    pub fn kind(&self) -> EvmSettlementSchemeKind {
+        match self {
+            Self::DirectStateRoot => EvmSettlementSchemeKind::DirectStateRoot,
+            Self::OpStackOutputRootV0 { .. } => EvmSettlementSchemeKind::OpStackOutputRootV0,
+            Self::ArbitrumNitroConfirmedAssertion { .. } => {
+                EvmSettlementSchemeKind::ArbitrumNitroConfirmedAssertion
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EvmSettlementProfile {
+    pub version: u32,
+    pub parent_chain_id: u64,
+    pub child_chain_id: u64,
+    pub settlement_contract: [u8; 20],
+    pub commitment_slot: [u8; 32],
+    pub expected_code_hash: [u8; 32],
+    pub scheme_kind: EvmSettlementSchemeKind,
+}
+
+impl EvmSettlementProfile {
+    pub fn commitment(&self) -> Result<[u8; 32], &'static str> {
+        if self.version == 0
+            || self.parent_chain_id == 0
+            || self.child_chain_id == 0
+            || self.parent_chain_id == self.child_chain_id
+            || self.settlement_contract == [0; 20]
+            || self.expected_code_hash == [0; 32]
+        {
+            return Err("invalid EVM settlement profile");
+        }
+        let mut h = Sha256::new();
+        h.update(PQ_BRIDGE_DOMAIN);
+        h.update(b"SETTLEMENT-PROFILE/V1");
+        h.update(self.version.to_be_bytes());
+        h.update(self.parent_chain_id.to_be_bytes());
+        h.update(self.child_chain_id.to_be_bytes());
+        h.update(self.settlement_contract);
+        h.update(self.commitment_slot);
+        h.update(self.expected_code_hash);
+        h.update([match self.scheme_kind {
+            EvmSettlementSchemeKind::DirectStateRoot => 1,
+            EvmSettlementSchemeKind::OpStackOutputRootV0 => 2,
+            EvmSettlementSchemeKind::ArbitrumNitroConfirmedAssertion => 3,
+        }]);
+        Ok(h.finalize().into())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EvmSettlementProfileRegistry {
+    pub version: u32,
+    pub profiles: Vec<EvmSettlementProfile>,
+}
+
+impl EvmSettlementProfileRegistry {
+    pub fn commitment(&self) -> Result<[u8; 32], &'static str> {
+        if self.version == 0 || self.profiles.len() > 64 {
+            return Err("invalid EVM settlement profile registry");
+        }
+        let mut entries = Vec::with_capacity(self.profiles.len());
+        let mut identities = BTreeSet::new();
+        for profile in &self.profiles {
+            if !identities.insert((profile.parent_chain_id, profile.child_chain_id)) {
+                return Err("duplicate EVM settlement profile identity");
+            }
+            entries.push((
+                profile.parent_chain_id,
+                profile.child_chain_id,
+                profile.commitment()?,
+            ));
+        }
+        entries.sort_by_key(|entry| (entry.0, entry.1));
+
+        let mut h = Sha256::new();
+        h.update(PQ_BRIDGE_DOMAIN);
+        h.update(b"SETTLEMENT-PROFILE-REGISTRY/V1");
+        h.update(self.version.to_be_bytes());
+        h.update((entries.len() as u64).to_be_bytes());
+        for (parent, child, root) in entries {
+            h.update(parent.to_be_bytes());
+            h.update(child.to_be_bytes());
+            h.update(root);
+        }
+        Ok(h.finalize().into())
+    }
+
+    pub fn profile_for(
+        &self,
+        parent_chain_id: u64,
+        child_chain_id: u64,
+    ) -> Option<&EvmSettlementProfile> {
+        self.profiles.iter().find(|profile| {
+            profile.parent_chain_id == parent_chain_id
+                && profile.child_chain_id == child_chain_id
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmSettlementHop {
     pub parent_chain_id: u64,
@@ -108,7 +217,19 @@ pub struct EvmSettlementHop {
 }
 
 impl EvmSettlementHop {
-    pub fn verify(&self, parent_state_root: [u8; 32]) -> Result<[u8; 32], &'static str> {
+    pub fn verify_with_profile(
+        &self,
+        parent_state_root: [u8; 32],
+        profile: &EvmSettlementProfile,
+    ) -> Result<[u8; 32], &'static str> {
+        if profile.parent_chain_id != self.parent_chain_id
+            || profile.child_chain_id != self.child_chain_id
+            || profile.settlement_contract != self.settlement_contract
+            || profile.commitment_slot != self.state_root_slot
+            || profile.scheme_kind != self.scheme.kind()
+        {
+            return Err("EVM settlement hop does not match trusted profile");
+        }
         if self.parent_chain_id == 0
             || self.child_chain_id == 0
             || self.parent_chain_id == self.child_chain_id
@@ -122,6 +243,9 @@ impl EvmSettlementHop {
         }
 
         self.account_proof.verify()?;
+        if self.account_proof.code_hash()? != profile.expected_code_hash {
+            return Err("settlement contract code hash does not match trusted profile");
+        }
         let storage_root = self.account_proof.storage_root()?;
         self.storage_proof.verify(storage_root)?;
         let stored = decode_storage_word(&self.storage_proof.value_rlp)?;
@@ -232,6 +356,7 @@ pub fn arbitrum_nitro_assertion_hash(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmRecursiveSettlementProof {
     pub anchor: EthereumFinalizedExecutionAnchor,
+    pub settlement_profiles: EvmSettlementProfileRegistry,
     pub hops: Vec<EvmSettlementHop>,
     pub target_chain_id: u64,
     pub target_event_or_state_root: [u8; 32],
@@ -246,13 +371,22 @@ impl EvmRecursiveSettlementProof {
             return Err("bridge supports Ethereum L1 plus at most L2/L3 ancestry");
         }
 
+        self.settlement_profiles.commitment()?;
+        if self.settlement_profiles.profiles.len() != self.hops.len() {
+            return Err("settlement profile count must match proof hop count");
+        }
+
         let mut current_chain = 1u64;
         let mut current_root = self.anchor.state_root();
         for hop in &self.hops {
             if hop.parent_chain_id != current_chain {
                 return Err("EVM settlement ancestry is disconnected");
             }
-            current_root = hop.verify(current_root)?;
+            let profile = self
+                .settlement_profiles
+                .profile_for(hop.parent_chain_id, hop.child_chain_id)
+                .ok_or("missing trusted settlement profile for hop")?;
+            current_root = hop.verify_with_profile(current_root, profile)?;
             current_chain = hop.child_chain_id;
         }
         if current_chain != self.target_chain_id || current_root != self.target_event_or_state_root {
@@ -263,6 +397,7 @@ impl EvmRecursiveSettlementProof {
         h.update(PQ_BRIDGE_DOMAIN);
         h.update(b"EVM-RECURSIVE");
         h.update(self.anchor.commitment());
+        h.update(self.settlement_profiles.commitment()?);
         for hop in &self.hops {
             h.update(hop.parent_chain_id.to_be_bytes());
             h.update(hop.child_chain_id.to_be_bytes());
@@ -371,6 +506,8 @@ pub struct PqBridgeValidationContext {
     pub expected_epoch: u64,
     pub expected_nonce: u64,
     pub expected_authority_keyset: [u8; 32],
+    /// Zero only for Bitcoin claims. EVM claims must match the consensus-configured registry root.
+    pub expected_evm_settlement_profiles_root: [u8; 32],
     pub now: u64,
     pub max_future_seconds: u64,
 }
@@ -394,6 +531,22 @@ impl BridgeClaimReplayState {
             || self.consumed_claim_ids.contains(&authorized.claim.claim_id)
         {
             return Err("bridge authority/replay validation failed");
+        }
+
+        match &authorized.claim.source_proof {
+            BridgeSourceProof::Bitcoin(_) => {
+                if validation.expected_evm_settlement_profiles_root != [0; 32] {
+                    return Err("Bitcoin bridge validation must not carry EVM profile root");
+                }
+            }
+            BridgeSourceProof::Evm(proof) => {
+                let actual = proof.settlement_profiles.commitment()?;
+                if validation.expected_evm_settlement_profiles_root == [0; 32]
+                    || actual != validation.expected_evm_settlement_profiles_root
+                {
+                    return Err("EVM settlement profile registry root mismatch");
+                }
+            }
         }
 
         let envelope = authorized.envelope().ok_or("invalid bridge authorization envelope")?;
@@ -508,6 +661,10 @@ mod tests {
             EthereumFinalizedExecutionAnchor::from_verified_parts(1, [1; 32], [2; 32]).unwrap();
         let p = EvmRecursiveSettlementProof {
             anchor,
+            settlement_profiles: EvmSettlementProfileRegistry {
+                version: 1,
+                profiles: vec![],
+            },
             hops: vec![],
             target_chain_id: 1,
             target_event_or_state_root: [2; 32],
