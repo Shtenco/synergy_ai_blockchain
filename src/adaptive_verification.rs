@@ -15,6 +15,21 @@ use crate::verification::{
 
 pub const ADAPTIVE_SAMPLE_DOMAIN: &[u8] = b"SYNERGY/ADAPTIVE-SAMPLE/V1\0";
 pub const ADAPTIVE_CERT_DOMAIN: &[u8] = b"SYNERGY/ADAPTIVE-VERIFICATION-CERT/V1\0";
+pub const ADAPTIVE_SHARD_SET_DOMAIN: &[u8] = b"SYNERGY/ADAPTIVE-SHARD-SET/V1\0";
+
+pub fn shard_set_commitment(shards: &[[u8; 32]]) -> Option<[u8; 32]> {
+    if shards.is_empty() || shards.iter().any(|root| *root == [0; 32]) {
+        return None;
+    }
+    let mut h = Sha256::new();
+    h.update(ADAPTIVE_SHARD_SET_DOMAIN);
+    h.update((shards.len() as u64).to_be_bytes());
+    for (index, root) in shards.iter().enumerate() {
+        h.update((index as u64).to_be_bytes());
+        h.update(root);
+    }
+    Some(h.finalize().into())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdaptiveVerificationPolicy {
