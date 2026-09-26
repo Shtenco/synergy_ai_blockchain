@@ -4,6 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationReplayState, AuthorizationValidationContext, ContextSignatureVerifier,
+    HybridAuthorization,
+};
 use crate::verification::{
     aggregate_verifier_receipts, VerificationChallenge, VerificationVerdict, VerifierReceipt,
 };
@@ -88,6 +93,101 @@ impl SampledShardReceipt {
 pub struct AdaptiveVerifierBundle {
     pub verifier_id: [u8; 32],
     pub samples: Vec<SampledShardReceipt>,
+}
+
+impl AdaptiveVerifierBundle {
+    pub fn commitment(&self) -> Option<[u8; 32]> {
+        if self.verifier_id == [0; 32] || self.samples.is_empty() {
+            return None;
+        }
+        let mut h = Sha256::new();
+        h.update(ADAPTIVE_CERT_DOMAIN);
+        h.update(b"BUNDLE");
+        h.update(self.verifier_id);
+        h.update((self.samples.len() as u64).to_be_bytes());
+        for sample in &self.samples {
+            if sample.verifier_id != self.verifier_id {
+                return None;
+            }
+            h.update(sample.commitment());
+        }
+        Some(h.finalize().into())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdaptiveBundleAuthorization {
+    pub chain_id: [u8; 32],
+    pub epoch: u64,
+    pub nonce: u64,
+    pub expires_at: u64,
+    pub bundle: AdaptiveVerifierBundle,
+    pub authorization: HybridAuthorization,
+}
+
+impl AdaptiveBundleAuthorization {
+    pub fn envelope(&self) -> Option<AuthorizationEnvelope> {
+        Some(AuthorizationEnvelope {
+            chain_id: self.chain_id,
+            domain: AuthorizationDomain::AdaptiveVerificationReceipt,
+            epoch: self.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment: self.bundle.commitment()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveBundleValidationContext {
+    pub expected_chain_id: [u8; 32],
+    pub expected_epoch: u64,
+    pub expected_nonce: u64,
+    pub expected_verifier_id: [u8; 32],
+    pub expected_verifier_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+pub fn verify_adaptive_bundle_and_consume<V: ContextSignatureVerifier>(
+    verifier: &V,
+    authorized: &AdaptiveBundleAuthorization,
+    validation: AdaptiveBundleValidationContext,
+    replay: &mut AuthorizationReplayState,
+) -> bool {
+    if authorized.authorization.policy != AuthPolicy::PqOnly
+        || authorized.bundle.verifier_id != validation.expected_verifier_id
+        || authorized.authorization.keyset_commitment()
+            != Some(validation.expected_verifier_keyset_commitment)
+    {
+        return false;
+    }
+    let envelope = match authorized.envelope() {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_chain_id,
+        expected_domain: AuthorizationDomain::AdaptiveVerificationReceipt,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: validation.expected_epoch,
+        expected_nonce: validation.expected_nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+    if !verify_envelope_authorization(
+        verifier,
+        &authorized.authorization,
+        &envelope,
+        &auth_validation,
+    ) {
+        return false;
+    }
+    replay.consume_verified_for_subject(
+        &authorized.authorization,
+        &envelope,
+        validation.expected_verifier_id,
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
