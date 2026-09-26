@@ -2,117 +2,109 @@
 
 ## Scope
 
-P8 has two linked goals:
-
-1. reduce Proof-of-Useful-Inference verification cost without removing the existing strict full-recompute path;
-2. make BTC and Ethereum-family bridge claims proof-driven and PQ-authorized on the SYNERGY side.
+P8 reduces Proof-of-Useful-Inference verification cost while preserving strict full recomputation, and hardens BTC / Ethereum-family bridge claims so source-chain proofs are locally verified and SYNERGY-side authorization is post-quantum.
 
 ## Adaptive verification
 
-The old strict verifier requires at least two independent full recomputations.
+- deterministic shard sampling from challenge seed + verifier identity;
+- canonical shard-set root bound to worker execution_trace_root;
+- PQ-authorized verifier bundles with replay protection;
+- clean sampled MATCH can authorize the adaptive reward path;
+- mismatch, insufficient quorum or strict policy escalates to the existing full-recompute verifier;
+- strict_full_recompute remains available for deterministic full assurance.
 
-P8 adds a preferred adaptive path:
+Sampling is probabilistic fraud detection. A future zkML/STARK layer can reduce this residual assumption.
 
-1. worker commits to an ordered execution shard set;
-2. the canonical shard-set root is stored as the execution trace root;
-3. each independent verifier receives deterministic sample indices derived from the challenge sample seed, challenge id, job id and verifier identity;
-4. verifier recomputes only those shards;
-5. the sample bundle is PQ-authorized in its own authorization domain;
-6. if every required independent verifier matches the deterministic samples, the result may be reward-eligible under the adaptive policy;
-7. any mismatch, insufficient verifier quorum or strict policy escalates to the existing full-recompute verifier;
-8. only FullMatch is accepted after escalation.
+## Bitcoin mainnet bridge
 
-The strict P7 verifier is not removed.
+Implemented:
+- 80-byte header parsing;
+- double-SHA256;
+- compact target and PoW verification;
+- parent-hash continuity;
+- 2016-block retarget validation;
+- target-timespan clamp;
+- median-time-past;
+- cumulative post-checkpoint chainwork;
+- best-chain adoption / competing-tip rejection;
+- transaction Merkle inclusion;
+- confirmation count on the adopted best proved chain.
 
-### Security boundary
+The protocol checkpoint is pinned to Bitcoin Core mainnet policy at height 966143, including minimum chainwork and assumevalid hash.
 
-Sampling is probabilistic fraud detection, not an absolute proof that every unsampled computation was correct.
+A BitcoinVerifiedTxProof can only be produced through BitcoinMainnetChainState::verify_tx_and_adopt.
 
-For jobs that require deterministic full assurance, set strict_full_recompute=true.
+## Ethereum consensus light client
 
-A later zkML/STARK execution-proof layer can reduce this residual sampling assumption further.
+The bridge does not trust an RPC-provided finalized state root.
 
-## Bitcoin bridge
+Implemented:
+- weak-subjectivity bootstrap policy;
+- mainnet genesis validators root;
+- Altair/Bellatrix/Capella/Deneb/Electra/Fulu fork versions;
+- 512-member sync committee validation;
+- >2/3 participation threshold;
+- BLS12-381 aggregate verification with blst;
+- finality Merkle branch verification;
+- current/next sync committee rotation;
+- SSZ BeaconBlockHeader roots;
+- execution payload commitment proof;
+- finalized execution state-root extraction;
+- sealed EthereumFinalizedExecutionAnchor creation only from verified light-client state.
 
-P8 adds a Bitcoin SPV verifier that checks:
+## Ethereum L1 / L2 / L3 settlement
 
-- canonical 80-byte Bitcoin block headers;
-- double-SHA256 block hash;
-- compact target / PoW threshold;
-- connected header ancestry;
-- required confirmation count;
-- transaction Merkle inclusion.
+The Ethereum proof engine includes Keccak-256, canonical RLP, MPT inclusion, account/storage proofs and EVM block-header state-root extraction.
 
-A verified BTC source proof is then bound into a SYNERGY PQ bridge claim.
+Recursive settlement supports L1, L1→L2 and L1→L2→L3.
 
-Production hardening still requires trusted checkpoint / cumulative-work and Bitcoin difficulty-transition policy so a bridge cannot select an arbitrary low-work fork.
+Typed settlement adapters:
 
-## Ethereum L1 / L2 / L3 bridge
+### DirectStateRoot
+Only for contracts that explicitly commit the child execution state root.
 
-P8 adds a local Ethereum proof engine:
+### OpStackOutputRootV0
+Verifies:
+outputRoot = keccak256(version || stateRoot || messagePasserStorageRoot || blockHash)
 
-- Keccak-256 implementation;
-- canonical RLP parsing;
-- Merkle-Patricia trie inclusion verification;
-- EIP-1186-style account proof verification;
-- storage proof verification.
+The parent storage proof must commit the resulting output root.
 
-The recursive settlement proof supports:
+### ArbitrumNitroConfirmedAssertion
+Verifies Nitro assertion inputs, binds GlobalState.blockHash to the supplied L2 header RLP, extracts the child stateRoot from that header, recomputes the assertion hash, and requires the parent-chain proved commitment to match it.
 
-- Ethereum L1: finalized L1 state root;
-- Ethereum L2: child state root proven from its L1 settlement contract storage;
-- Ethereum L3: L3 state root proven in L2 settlement storage, whose L2 state root is in turn proven on L1.
-
-Maximum initial recursive depth is two settlement hops: L1 -> L2 -> L3.
-
-RPC is only a proof-data source. It is not treated as finality.
-
-### Ethereum finality boundary
-
-The current bridge core accepts a VerifiedEvmStateAnchor containing a finalized block/state root plus finality proof commitment.
-
-Before production mainnet deployment this must be connected to an embedded Ethereum consensus light-client or an equivalently strong finalized-header verifier. A bare RPC finalized flag must not be considered sufficient.
+Every settlement-scheme preimage has its own canonical commitment, preventing type confusion.
 
 ## PQ authorization
 
-Successful source-chain proof verification does not itself mint or unlock assets.
-
-Every bridge claim is bound to:
-
-- source proof root;
+Every external→SYNERGY claim binds:
+- exact source proof;
+- settlement scheme and parameters;
 - source asset root;
-- destination SYNERGY account;
-- exact amount;
-- unique claim id.
+- destination account;
+- amount;
+- unique claim id;
+- bridge direction.
 
-The claim is then authorized under AuthorizationDomain::BridgeProof using PQ-only authorization and consumed through replay state. Claim ids are one-shot.
+AuthorizationDomain::BridgeProof uses PQ-only authorization and one-shot replay consumption.
 
-## Implementation files
+## External-chain cryptographic boundary
 
-- src/adaptive_verification.rs
-- src/bitcoin_bridge.rs
-- src/ethereum_proof.rs
-- src/pq_bridge.rs
-- src/agent_reward.rs
-- src/pq.rs
-- src/lib_v2.rs
+Bitcoin and Ethereum L1 do not natively verify ML-DSA / SLH-DSA transactions today.
 
-## Required GREEN gates
+Therefore inbound external→SYNERGY can be proof-driven and PQ-authorized on SYNERGY. Outbound SYNERGY→BTC/ETH cannot honestly be called end-to-end native PQ unless the destination chain verifies a PQ proof/signature, for example via a dedicated zk/PQ verifier contract. Bridging does not make Bitcoin or Ethereum themselves post-quantum.
 
-- cargo fmt --check
-- cargo check --frozen --all-targets
-- cargo test --frozen --all-targets
-- cargo clippy --frozen --all-targets -- -D warnings
-- cargo test --frozen --all-targets --features reference-pq
-- BTC known-answer SPV tests
-- Ethereum Keccak known-answer tests
-- Ethereum MPT proof fixtures from real eth_getProof responses
-- adaptive clean-sample test
-- mismatch -> full-recompute escalation test
-- strict-mode full-recompute test
-- PQ authorization/replay tests for sample bundles
-- PQ authorization/replay tests for bridge claims
-- real BTC testnet proof
-- real Ethereum finalized-state proof
-- real L2 settlement-root proof
-- real L3 settlement-root proof
+## Remaining GREEN gates
+
+Before PR #29 may be marked GREEN:
+- cargo fmt --all -- --check
+- cargo check --all-targets
+- cargo test --all-targets
+- cargo clippy --all-targets -- -D warnings
+- cargo test --all-targets --features reference-pq
+- live Ethereum finalized light-client fixture
+- live eth_getProof fixture against that finalized state
+- live OP Stack settlement fixture
+- live Arbitrum Nitro / Orbit confirmed-assertion fixture
+- final Windows regression when DESKTOP-C8GUE41 returns
+
+GitHub-hosted portable jobs are currently failing before checkout with zero job steps and zero artifacts; this is treated as infrastructure failure, not as a code GREEN or code failure.
