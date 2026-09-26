@@ -23,6 +23,12 @@ pub enum BridgeSourceClass {
     EthereumL3,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BridgeDirection {
+    ExternalToSynergy,
+    SynergyToExternal,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvmSettlementHop {
     pub parent_chain_id: u64,
@@ -132,6 +138,7 @@ impl BridgeSourceProof {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PqBridgeClaim {
+    pub direction: BridgeDirection,
     pub source_proof: BridgeSourceProof,
     pub source_asset_root: [u8; 32],
     pub destination_account: [u8; 32],
@@ -141,6 +148,9 @@ pub struct PqBridgeClaim {
 
 impl PqBridgeClaim {
     pub fn commitment(&self) -> Result<[u8; 32], &'static str> {
+        if self.direction != BridgeDirection::ExternalToSynergy {
+            return Err("source-chain proof claims only authorize external-to-SYNERGY flow");
+        }
         let (source_proof_root, class) = self.source_proof.verify()?;
         if self.source_asset_root == [0; 32]
             || self.destination_account == [0; 32]
@@ -151,6 +161,7 @@ impl PqBridgeClaim {
         }
         let mut h = Sha256::new();
         h.update(PQ_BRIDGE_DOMAIN);
+        h.update([1u8]);
         h.update([match class {
             BridgeSourceClass::BitcoinL1 => 1,
             BridgeSourceClass::EthereumL1 => 2,
