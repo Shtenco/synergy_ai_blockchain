@@ -455,6 +455,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn op_stack_output_root_binds_full_v0_preimage() {
+        let base = op_stack_output_root_v0([1; 32], [2; 32], [3; 32]);
+        assert_ne!(base, [0; 32]);
+        assert_ne!(base, op_stack_output_root_v0([9; 32], [2; 32], [3; 32]));
+        assert_ne!(base, op_stack_output_root_v0([1; 32], [9; 32], [3; 32]));
+        assert_ne!(base, op_stack_output_root_v0([1; 32], [2; 32], [9; 32]));
+    }
+
+    #[test]
+    fn arbitrum_assertion_hash_binds_global_state_and_machine_status() {
+        let base = arbitrum_nitro_assertion_hash(
+            [1; 32], [2; 32], [3; 32], [4; 32], 5, 6, 1, [7; 32],
+        );
+        assert_ne!(base, [0; 32]);
+        assert_ne!(
+            base,
+            arbitrum_nitro_assertion_hash(
+                [1; 32], [2; 32], [3; 32], [4; 32], 5, 6, 2, [7; 32],
+            )
+        );
+        assert_ne!(
+            base,
+            arbitrum_nitro_assertion_hash(
+                [1; 32], [2; 32], [8; 32], [4; 32], 5, 6, 1, [7; 32],
+            )
+        );
+    }
+
+    #[test]
+    fn settlement_scheme_commitment_prevents_type_confusion() {
+        let direct = EvmSettlementScheme::DirectStateRoot.commitment();
+        let op = EvmSettlementScheme::OpStackOutputRootV0 {
+            message_passer_storage_root: [2; 32],
+            l2_block_hash: [3; 32],
+        }
+        .commitment();
+        assert_ne!(direct, op);
+    }
+
+    #[test]
     fn storage_word_decodes_left_padded_u256() {
         let mut encoded = vec![0xa0];
         encoded.extend_from_slice(&[7u8; 32]);
