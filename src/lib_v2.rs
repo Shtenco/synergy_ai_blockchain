@@ -74,7 +74,8 @@ pub use bitcoin_bridge::{
     BITCOIN_TARGET_TIMESPAN_SECONDS, BTC_SPV_DOMAIN,
 };
 pub use ethereum_proof::{
-    keccak256, verify_mpt_inclusion, EthereumAccountProof, EthereumStorageProof, ETH_MPT_DOMAIN,
+    decode_evm_block_header_state_root, keccak256, verify_mpt_inclusion, EthereumAccountProof,
+    EthereumStorageProof, ETH_MPT_DOMAIN,
 };
 pub use ethereum_light_client::{
     verify_merkle_branch, BeaconBlockHeader, EthereumFinalizedExecutionAnchor,
@@ -85,10 +86,10 @@ pub use ethereum_light_client::{
     ETH_SLOTS_PER_SYNC_COMMITTEE_PERIOD, ETH_SYNC_COMMITTEE_SIZE,
 };
 pub use pq_bridge::{
-    BridgeClaimReplayState, BridgeDirection, BridgeSourceClass, BridgeSourceProof,
-    EvmRecursiveSettlementProof,
-    EvmSettlementHop, PqBridgeAuthorization, PqBridgeClaim, PqBridgeValidationContext,
-    PQ_BRIDGE_DOMAIN,
+    arbitrum_nitro_assertion_hash, op_stack_output_root_v0, BridgeClaimReplayState,
+    BridgeDirection, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
+    EvmSettlementHop, EvmSettlementScheme, PqBridgeAuthorization, PqBridgeClaim,
+    PqBridgeValidationContext, PQ_BRIDGE_DOMAIN,
 };
 pub use agent_reward::authorize_adaptive_agent_reward_and_mint;
 pub use agentic_economy::{
