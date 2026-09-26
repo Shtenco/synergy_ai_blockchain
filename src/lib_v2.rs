@@ -68,7 +68,8 @@ pub use adaptive_verification::{
 };
 pub use bitcoin_bridge::{
     bitcoin_mainnet_minimum_chain_work, bitcoin_mainnet_trusted_checkpoint, BitcoinHeader, BitcoinMainnetCheckpoint,
-    BitcoinMainnetHeaderProof, BitcoinMainnetSpvProof, BitcoinMerkleProof, VerifiedBitcoinTip,
+    BitcoinMainnetChainState, BitcoinMainnetHeaderProof, BitcoinMainnetSpvProof,
+    BitcoinMerkleProof, BitcoinVerifiedTxProof, VerifiedBitcoinTip,
     BITCOIN_RETARGET_INTERVAL, BITCOIN_TARGET_SPACING_SECONDS,
     BITCOIN_TARGET_TIMESPAN_SECONDS, BTC_SPV_DOMAIN,
 };
@@ -77,13 +78,15 @@ pub use ethereum_proof::{
 };
 pub use ethereum_light_client::{
     verify_merkle_branch, BeaconBlockHeader, EthereumFinalizedExecutionAnchor,
-    EthereumLightClientBootstrap, EthereumLightClientHeader, EthereumLightClientStore,
+    ethereum_mainnet_checkpoint_2026_09_16, EthereumLightClientBootstrap,
+    EthereumLightClientHeader, EthereumLightClientStore, EthereumMainnetTrustPolicy,
     EthereumLightClientUpdate, ExecutionStateWitness, SyncAggregate, SyncCommittee,
     ETH_MAINNET_GENESIS_VALIDATORS_ROOT, ETH_MIN_FINALITY_PARTICIPANTS,
     ETH_SLOTS_PER_SYNC_COMMITTEE_PERIOD, ETH_SYNC_COMMITTEE_SIZE,
 };
 pub use pq_bridge::{
-    BridgeClaimReplayState, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
+    BridgeClaimReplayState, BridgeDirection, BridgeSourceClass, BridgeSourceProof,
+    EvmRecursiveSettlementProof,
     EvmSettlementHop, PqBridgeAuthorization, PqBridgeClaim, PqBridgeValidationContext,
     PQ_BRIDGE_DOMAIN,
 };
