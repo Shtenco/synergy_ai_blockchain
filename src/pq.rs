@@ -146,6 +146,8 @@ pub enum AuthorizationDomain {
     TransportHandshake,
     AutopilotLeaseTerminal,
     AgentExecutionReceipt,
+    BridgeProof,
+    AdaptiveVerificationReceipt,
 }
 
 impl AuthorizationDomain {
@@ -174,6 +176,8 @@ impl AuthorizationDomain {
             Self::TransportHandshake => 16,
             Self::AutopilotLeaseTerminal => 17,
             Self::AgentExecutionReceipt => 18,
+            Self::BridgeProof => 19,
+            Self::AdaptiveVerificationReceipt => 20,
         }
     }
 }
@@ -1347,6 +1351,9 @@ mod tests {
             AuthorizationDomain::KvReplicaReceipt.protocol_code(),
             AuthorizationDomain::TransportHandshake.protocol_code(),
             AuthorizationDomain::AutopilotLeaseTerminal.protocol_code(),
+            AuthorizationDomain::AgentExecutionReceipt.protocol_code(),
+            AuthorizationDomain::BridgeProof.protocol_code(),
+            AuthorizationDomain::AdaptiveVerificationReceipt.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {

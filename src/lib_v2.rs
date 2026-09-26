@@ -4,6 +4,7 @@ pub mod agent_execution;
 pub mod agent_mesh;
 pub mod agent_reward;
 pub mod agentic_economy;
+pub mod adaptive_verification;
 
 pub mod autopilot;
 pub mod autopilot_budget;
@@ -15,6 +16,8 @@ pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
 pub mod evm_compat;
+pub mod ethereum_proof;
+pub mod ethereum_light_client;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -31,8 +34,10 @@ pub mod network;
 pub mod nexus;
 pub mod payment_funding;
 pub mod payments;
+pub mod pq_bridge;
 pub mod peer_discovery;
 pub mod pi_pq;
+pub mod bitcoin_bridge;
 pub mod pq;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
@@ -54,6 +59,40 @@ pub use agent_execution::{
     AgentExecutionReceipt, AgentReceiptError, AgentTaskCommitment, AGENT_EXECUTION_RECEIPT_DOMAIN,
     AGENT_TASK_DOMAIN,
 };
+pub use adaptive_verification::{
+    deterministic_sample_indices, evaluate_adaptive_samples, resolve_full_recompute,
+    shard_set_commitment, verify_adaptive_bundle_and_consume, AdaptiveBundleAuthorization,
+    AdaptiveBundleValidationContext, AdaptiveVerificationCertificate, AdaptiveVerificationOutcome,
+    AdaptiveVerificationPolicy, AdaptiveVerifierBundle, SampledShardReceipt, ADAPTIVE_CERT_DOMAIN,
+    ADAPTIVE_SAMPLE_DOMAIN, ADAPTIVE_SHARD_SET_DOMAIN,
+};
+pub use bitcoin_bridge::{
+    bitcoin_mainnet_minimum_chain_work, bitcoin_mainnet_trusted_checkpoint, BitcoinHeader, BitcoinMainnetCheckpoint,
+    BitcoinMainnetChainState, BitcoinMainnetHeaderProof, BitcoinMainnetSpvProof,
+    BitcoinMerkleProof, BitcoinVerifiedTxProof, VerifiedBitcoinTip,
+    BITCOIN_RETARGET_INTERVAL, BITCOIN_TARGET_SPACING_SECONDS,
+    BITCOIN_TARGET_TIMESPAN_SECONDS, BTC_SPV_DOMAIN,
+};
+pub use ethereum_proof::{
+    decode_evm_block_header_state_root, keccak256, verify_mpt_inclusion, EthereumAccountProof,
+    EthereumStorageProof, ETH_MPT_DOMAIN,
+};
+pub use ethereum_light_client::{
+    verify_merkle_branch, BeaconBlockHeader, EthereumFinalizedExecutionAnchor,
+    ethereum_mainnet_checkpoint_2026_09_16, EthereumLightClientBootstrap,
+    EthereumLightClientHeader, EthereumLightClientStore, EthereumMainnetTrustPolicy,
+    EthereumLightClientUpdate, ExecutionStateWitness, SyncAggregate, SyncCommittee,
+    ETH_MAINNET_GENESIS_VALIDATORS_ROOT, ETH_MIN_FINALITY_PARTICIPANTS,
+    ETH_SLOTS_PER_SYNC_COMMITTEE_PERIOD, ETH_SYNC_COMMITTEE_SIZE,
+};
+pub use pq_bridge::{
+    arbitrum_nitro_assertion_hash, op_stack_output_root_v0, BridgeClaimReplayState,
+    BridgeDirection, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
+    EvmSettlementHop, EvmSettlementProfile, EvmSettlementProfileRegistry,
+    EvmSettlementScheme, EvmSettlementSchemeKind, PqBridgeAuthorization, PqBridgeClaim,
+    PqBridgeValidationContext, PQ_BRIDGE_DOMAIN,
+};
+pub use agent_reward::authorize_adaptive_agent_reward_and_mint;
 pub use agentic_economy::{
     decide_gas_aware_execution, AgenticEconomyReplayState, AgenticEconomyState,
     AgenticEconomyTransitionReceipt, Asset, CbPolicy, EconomyAccount, EconomyAccountingSnapshot,

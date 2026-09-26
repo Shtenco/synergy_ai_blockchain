@@ -10,12 +10,17 @@ use std::collections::BTreeSet;
 
 use sha2::{Digest, Sha256};
 
+use crate::adaptive_verification::{
+    evaluate_adaptive_samples, shard_set_commitment, verify_adaptive_bundle_and_consume,
+    AdaptiveBundleAuthorization, AdaptiveBundleValidationContext, AdaptiveVerificationOutcome,
+    AdaptiveVerificationPolicy,
+};
 use crate::agent_execution::{
     verify_agent_execution_receipt, AgentExecutionAuthorization, AgentExecutionValidationContext,
     AgentTaskCommitment,
 };
 use crate::peer_discovery::NodeSetSnapshot;
-use crate::pq::ContextSignatureVerifier;
+use crate::pq::{AuthorizationReplayState, ContextSignatureVerifier};
 use crate::syna_emission::{SynaEmissionPolicy, SynaSupplyState};
 use crate::verification::{
     aggregate_verifier_receipts, verify_verifier_receipt, VerificationChallenge,
@@ -226,6 +231,184 @@ pub fn authorize_verified_agent_reward_and_mint<V: ContextSignatureVerifier>(
         task_root,
         execution_receipt_root: execution_root,
         verifier_set_root: aggregate.receipt_root,
+        worker_node_id: execution.receipt.worker_node_id,
+        reward_amount: amount,
+        epoch,
+        reward_state_root,
+        supply_state_root,
+    })
+}
+
+
+#[allow(clippy::too_many_arguments)]
+pub fn authorize_adaptive_agent_reward_and_mint<V: ContextSignatureVerifier>(
+    signature_verifier: &V,
+    chain_id: [u8; 32],
+    epoch: u64,
+    task: &AgentTaskCommitment,
+    execution: &AgentExecutionAuthorization,
+    execution_validation: &AgentExecutionValidationContext,
+    node_snapshot: &NodeSetSnapshot,
+    challenge: &VerificationChallenge,
+    shard_commitments: &[[u8; 32]],
+    adaptive_authorizations: &[AdaptiveBundleAuthorization],
+    adaptive_validations: &[AdaptiveBundleValidationContext],
+    adaptive_replays: &mut [AuthorizationReplayState],
+    adaptive_policy: AdaptiveVerificationPolicy,
+    full_authorizations: &[VerifierReceiptAuthorization],
+    full_validations: &[VerifierReceiptValidationContext],
+    policy: &SynaEmissionPolicy,
+    reward_state: &mut AgentRewardState,
+    supply_state: &mut SynaSupplyState,
+) -> Result<SynaAgentMintAuthorization, &'static str> {
+    if adaptive_authorizations.len() != adaptive_validations.len()
+        || adaptive_authorizations.len() != adaptive_replays.len()
+    {
+        return Err("adaptive verifier authorization/replay lengths mismatch");
+    }
+    if chain_id == [0; 32] || epoch == 0 {
+        return Err("agent reward chain/epoch required");
+    }
+    policy.validate()?;
+
+    if execution.chain_id != chain_id
+        || execution.epoch != epoch
+        || execution_validation.expected_chain_id != chain_id
+        || execution_validation.expected_epoch != epoch
+    {
+        return Err("agent execution reward context mismatch");
+    }
+
+    let worker = node_snapshot
+        .get(&execution.receipt.worker_node_id)
+        .ok_or("agent worker not registered in node snapshot")?;
+    let worker_keyset = execution
+        .authorization
+        .keyset_commitment()
+        .ok_or("agent worker PQ keyset unavailable")?;
+    if worker.pq_identity_commitment != worker_keyset
+        || execution_validation.expected_worker_keyset_commitment != worker.pq_identity_commitment
+    {
+        return Err("agent worker PQ identity does not match registry");
+    }
+    if !verify_agent_execution_receipt(signature_verifier, task, execution, execution_validation) {
+        return Err("invalid PQ-authorized agent execution receipt");
+    }
+
+    let task_root = task.root();
+    let execution_root = execution.receipt.root();
+    if challenge.job_id != task_root
+        || challenge.challenged_output_commitment != execution.receipt.result_root
+    {
+        return Err("adaptive challenge is not bound to exact agent result");
+    }
+    let shard_root =
+        shard_set_commitment(shard_commitments).ok_or("adaptive shard commitments required")?;
+    if shard_root != execution.receipt.execution_trace_root {
+        return Err("adaptive shard set is not bound to execution trace root");
+    }
+
+    let mut verifier_ids = BTreeSet::new();
+    let mut verifier_keysets = BTreeSet::new();
+    let mut staged_replays = Vec::with_capacity(adaptive_replays.len());
+    let mut bundles = Vec::with_capacity(adaptive_authorizations.len());
+
+    for ((authorized, validation), replay) in adaptive_authorizations
+        .iter()
+        .zip(adaptive_validations.iter())
+        .zip(adaptive_replays.iter())
+    {
+        if authorized.bundle.verifier_id == execution.receipt.worker_node_id {
+            return Err("agent worker cannot sample-verify its own work");
+        }
+        if !verifier_ids.insert(authorized.bundle.verifier_id)
+            || !verifier_keysets.insert(validation.expected_verifier_keyset_commitment)
+        {
+            return Err("adaptive verifier identities/keysets must be independent");
+        }
+        let registered = node_snapshot
+            .get(&authorized.bundle.verifier_id)
+            .ok_or("adaptive verifier not registered in node snapshot")?;
+        let actual_keyset = authorized
+            .authorization
+            .keyset_commitment()
+            .ok_or("adaptive verifier PQ keyset unavailable")?;
+        if registered.pq_identity_commitment != actual_keyset
+            || validation.expected_verifier_keyset_commitment != registered.pq_identity_commitment
+        {
+            return Err("adaptive verifier PQ identity does not match registry");
+        }
+
+        let mut staged = replay.clone();
+        if !verify_adaptive_bundle_and_consume(
+            signature_verifier,
+            authorized,
+            *validation,
+            &mut staged,
+        ) {
+            return Err("invalid PQ-authorized adaptive verifier bundle");
+        }
+        staged_replays.push(staged);
+        bundles.push(authorized.bundle.clone());
+    }
+
+    let certificate =
+        evaluate_adaptive_samples(challenge, shard_commitments, adaptive_policy, &bundles)?;
+
+    if certificate.outcome == AdaptiveVerificationOutcome::EscalateToFullRecompute {
+        let mut strict_challenge = challenge.clone();
+        strict_challenge.required_replications = adaptive_policy.full_recompute_replications;
+        let minted = authorize_verified_agent_reward_and_mint(
+            signature_verifier,
+            chain_id,
+            epoch,
+            task,
+            execution,
+            execution_validation,
+            node_snapshot,
+            &strict_challenge,
+            full_authorizations,
+            full_validations,
+            policy,
+            reward_state,
+            supply_state,
+        )?;
+        for (dst, staged) in adaptive_replays.iter_mut().zip(staged_replays) {
+            *dst = staged;
+        }
+        return Ok(minted);
+    }
+
+    if certificate.outcome != AdaptiveVerificationOutcome::SampledMatch {
+        return Err("adaptive verification did not authorize reward");
+    }
+
+    let amount = policy
+        .reward_for_useful_work(policy.min_useful_work_units)
+        .ok_or("agent work below emission threshold")?;
+    let replay_key = work_replay_key(chain_id, task_root, execution_root);
+
+    let mut next_reward = reward_state.clone();
+    next_reward.consume(replay_key)?;
+    let reward_state_root = next_reward.commitment();
+
+    let mut next_supply = supply_state.clone();
+    next_supply.reward_state_root = reward_state_root;
+    next_supply.mint_bounded(policy, epoch, amount)?;
+    let supply_state_root = next_supply
+        .commitment()
+        .ok_or("invalid post-adaptive-agent-reward supply state")?;
+
+    *reward_state = next_reward;
+    *supply_state = next_supply;
+    for (dst, staged) in adaptive_replays.iter_mut().zip(staged_replays) {
+        *dst = staged;
+    }
+
+    Ok(SynaAgentMintAuthorization {
+        task_root,
+        execution_receipt_root: execution_root,
+        verifier_set_root: certificate.commitment(),
         worker_node_id: execution.receipt.worker_node_id,
         reward_amount: amount,
         epoch,
