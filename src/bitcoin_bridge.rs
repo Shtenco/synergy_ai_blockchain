@@ -256,7 +256,7 @@ pub struct BitcoinMainnetCheckpoint {
     pub bits: u32,
     pub block_time: u32,
     pub period_start_time: u32,
-    pub chain_work: [u8; 32],
+    pub minimum_chain_work: [u8; 32],
     pub recent_times: Vec<u32>,
 }
 
@@ -280,8 +280,8 @@ impl BitcoinMainnetCheckpoint {
         if target > bitcoin_mainnet_pow_limit() {
             return Err("checkpoint target exceeds mainnet pow limit");
         }
-        let chain_work = Uint256::from_be_bytes(self.chain_work);
-        if chain_work < Uint256::from_be_bytes(bitcoin_mainnet_minimum_chain_work()) {
+        let minimum_chain_work = Uint256::from_be_bytes(self.minimum_chain_work);
+        if minimum_chain_work < Uint256::from_be_bytes(bitcoin_mainnet_minimum_chain_work()) {
             return Err("checkpoint chainwork below Bitcoin Core minimum chainwork");
         }
         Ok(())
@@ -292,7 +292,7 @@ impl BitcoinMainnetCheckpoint {
 pub struct VerifiedBitcoinTip {
     pub height: u32,
     pub block_hash_internal: [u8; 32],
-    pub chain_work: [u8; 32],
+    pub work_since_checkpoint: [u8; 32],
     pub bits: u32,
     pub block_time: u32,
 }
@@ -309,7 +309,7 @@ pub fn bitcoin_mainnet_trusted_checkpoint() -> BitcoinMainnetCheckpoint {
         bits: 0x1702355e,
         block_time: 1_788_925_573,
         period_start_time: 1_788_640_367,
-        chain_work: bitcoin_mainnet_minimum_chain_work(),
+        minimum_chain_work: bitcoin_mainnet_minimum_chain_work(),
         recent_times: vec![
             1_788_917_326,
             1_788_917_796,
@@ -341,7 +341,7 @@ impl BitcoinMainnetHeaderProof {
         let mut previous_bits = checkpoint.bits;
         let mut previous_time = checkpoint.block_time;
         let mut period_start_time = checkpoint.period_start_time;
-        let mut chain_work = Uint256::from_be_bytes(checkpoint.chain_work);
+        let mut work_since_checkpoint = Uint256::ZERO;
         let mut recent_times = checkpoint.recent_times.clone();
 
         for header in &self.headers {
@@ -365,9 +365,9 @@ impl BitcoinMainnetHeaderProof {
                 return Err("bitcoin header violates median-time-past");
             }
 
-            chain_work = chain_work
+            work_since_checkpoint = work_since_checkpoint
                 .checked_add(block_work(header.bits())?)
-                .ok_or("bitcoin cumulative chainwork overflow")?;
+                .ok_or("bitcoin post-checkpoint work overflow")?;
 
             height = next_height;
             previous_hash = header.block_hash();
@@ -386,7 +386,7 @@ impl BitcoinMainnetHeaderProof {
         Ok(VerifiedBitcoinTip {
             height,
             block_hash_internal: previous_hash,
-            chain_work: chain_work.to_be_bytes(),
+            work_since_checkpoint: work_since_checkpoint.to_be_bytes(),
             bits: previous_bits,
             block_time: previous_time,
         })
@@ -431,7 +431,8 @@ impl BitcoinMainnetSpvProof {
         h.update(self.merkle.txid_internal);
         h.update(tx_header.block_hash());
         h.update(tip.block_hash_internal);
-        h.update(tip.chain_work);
+        h.update(bitcoin_mainnet_minimum_chain_work());
+        h.update(tip.work_since_checkpoint);
         h.update(self.min_confirmations.to_be_bytes());
         Ok(h.finalize().into())
     }
