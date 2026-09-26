@@ -88,7 +88,8 @@ pub use ethereum_light_client::{
 pub use pq_bridge::{
     arbitrum_nitro_assertion_hash, op_stack_output_root_v0, BridgeClaimReplayState,
     BridgeDirection, BridgeSourceClass, BridgeSourceProof, EvmRecursiveSettlementProof,
-    EvmSettlementHop, EvmSettlementScheme, PqBridgeAuthorization, PqBridgeClaim,
+    EvmSettlementHop, EvmSettlementProfile, EvmSettlementProfileRegistry,
+    EvmSettlementScheme, EvmSettlementSchemeKind, PqBridgeAuthorization, PqBridgeClaim,
     PqBridgeValidationContext, PQ_BRIDGE_DOMAIN,
 };
 pub use agent_reward::authorize_adaptive_agent_reward_and_mint;
