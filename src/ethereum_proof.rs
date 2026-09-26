@@ -32,6 +32,16 @@ impl EthereumAccountProof {
         root.copy_from_slice(items[2].payload);
         Ok(root)
     }
+
+    pub fn code_hash(&self) -> Result<[u8; 32], &'static str> {
+        let items = decode_list_items(&self.account_rlp)?;
+        if items.len() != 4 || items[3].is_list || items[3].payload.len() != 32 {
+            return Err("ethereum account RLP must contain 32-byte code hash");
+        }
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(items[3].payload);
+        Ok(hash)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
