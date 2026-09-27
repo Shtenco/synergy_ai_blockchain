@@ -20,10 +20,13 @@ $Session = "5c1757e20170c912844452c468268576fe9474809e8dcb80b919ee3e98221f6f"
 $Peers = @("51.170.88.69:41002", "51.170.93.115:41002")
 $E2 = @("51.170.88.69", "51.170.93.115")
 
-# ---------- 0. Python ----------
+# ---------- 0. Python (без winget: на Server его нет) ----------
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   Write-Output "Installing Python 3.11..."
-  winget install --id Python.Python.3.11 -e --silent --accept-source-agreements --accept-package-agreements
+  $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+  $pyExe = "$env:TEMP\python-3.11.9-amd64.exe"
+  Invoke-WebRequest -Uri $pyUrl -OutFile $pyExe
+  Start-Process -FilePath $pyExe -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
 python --version
