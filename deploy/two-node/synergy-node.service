@@ -1,0 +1,18 @@
+[Unit]
+Description=SYNERGY PQ mesh node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=synergy
+WorkingDirectory=/opt/synergy_ai_blockchain
+EnvironmentFile=/opt/synergy_ai_blockchain/node.env
+ExecStart=/opt/synergy_ai_blockchain/target/release/synergy-node
+Restart=on-failure
+RestartSec=5
+# Fail-closed: без EnvironmentFile сервис не стартует.
+# Kill-switch: при остановке сервиса firewall-скрипт должен вернуть DROP.
+
+[Install]
+WantedBy=multi-user.target
