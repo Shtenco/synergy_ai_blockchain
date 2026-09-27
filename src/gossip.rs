@@ -7,6 +7,11 @@
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
+use crate::pq::{
+    verify_envelope_authorization, AuthPolicy, AuthorizationDomain, AuthorizationEnvelope,
+    AuthorizationValidationContext, ContextSignatureVerifier, HybridAuthorization,
+};
+
 pub const GOSSIP_DOMAIN: &[u8] = b"SYNERGY/PQ-GOSSIP/V1\0";
 pub const MAX_GOSSIP_PAYLOAD_BYTES: usize = 64 * 1024;
 pub const MAX_GOSSIP_TTL: u8 = 16;
@@ -120,7 +125,6 @@ pub fn select_fanout(
 pub struct LinkAdvertisementIndex {
     by_root: HashMap<[u8; 32], GossipMessage>,
 }
-
 impl LinkAdvertisementIndex {
     pub fn insert(&mut self, msg: GossipMessage) -> Result<bool, &'static str> {
         let id = msg.msg_id().ok_or("gossip message invalid")?;
@@ -136,9 +140,93 @@ impl LinkAdvertisementIndex {
     }
 }
 
+/// PQ-signed gossip envelope (Phase: close the unsigned-gossip gap).
+///
+/// Every relayed advertisement must arrive inside this envelope carrying a
+/// `PqOnly` dual-signature authorization (ML-DSA-87 + SLH-DSA-SHAKE-256s)
+/// over the gossip `msg_id`. Relays verify before forwarding; unsigned
+/// gossip is dropped, never relayed.
+pub const GOSSIP_ENVELOPE_DOMAIN: &[u8] = b"SYNERGY/PQ-GOSSIP/ENVELOPE/V1\0";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedGossipEnvelope {
+    pub message: GossipMessage,
+    pub authorization: HybridAuthorization,
+    pub nonce: u64,
+    pub expires_at: u64,
+}
+
+impl SignedGossipEnvelope {
+    pub fn envelope(&self, network_id: [u8; 32]) -> Option<AuthorizationEnvelope> {
+        let msg_id = self.message.msg_id()?;
+        let mut hasher = Sha256::new();
+        hasher.update(GOSSIP_ENVELOPE_DOMAIN);
+        hasher.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
+        hasher.update(msg_id);
+        hasher.update(self.message.origin);
+        let payload_commitment: [u8; 32] = hasher.finalize().into();
+        Some(AuthorizationEnvelope {
+            chain_id: network_id,
+            domain: AuthorizationDomain::GossipAdvertisement,
+            epoch: self.message.epoch,
+            nonce: self.nonce,
+            expires_at: self.expires_at,
+            payload_commitment,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SignedGossipValidationContext {
+    pub expected_network_id: [u8; 32],
+    pub expected_origin: [u8; 32],
+    pub expected_keyset_commitment: [u8; 32],
+    pub now: u64,
+    pub max_future_seconds: u64,
+}
+
+/// Verify a signed gossip envelope. Fail-closed on: non-PqOnly policy,
+/// origin mismatch, keyset mismatch, bad/expired envelope, bad signatures.
+pub fn verify_signed_gossip<V: ContextSignatureVerifier>(
+    verifier: &V,
+    signed: &SignedGossipEnvelope,
+    validation: &SignedGossipValidationContext,
+) -> bool {
+    if signed.authorization.policy != AuthPolicy::PqOnly {
+        return false;
+    }
+    if signed.message.origin != validation.expected_origin {
+        return false;
+    }
+    if signed.authorization.keyset_commitment()
+        != Some(validation.expected_keyset_commitment)
+    {
+        return false;
+    }
+    let envelope = match signed.envelope(validation.expected_network_id) {
+        Some(envelope) => envelope,
+        None => return false,
+    };
+    let auth_validation = AuthorizationValidationContext {
+        expected_chain_id: validation.expected_network_id,
+        expected_domain: AuthorizationDomain::GossipAdvertisement,
+        expected_policy: AuthPolicy::PqOnly,
+        expected_epoch: signed.message.epoch,
+        expected_nonce: signed.nonce,
+        now: validation.now,
+        max_future_seconds: validation.max_future_seconds,
+    };
+    verify_envelope_authorization(verifier, &signed.authorization, &envelope, &auth_validation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pq::{AuthScheme, SignatureEvidence};
+    use crate::pq::{
+        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
+        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+    };
 
     fn msg(ttl: u8) -> GossipMessage {
         GossipMessage {
@@ -178,5 +266,105 @@ mod tests {
         let mut m = msg(4);
         m.payload.clear();
         assert!(m.validate().is_err());
+    }
+
+    #[derive(Clone)]
+    struct EnvelopeVerifier {
+        accepted: Vec<(Vec<u8>, Vec<u8>)>,
+    }
+
+    impl ContextSignatureVerifier for EnvelopeVerifier {
+        fn verify_with_context(
+            &self,
+            _scheme: AuthScheme,
+            _public_key: &[u8],
+            message: &[u8],
+            context: &[u8],
+            _signature: &[u8],
+        ) -> bool {
+            self.accepted
+                .iter()
+                .any(|(em, ec)| message == em && context == ec)
+        }
+    }
+
+    fn pq_only_authorization(seed: u8) -> HybridAuthorization {
+        HybridAuthorization {
+            policy: AuthPolicy::PqOnly,
+            evidence: vec![
+                SignatureEvidence {
+                    scheme: AuthScheme::MlDsa87,
+                    public_key: vec![seed; ML_DSA_87_PUBLIC_KEY_BYTES],
+                    signature: vec![seed.wrapping_add(1); ML_DSA_87_SIGNATURE_BYTES],
+                },
+                SignatureEvidence {
+                    scheme: AuthScheme::SlhDsaShake256s,
+                    public_key: vec![seed.wrapping_add(2); SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES],
+                    signature: vec![seed.wrapping_add(3); SLH_DSA_SHAKE_256S_SIGNATURE_BYTES],
+                },
+            ],
+        }
+    }
+
+    fn signed_envelope() -> (SignedGossipEnvelope, SignedGossipValidationContext, EnvelopeVerifier) {
+        let authorization = pq_only_authorization(11);
+        let keyset = authorization.keyset_commitment().expect("keyset");
+        let signed = SignedGossipEnvelope {
+            message: msg(8),
+            authorization,
+            nonce: 7,
+            expires_at: 1_000,
+        };
+        let network_id = [5; 32];
+        let envelope = signed.envelope(network_id).expect("envelope");
+        let verifier = EnvelopeVerifier {
+            accepted: vec![(
+                envelope
+                    .canonical_message(AuthPolicy::PqOnly)
+                    .expect("message"),
+                envelope
+                    .fips_signature_context(AuthPolicy::PqOnly)
+                    .expect("context"),
+            )],
+        };
+        let validation = SignedGossipValidationContext {
+            expected_network_id: network_id,
+            expected_origin: [1; 32],
+            expected_keyset_commitment: keyset,
+            now: 900,
+            max_future_seconds: 200,
+        };
+        (signed, validation, verifier)
+    }
+
+    #[test]
+    fn signed_gossip_verifies_and_binds_origin_keyset_policy() {
+        let (signed, validation, verifier) = signed_envelope();
+        assert!(verify_signed_gossip(&verifier, &signed, &validation));
+
+        // Wrong origin.
+        let mut bad = validation;
+        bad.expected_origin = [9; 32];
+        assert!(!verify_signed_gossip(&verifier, &signed, &bad));
+
+        // Wrong keyset.
+        let mut bad = validation;
+        bad.expected_keyset_commitment = [9; 32];
+        assert!(!verify_signed_gossip(&verifier, &signed, &bad));
+
+        // Non-PQ policy.
+        let mut bad_signed = signed.clone();
+        bad_signed.authorization.policy = AuthPolicy::Max;
+        assert!(!verify_signed_gossip(&verifier, &bad_signed, &validation));
+
+        // Tampered payload: envelope binds a different msg_id.
+        let mut tampered = signed.clone();
+        tampered.message.payload = vec![8, 8];
+        assert!(!verify_signed_gossip(&verifier, &tampered, &validation));
+
+        // Expired envelope.
+        let mut expired = validation;
+        expired.now = 5_000;
+        assert!(!verify_signed_gossip(&verifier, &signed, &expired));
     }
 }

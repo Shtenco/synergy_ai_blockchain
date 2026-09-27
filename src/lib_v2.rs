@@ -151,15 +151,15 @@ pub use mvp::{MvpCheckpoint, MVP_CHECKPOINT_DOMAIN};
 pub use mvp_finalization::{finalize_mvp_checkpoint, MvpFinalizationInput};
 pub use network::{
     derive_directional_transport_session_keys, establish_authenticated_shared_secret,
-    validate_shared_secret, ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard,
-    MlKem1024Provider, MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerAuthorization,
+    validate_shared_secret, InMemoryTransportReplayGuard,
+    MlKem1024Provider, MlKemSharedSecret, PqSharedSecret, RekeyPolicy, TransportPeerAuthorization,
     TransportPeerAuthorizationValidationContext, TransportPeerIdentity, TransportPolicy,
     TransportRecordSequence, TransportReplayGuard, TransportRole, TransportSessionKey,
     TransportSessionKeys, TransportTranscript, TransportValidationContext,
-    CLASSICAL_SHARED_SECRET_BYTES, MAX_REKEY_MESSAGES, MAX_REKEY_SECONDS,
+    MAX_REKEY_MESSAGES, MAX_REKEY_SECONDS,
     ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE, ML_KEM_1024_PUBLIC_KEY_BYTES,
-    ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
-    TRANSPORT_TRANSCRIPT_DOMAIN, X25519_PUBLIC_KEY_BYTES,
+    ML_KEM_SHARED_SECRET_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
+    TRANSPORT_TRANSCRIPT_DOMAIN,
 };
 pub use nexus::{
     infer_reference_metered, NexusError, NexusManifest, NexusMode, NexusRequest, NexusResponse,

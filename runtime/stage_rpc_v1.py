@@ -13,6 +13,26 @@ _MAX_HEADER = 16 * 1024
 _MAX_PAYLOAD = 64 * 1024 * 1024
 _PROTOCOL = "synergy.stage-rpc/v1"
 
+#: Opt-in env var for non-loopback PLAINTEXT binds. Cross-machine stage
+#: traffic must use the PQ mesh transport (transport_record/mesh_transport);
+#: these Python adapters are a loopback-only dev harness otherwise.
+PLAINTEXT_OPT_IN_ENV = "SYNERGY_ALLOW_PLAINTEXT_TRANSPORT"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _require_loopback_or_opt_in(host: str, what: str) -> None:
+    import os
+
+    if host in _LOOPBACK_HOSTS:
+        return
+    if os.environ.get(PLAINTEXT_OPT_IN_ENV) == "1":
+        return
+    raise StageRpcError(
+        f"{what}: non-loopback plaintext bind {host!r} refused; "
+        f"cross-machine traffic must use the PQ mesh transport "
+        f"(set {PLAINTEXT_OPT_IN_ENV}=1 only for isolated lab nets)"
+    )
+
 
 class StageRpcError(ValueError):
     pass
@@ -185,6 +205,7 @@ class _Server(socketserver.ThreadingTCPServer):
 
 class StageRpcServer:
     def __init__(self, backend: StageBackend, host: str = "127.0.0.1", port: int = 0):
+        _require_loopback_or_opt_in(host, "StageRpcServer")
         self._server = _Server((host, port), backend)
         self._thread: threading.Thread | None = None
 

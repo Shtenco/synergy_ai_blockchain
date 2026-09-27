@@ -117,7 +117,6 @@ impl ResponderHello {
             rekey_policy: initiator.rekey_policy,
             ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: self.ml_kem_ciphertext.clone(),
-            classical_transcript_hash: None,
         };
         transcript.validate().ok()?;
         Some(transcript)
@@ -133,8 +132,6 @@ mod tests {
         TransportPeerIdentity {
             node_id: [id; 32],
             ml_kem1024_public_key: vec![key; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_scheme: None,
-            legacy_kex_public_key: vec![],
         }
     }
 

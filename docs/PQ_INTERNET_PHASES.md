@@ -1,4 +1,38 @@
-# PQ-Internet: закрытие фаз 1–3 (справочная реализация, v0.2.0+)
+# PQ-Internet: закрытие фаз 1–3 + «весь трафик» (v2 проводка)
+
+Статус: логика протокола реализована в `std`-only ядре, покрыта тестами.
+`CRYPTO_PROFILE_VERSION = 2`: classical/Hybrid транспорт удалён, wire v1
+НЕ совместим с v2.
+
+## Удаление Hybrid (audit: классики в транспорте больше нет)
+
+- Удалены: `ClassicalKexScheme`, `SecretBytes`, `CLASSICAL_SHARED_*`,
+  `legacy_kex_*`, `classical_transcript_hash`, `TransportPolicy::Hybrid`.
+- `HybridSharedSecret` переименован в `PqSharedSecret` (только ML-KEM-1024).
+- Осталась единственная политика `TransportPolicy::PqOnly` (код 2).
+- KDF: IKM только из ML-KEM секрета; KAT-значения обновлены под v2.
+
+## Подписанный gossip
+
+- `SignedGossipEnvelope` (`src/gossip.rs`): dual-подпись ML-DSA-87 +
+  SLH-DSA-SHAKE-256s поверх `msg_id` в домене `GossipAdvertisement` (код 19).
+- Неподписанный gossip релеями дропается; origin/keyset/policy проверяются.
+- Silent-tamper даёт чужую запись: ловится сверкой `pq_authorization_root`.
+
+## Stage-RPC fail-closed
+
+- `StageRpcServer` / `PersistentContentServer` отказываются биндиться на
+  не-loopback без `SYNERGY_ALLOW_PLAINTEXT_TRANSPORT=1`.
+- `mvp_node.py --host 0.0.0.0` теперь падает fail-closed по умолчанию.
+- Межмашинный stage-трафик — только через `transport_record`/`mesh_transport`.
+
+## TUN + DROP
+
+- `deploy/two-node/tunnel-up.sh`: kernel-TUN `synergy0` + адресация
+  (насос TUN<->mesh — следующий шаг, API: `MemoryTunnelDevice`).
+- `deploy/two-node/firewall-iptables.sh`: INPUT/OUTPUT default-DROP,
+  разрешены lo/established/SSH/mesh/DNS/80/443/TUN. Сохранение через
+  netfilter-persistent.
 
 Статус: логика протокола реализована в `std`-only ядре, покрыта тестами
 (`cargo test`: 360 passed). Ниже — что где лежит и что осталось

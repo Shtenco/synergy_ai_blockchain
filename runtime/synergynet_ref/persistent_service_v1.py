@@ -17,6 +17,25 @@ class PersistentServiceError(ValueError):
     pass
 
 
+#: See runtime/stage_rpc_v1.py: cross-machine plaintext is refused by default.
+PLAINTEXT_OPT_IN_ENV = "SYNERGY_ALLOW_PLAINTEXT_TRANSPORT"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _require_loopback_or_opt_in(host: str, what: str) -> None:
+    import os
+
+    if host in _LOOPBACK_HOSTS:
+        return
+    if os.environ.get(PLAINTEXT_OPT_IN_ENV) == "1":
+        return
+    raise PersistentServiceError(
+        f"{what}: non-loopback plaintext bind {host!r} refused; "
+        f"cross-machine traffic must use the PQ mesh transport "
+        f"(set {PLAINTEXT_OPT_IN_ENV}=1 only for isolated lab nets)"
+    )
+
+
 _MAX_HEADER_BYTES = 16 * 1024
 _MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
 _SERVICE_SCHEMA = "synergynet.content-service/v1"
@@ -135,6 +154,7 @@ class PersistentContentServer:
     def __init__(self,*,store_root:str|Path,host:str="127.0.0.1",port:int=0,codecs:CodecRegistry|None=None):
         if not isinstance(host,str) or not host: raise PersistentServiceError("host is required")
         if isinstance(port,bool) or not isinstance(port,int) or not (0<=port<=65535): raise PersistentServiceError("invalid port")
+        _require_loopback_or_opt_in(host, "PersistentContentServer")
         self._server=_Server((host,port),_State(DirectoryChunkStore(store_root),codecs or CodecRegistry())); self._thread=None
     @property
     def address(self):
