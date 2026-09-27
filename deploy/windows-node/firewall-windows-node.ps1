@@ -18,7 +18,9 @@ function Ensure-Rule($Params) {
 }
 
 # --- INBOUND: default block для всего, что не mesh (профиль Public+Private) ---
-Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh TCP"; Direction="Inbound"; Action="Block"; Protocol="TCP"; LocalPort="1-40999,41004-65535"; Profile="Any"}
+# NOTE: 3389 (RDP) специально исключён из block-диапазонов: Block бьёт Allow,
+# поэтому RDP скоупится отдельным правилом (см. MIDAS-bootstrap.ps1 §4).
+Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh TCP"; Direction="Inbound"; Action="Block"; Protocol="TCP"; LocalPort="1-3388,3390-40999,41004-65535"; Profile="Any"}
 Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh UDP"; Direction="Inbound"; Action="Block"; Protocol="UDP"; LocalPort="1-41001,41003-65535"; Profile="Any"}
 Ensure-Rule @{DisplayName="SYNERGY mesh TCP in"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="$MeshTcp,$Gossip"; Profile="Any"}
 Ensure-Rule @{DisplayName="SYNERGY mesh UDP in"; Direction="Inbound"; Action="Allow"; Protocol="UDP"; LocalPort="$MeshUdp,$Gossip"; Profile="Any"}

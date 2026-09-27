@@ -172,10 +172,12 @@ Ensure-Rule @{DisplayName="SYNERGY mesh UDP out"; Direction="Outbound"; Action="
 Write-Output "Firewall mesh rules applied."
 
 # ---------- 4. RDP lockdown: 3389 только e2 + AdminIP ----------
+# ВАЖНО: default-политика inbound и так Block, поэтому отдельного
+# block-правила НЕ создаём (Block бьёт Allow и залочит всех, включая e2).
+# Разрешающее правило со scoped RemoteAddress само режет остальных.
 $Allowed = @($E2 | ForEach-Object { "$_/32" })
 if ($AdminIP -ne "") { $Allowed += "$AdminIP/32" }
-else { Write-Warning "AdminIP пуст: 3389 останется открыт для всех! Перезапусти с -AdminIP <твой IP>." }
+else { Write-Warning "AdminIP пуст: RDP будет доступен только с e2-узлов! Укажи -AdminIP <твой IP>." }
 Ensure-Rule @{DisplayName="SYNERGY RDP allow mesh+admin"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="3389"; RemoteAddress=$Allowed; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY RDP block rest"; Direction="Inbound"; Action="Block"; Protocol="TCP"; LocalPort="3389"; Profile="Any"}
 Write-Output "RDP locked to: $($Allowed -join ', ')"
 Write-Output "BOOTSTRAP DONE. Проверь: Get-Content C:\SYNERGY\mesh\mesh.log -Tail 5"
