@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Постоянный PQ-mesh flow: full mesh через NAT без входящих портов.
+"""Тестовый UDP keepalive/проверка достижимости узлов. НЕ PQ-транспорт.
 
 Каждый узел слушает UDP и ДИАЛИТ пиров; NAT-маппинг держится keepalive
 каждые ~20с с джиттером — обратные пакеты идут по открытому маппингу,
 получается логический full mesh (каждая пара имеет живой двунаправленный
 flow), хотя ни один домашний узел не имеет входящего порта.
 
-Кадр SYD1 (спека src/datagram.rs): commitment SHA256 поверх всего.
-Полезная нагрузка — случайные байты фиксированного размера (никаких
-маркеров и длин: сокрытие паттернов; шифрование контента — слой
-transport_record/mesh_transport ChaCha20-Poly1305, см. доки).
+Кадр SYD1 (спека src/datagram.rs): контрольная сумма SHA256 без ключа.
+Нет ML-KEM handshake, аутентификации пиров или шифрования.
+Никогда не передавайте через этот демон данные модели, RPC или секреты.
+Наличие GOT/ACK подтверждает только UDP-достижимость, не PQ-защиту.
 
 Использование:
   python3 mesh_keepalive.py <listen_port> <session_hex> <peer_ip:port> [...]
@@ -80,7 +80,6 @@ def main():
     sock.settimeout(1.0)
     seq = random.randrange(1, 1 << 31)
     lock = threading.Lock()
-    last_ack = {}
 
     def send(to, ack_seq=0, ack_bits=0):
         nonlocal seq
@@ -94,7 +93,7 @@ def main():
             time.sleep(20 + random.uniform(-2, 5))
             for peer in peers:
                 try:
-                    send(peer, last_ack.get(peer, (0, 0))[0])
+                    send(peer)
                 except OSError:
                     pass
 
@@ -110,11 +109,18 @@ def main():
             buf, addr = sock.recvfrom(2048)
         except socket.timeout:
             continue
+        except ConnectionResetError:
+            # Windows reports ICMP port-unreachable when a peer has not yet
+            # started; keep the listener alive and retry on the next pulse.
+            continue
         f = decode(buf)
         if not f or f[0] != session:
             continue
-        _, rseq, _, _ = f
-        last_ack[addr] = (rseq, 0)
+        _, rseq, ack_seq, _ = f
+        if ack_seq:
+            # ACK frames are terminal. ACKing an ACK creates an unbounded
+            # amplification loop between peers (observed in deployed logs).
+            continue
         print(f"GOT seq={rseq} from={addr[0]}:{addr[1]}", flush=True)
         try:
             send(addr, rseq)
