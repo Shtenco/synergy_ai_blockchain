@@ -22,12 +22,15 @@ function Ensure-Rule($Params) {
 # поэтому RDP скоупится отдельным правилом (см. MIDAS-bootstrap.ps1 §4).
 Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh TCP"; Direction="Inbound"; Action="Block"; Protocol="TCP"; LocalPort="1-3388,3390-40999,41004-65535"; Profile="Any"}
 Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh UDP"; Direction="Inbound"; Action="Block"; Protocol="UDP"; LocalPort="1-41001,41003-65535"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh TCP in"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="$MeshTcp,$Gossip"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh UDP in"; Direction="Inbound"; Action="Allow"; Protocol="UDP"; LocalPort="$MeshUdp,$Gossip"; Profile="Any"}
-
-# --- OUTBOUND: явные разрешения mesh ---
-Ensure-Rule @{DisplayName="SYNERGY mesh TCP out"; Direction="Outbound"; Action="Allow"; Protocol="TCP"; RemotePort="$MeshTcp,$Gossip"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh UDP out"; Direction="Outbound"; Action="Allow"; Protocol="UDP"; RemotePort="$MeshUdp,$Gossip"; Profile="Any"}
+# NOTE: по одному порту на правило — списки через запятую часть систем отвергает.
+foreach ($p in @(41001, 41003)) {
+  Ensure-Rule @{DisplayName="SYNERGY mesh TCP in $p"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="$p"; Profile="Any"}
+  Ensure-Rule @{DisplayName="SYNERGY mesh TCP out $p"; Direction="Outbound"; Action="Allow"; Protocol="TCP"; RemotePort="$p"; Profile="Any"}
+}
+foreach ($p in @(41002, 41003)) {
+  Ensure-Rule @{DisplayName="SYNERGY mesh UDP in $p"; Direction="Inbound"; Action="Allow"; Protocol="UDP"; LocalPort="$p"; Profile="Any"}
+  Ensure-Rule @{DisplayName="SYNERGY mesh UDP out $p"; Direction="Outbound"; Action="Allow"; Protocol="UDP"; RemotePort="$p"; Profile="Any"}
+}
 
 if ($Mode -eq "Strict") {
   # ОСТОРОЖНО: режет весь остальной исходящий (браузеры, обновления...).

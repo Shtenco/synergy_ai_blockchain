@@ -168,10 +168,16 @@ function Ensure-Rule($Params) {
 }
 Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh TCP"; Direction="Inbound"; Action="Block"; Protocol="TCP"; LocalPort="1-40999,41004-65535"; Profile="Any"}
 Ensure-Rule @{DisplayName="SYNERGY block inbound non-mesh UDP"; Direction="Inbound"; Action="Block"; Protocol="UDP"; LocalPort="1-41001,41003-65535"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh TCP in"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="41001,41003"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh UDP in"; Direction="Inbound"; Action="Allow"; Protocol="UDP"; LocalPort="41002,41003"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh TCP out"; Direction="Outbound"; Action="Allow"; Protocol="TCP"; RemotePort="41001,41003"; Profile="Any"}
-Ensure-Rule @{DisplayName="SYNERGY mesh UDP out"; Direction="Outbound"; Action="Allow"; Protocol="UDP"; RemotePort="41002,41003"; Profile="Any"}
+# По одному порту на правило: списки через запятую New-NetFirewallRule
+# на части систем отвергает.
+foreach ($p in @(41001, 41003)) {
+  Ensure-Rule @{DisplayName="SYNERGY mesh TCP in $p"; Direction="Inbound"; Action="Allow"; Protocol="TCP"; LocalPort="$p"; Profile="Any"}
+  Ensure-Rule @{DisplayName="SYNERGY mesh TCP out $p"; Direction="Outbound"; Action="Allow"; Protocol="TCP"; RemotePort="$p"; Profile="Any"}
+}
+foreach ($p in @(41002, 41003)) {
+  Ensure-Rule @{DisplayName="SYNERGY mesh UDP in $p"; Direction="Inbound"; Action="Allow"; Protocol="UDP"; LocalPort="$p"; Profile="Any"}
+  Ensure-Rule @{DisplayName="SYNERGY mesh UDP out $p"; Direction="Outbound"; Action="Allow"; Protocol="UDP"; RemotePort="$p"; Profile="Any"}
+}
 Write-Output "Firewall mesh rules applied."
 
 # ---------- 4. RDP lockdown: 3389 только e2 + AdminIP ----------
