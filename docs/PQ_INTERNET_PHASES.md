@@ -89,3 +89,16 @@
 См. `deploy/two-node/`: `node.env.example`, `synergy-node.service`,
 firewall-скрипты, `smoke.sh`. Порядок: build -> keys -> firewall ->
 service -> smoke -> сверка `NodeSetSnapshot`.
+
+## Третий узел (Windows, DESKTOP-C8GUE41)
+
+- Код той же ветки, `cargo test` зелёный локально.
+- Mesh-точка: `mesh_ping.py listen 41002`, пинги до e2-1/e2-2 отсюда: OK.
+- Топология честно outbound-only: входящие с интернета не доходят
+  (WARP-egress + NAT), e2<->e2 полный mesh между собой.
+- Firewall: `deploy/windows-node/firewall-windows-node.ps1`
+  (Standard: inbound-hardening + mesh; Strict: outbound DROP —
+  только осознанно). Требует elevated PowerShell.
+- TUN-драйвера на Windows нет из коробки (нужен wintun);
+  сквозное шифрование всего трафика здесь даёт WARP (WireGuard) +
+  PQ-слой mesh поверх.
