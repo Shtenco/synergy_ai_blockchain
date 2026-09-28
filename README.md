@@ -15,7 +15,7 @@ Experimental consensus/execution core for the SYNERGY post-quantum EVM architect
 
 ## NEXUS provenance
 
-The current consensus profile points to NEXUS V18 research in `Shtenco/agi_olga`.
+The current consensus profile points to NEXUS V18 research in `Shtenco/synergy_agi_olga`.
 The reported V18 source checkpoint SHA-256 is:
 
 `74433965c8193b6f75b42c197a4394bb14e37f2ef0ea0c7eb8b826e46c65c4e4`
