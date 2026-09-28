@@ -15,6 +15,7 @@ pub mod compute_settlement;
 pub mod consensus;
 pub mod discovery;
 pub mod evm_compat;
+pub mod federation_contracts;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -93,6 +94,7 @@ pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
 };
+pub use federation_contracts::{trust_commitment_payload, verify_transport_evidence, TrustCommitmentPayload, TransportEvidenceInput};
 pub use evm_compat::{
     EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile,
     EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
