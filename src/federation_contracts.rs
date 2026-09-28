@@ -118,3 +118,21 @@ pub fn verify_budget_proof_root(
         .bytes()
         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+
+#[cfg(test)]
+mod budget_proof_tests {
+    use super::verify_budget_proof_root;
+
+    #[test]
+    fn accepts_well_formed_budget_provenance_root() {
+        assert!(verify_budget_proof_root("RU-DEMO", "snap-1", &"ab".repeat(32), 3));
+    }
+
+    #[test]
+    fn rejects_empty_or_malformed_budget_provenance() {
+        assert!(!verify_budget_proof_root("", "snap-1", &"ab".repeat(32), 3));
+        assert!(!verify_budget_proof_root("RU-DEMO", "snap-1", "xyz", 3));
+        assert!(!verify_budget_proof_root("RU-DEMO", "snap-1", &"ab".repeat(32), 0));
+    }
+}
