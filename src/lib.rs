@@ -5,6 +5,7 @@ pub mod cognitive;
 pub mod cognitive_market;
 pub mod cognitive_registry;
 pub mod consensus;
+pub mod domain_commitment;
 pub mod migration;
 pub mod network;
 pub mod nexus;
@@ -32,6 +33,7 @@ pub use cognitive_registry::{
     IndependenceVerdict,
 };
 pub use consensus::{PrecompileAddress, PrecompileGasSchedule};
+pub use domain_commitment::DomainArtifactCommitment;
 pub use migration::{LegacyChain, LegacyIdentityBinding};
 pub use network::{HybridSharedSecret, TransportPolicy};
 pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
