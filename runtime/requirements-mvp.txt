@@ -1,1 +1,4 @@
-numpy>=1.26,<3
+# Pinned exact: stage outputs are bit-compared across nodes (home/e2-1/e2-2).
+# numpy>=1.26,<3 allowed 2.4.6 vs 2.5.3 drift -> float32 bit divergence.
+# 2.4.6 is the newest with wheels for both Python 3.11 (home) and 3.12 (e2).
+numpy==2.4.6

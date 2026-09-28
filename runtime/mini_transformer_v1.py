@@ -106,12 +106,26 @@ def encode_bytes(prompt: bytes, config: MiniTransformerConfig) -> np.ndarray:
     return data
 
 
+# Fixed-point activation encoding for cross-machine determinism.
+# float32 matmuls are not bit-identical across CPU SIMD paths (measured
+# ~1e-6 divergence Intel vs AMD). Quantizing to int16 with step 2^-12 snaps
+# that noise: values within half a step encode identically everywhere.
+# v1 float32 frames still decode (backward compatible).
+ACTIVATION_QUANT_SCALE = 4096
+ACTIVATION_QUANT_DTYPE = "int16"
+
+
 def _save_activation(tokens: np.ndarray, hidden: np.ndarray) -> bytes:
-    meta = json.dumps({"format":FORMAT,"tokens":tokens.tolist()}, separators=(",",":"), sort_keys=True).encode()
+    meta = json.dumps({"format":FORMAT,"tokens":tokens.tolist(),
+                       "quant":ACTIVATION_QUANT_DTYPE,"scale":ACTIVATION_QUANT_SCALE},
+                      separators=(",",":"), sort_keys=True).encode()
     if len(meta) > 16 * 1024:
         raise TransformerError("activation metadata too large")
+    q = np.floor(np.asarray(hidden, dtype=np.float64) * ACTIVATION_QUANT_SCALE + 0.5)
+    if q.min(initial=0) < -32768 or q.max(initial=0) > 32767:
+        raise TransformerError("activation out of int16 range")
     buf = io.BytesIO()
-    np.save(buf, hidden.astype(np.float32), allow_pickle=False)
+    np.save(buf, q.astype(np.int16), allow_pickle=False)
     body = buf.getvalue()
     return len(meta).to_bytes(4, "big") + meta + body
 
@@ -127,7 +141,15 @@ def _load_activation(payload: bytes) -> tuple[np.ndarray, np.ndarray]:
         raise TransformerError("activation format mismatch")
     tokens = np.asarray(meta["tokens"], dtype=np.int64)
     hidden = np.load(io.BytesIO(payload[4+n:]), allow_pickle=False)
-    if hidden.dtype != np.float32 or hidden.ndim != 2 or hidden.shape[0] != len(tokens):
+    if hidden.ndim != 2 or hidden.shape[0] != len(tokens):
+        raise TransformerError("activation tensor mismatch")
+    if meta.get("quant") == ACTIVATION_QUANT_DTYPE:
+        if hidden.dtype != np.int16:
+            raise TransformerError("activation tensor mismatch")
+        if meta.get("scale") != ACTIVATION_QUANT_SCALE:
+            raise TransformerError("activation quant scale mismatch")
+        hidden = hidden.astype(np.float32) / np.float32(ACTIVATION_QUANT_SCALE)
+    elif hidden.dtype != np.float32:
         raise TransformerError("activation tensor mismatch")
     return tokens, hidden
 
