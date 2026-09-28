@@ -100,3 +100,21 @@ mod tests{
         let mut bad=good.clone();bad.authenticated=false;assert!(!verify_transport_evidence(&bad));
     }
 }
+
+
+pub fn verify_budget_proof_root(
+    dataset_id: &str,
+    snapshot_id: &str,
+    record_merkle_root: &str,
+    record_count: u64,
+) -> bool {
+    if dataset_id.is_empty() || snapshot_id.is_empty() || record_count == 0 {
+        return false;
+    }
+    if record_merkle_root.len() != 64 {
+        return false;
+    }
+    record_merkle_root
+        .bytes()
+        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
