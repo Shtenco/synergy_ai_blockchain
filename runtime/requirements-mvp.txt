@@ -2,3 +2,5 @@
 # numpy>=1.26,<3 allowed 2.4.6 vs 2.5.3 drift -> float32 bit divergence.
 # 2.4.6 is the newest with wheels for both Python 3.11 (home) and 3.12 (e2).
 numpy==2.4.6
+regex==2026.9.10
+gguf==0.19.0

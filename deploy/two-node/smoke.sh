@@ -1,6 +1,7 @@
 #!/bin/bash
 # Smoke-проверка двух узлов после деплоя. Запускать с узла 1.
 # Требует: node.env заполнен на обоих узлах, сервис запущен.
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
 set -euo pipefail
 : "${PEER_ADDR:?PEER_ADDR не задан — заполни node.env}"
 PEER_TCP="${PEER_MESH_TCP_PORT:-41001}"

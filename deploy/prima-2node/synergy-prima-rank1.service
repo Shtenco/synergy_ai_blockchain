@@ -1,0 +1,19 @@
+[Unit]
+Description=SYNERGY prima.cpp Llama 3.2 3B rank 1 worker
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/prima.cpp
+ExecStart=/home/ubuntu/prima.cpp/llama-cli -m /home/ubuntu/prima.cpp/Llama-3.2-3B-Instruct-Q4_K_M.gguf --world 2 --rank 1 --master 10.0.1.122 --next 10.0.1.122 -t 2
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,8 @@ domain currently present in `AuthorizationDomain`.
 | Domain | State transition | Required policy | Identity binding | Replay / state binding |
 |---|---|---|---|---|
 | `Transaction` | EVM transaction authorization | caller-required `Online`, `Max` or `PqOnly` | stable `sender_account == primary_account_identity_commitment(ML-DSA)` plus exact expected current authorization keyset commitment | chain, nonce, authorization epoch, exclusive expiry, protocol lifetime ceiling, subject-bound nonce consumption |
+
+Инстансы пересозданы 29.09.2026: e2-1 `51.170.89.241`, e2-2 `129.151.138.7`.
 | `ValidatorVote` | consensus vote | `Max` in hybrid transition, `PqOnly` in native PQ mode | `validator_id` is stable commitment to ML-DSA + SLH-DSA public keys; evidence keys must match registered identity | chain, epoch, nonce, expiry, expected validator ID |
 | `BridgeMigration` | legacy identity -> native PQ account | `PqOnly` plus independent legacy ownership proof | `pq_identity_commitment == authorization.keyset_commitment()`; `synergy_account_id == pq_identity_commitment` | chain, epoch, nonce, expiry, legacy proof |
 | `ModelUpgrade` | model lineage/state upgrade | `Max` | expected authority keyset commitment | chain, epoch, nonce, expiry, activation epoch, lineage parent/index closure |

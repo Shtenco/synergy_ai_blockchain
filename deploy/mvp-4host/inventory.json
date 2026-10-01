@@ -1,0 +1,39 @@
+{
+  "schema": "synergy.mvp-4host-inventory/v1",
+  "network_id": "synergy-4host-v2",
+  "nodes": [
+    {
+      "node_id": "home",
+      "role": "provider",
+      "host": "188.130.156.212",
+      "content_port": 7791,
+      "ssh_key": "C:\\Users\\Shtenco\\Desktop\\KEYS_ORACLE\\koshtenco@gmail.com-2026-09-27T12_04_58.955Z.pem"
+    },
+    {
+      "node_id": "e2-1",
+      "role": "stage0-worker",
+      "host": "51.170.89.241",
+      "private_ip": "10.0.1.122",
+      "rpc_port": 7801,
+      "ssh_key": "C:\\Users\\Shtenco\\Desktop\\KEYS_ORACLE\\oci-e2-1-key",
+      "instance_ocid": "ocid1.instance.oc1.me-abudhabi-1.anqxkljrm3bnygqcq2foz3xkdgt7spserq45wrphkar3yh5vimplrgrt5w6a"
+    },
+    {
+      "node_id": "e2-2",
+      "role": "stage1-worker",
+      "host": "129.151.138.7",
+      "private_ip": "10.0.1.210",
+      "rpc_port": 7802,
+      "ssh_key": "C:\\Users\\Shtenco\\Desktop\\KEYS_ORACLE\\oci-e2-2-key",
+      "instance_ocid": "ocid1.instance.oc1.me-abudhabi-1.anqxkljrm3bnygqciatplt7ewptzi55i4jiilzlxb2rtgbaglbzwdwp7mrhq"
+    },
+    {
+      "node_id": "midas-2",
+      "role": "verifier-replica",
+      "host": "185.200.84.83",
+      "rpc_port": 7803,
+      "provider": "serverspace-kz",
+      "note": "Windows Server 2022, 1 vCPU, 2GB RAM, no SSH key available"
+    }
+  ]
+}

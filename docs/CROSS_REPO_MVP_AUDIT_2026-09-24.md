@@ -693,7 +693,7 @@ It enforces capability ceilings, artifact hashes, resource limits, attestation f
 
 `synergy_turbo_linux` already contains:
 
-- remote SSH orchestration;
+- remote SSH orchestration (инстансы пересозданы 29.09.2026: e2-1 `51.170.89.241`, e2-2 `129.151.138.7`);
 - KVM/libvirt provisioning work;
 - benchmark workflow;
 - memory/storage experimentation;

@@ -17,8 +17,8 @@ param([string]$AdminIP = "")
 $ErrorActionPreference = "Stop"
 $MeshDir = "C:\SYNERGY\mesh"
 $Session = "5c1757e20170c912844452c468268576fe9474809e8dcb80b919ee3e98221f6f"
-$Peers = @("51.170.88.69:41002", "51.170.93.115:41002")
-$E2 = @("51.170.88.69", "51.170.93.115")
+$Peers = @("51.170.89.241:41002", "129.151.138.7:41002")
+$E2 = @("51.170.89.241", "129.151.138.7")
 
 # ---------- 0. Python (без winget: на Server его нет) ----------
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {

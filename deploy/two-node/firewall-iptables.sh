@@ -3,6 +3,7 @@
 # только loopback, established, SSH, mesh-порты, DNS/HTTP(S) для обновлений
 # и TUN-интерфейс. Идемпотентен, сохраняется через netfilter-persistent.
 # Использование: sudo ./firewall-iptables.sh  (MESH_TCP/UDP_PORT, TUN_IF из env)
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
 set -euo pipefail
 MESH_TCP_PORT="${MESH_TCP_PORT:-41001}"
 MESH_UDP_PORT="${MESH_UDP_PORT:-41002}"

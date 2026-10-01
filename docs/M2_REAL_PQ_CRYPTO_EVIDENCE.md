@@ -280,7 +280,7 @@ Observed on the same GitHub account:
 
 - `Shtenco/synergychain`, run `34547147861`, 2026-09-11: GitHub-hosted jobs actually executed `Set up job`, `actions/checkout@v4`, Foundry setup and test steps. One job completed successfully, proving hosted runners were provisioned for this account at that time.
 - `Shtenco/synergychain`, run `34956850725`, 2026-09-15: both jobs concluded failure with `steps=[]`.
-- `Shtenco/synergy_midas_ai_trading_system`, run `35453264669`, 2026-09-19: job concluded failure with `steps=[]`.
+- `Shtenco/synergy_midas_ai_trading_system`, run `35453264669`, 2026-09-19: job concluded failure with `steps=[]`. Инстансы пересозданы 29.09.2026: e2-1 `51.170.89.241`, e2-2 `129.151.138.7`.
 - `Shtenco/synergy_ai_blockchain`, runs including `35767770906` and `35771551276`, 2026-09-22: job concludes failure with `steps=[]`, no downloadable log blob, and zero billable Ubuntu milliseconds.
 
 For run `35767770906`, the Actions timing API reports:

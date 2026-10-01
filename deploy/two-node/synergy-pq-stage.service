@@ -2,6 +2,7 @@
 Description=SYNERGY mutually authenticated PQ Stage RPC tunnel
 After=network-online.target
 Wants=network-online.target
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
 
 [Service]
 Type=simple

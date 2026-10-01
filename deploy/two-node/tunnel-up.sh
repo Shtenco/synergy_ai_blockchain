@@ -3,6 +3,7 @@
 # Пакетный насос TUN<->mesh: src/mesh_tunnel.rs MemoryTunnelDevice (API),
 # userspace-демон — следующий шаг; интерфейс и маршруты готовы заранее.
 # Использование: sudo TUN_IF=synergy0 TUN_ADDR=10.99.0.1/24 ./tunnel-up.sh
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
 set -euo pipefail
 TUN_IF="${TUN_IF:-synergy0}"
 TUN_ADDR="${TUN_ADDR:?задай TUN_ADDR, например 10.99.0.1/24 (узел1) / 10.99.0.2/24 (узел2)}"

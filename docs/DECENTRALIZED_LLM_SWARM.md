@@ -8,8 +8,8 @@ parallel; agreement + verifier verdict per prompt.
 
 | Node | Role | Model | RAM | How it fits |
 |------|------|-------|-----|-------------|
-| e2-1 (51.170.88.69) | worker | Llama-3.2-1B Q4_K_M | 954 MB | mmap, b11026 ubuntu build |
-| e2-2 (51.170.93.115) | worker | Llama-3.2-1B Q4_K_M | 954 MB | mmap, b11026 ubuntu build |
+| e2-1 (51.170.89.241) | worker | Llama-3.2-1B Q4_K_M | 954 MB | mmap, b11026 ubuntu build |
+| e2-2 (129.151.138.7) | worker | Llama-3.2-1B Q4_K_M | 954 MB | mmap, b11026 ubuntu build |
 | home | verifier | Gemma 4 E2B-it Q4_K_M | 8 GB | resident, Turbo API :8787 |
 
 RPC offload of Gemma layers to e2 was rejected by llama.cpp fit check

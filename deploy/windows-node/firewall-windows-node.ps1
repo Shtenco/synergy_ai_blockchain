@@ -7,6 +7,7 @@
 # Запуск из elevated PowerShell:
 #   .\firewall-windows-node.ps1            # Standard
 #   .\firewall-windows-node.ps1 -Mode Strict
+# Public IPs: e2-1 51.170.89.241, e2-2 129.151.138.7 (recreated 29.09.2026)
 param([ValidateSet("Standard", "Strict")][string]$Mode = "Standard")
 $MeshTcp = 41001; $MeshUdp = 41002; $Gossip = 41003
 $ErrorActionPreference = "Stop"

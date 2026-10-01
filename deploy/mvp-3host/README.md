@@ -6,6 +6,7 @@ This directory is the deployment boundary for the first real external MVP.
 
 - **Host A** — persistent content/model provider.
 - **Host B** — transformer stage 0 worker + KV primary/replica participant.
+  e2-1 `51.170.89.241`, e2-2 `129.151.138.7` (пересозданы 29.09.2026).
 - **Host C** — transformer stage 1 worker/verifier + KV failover target.
 
 All three hosts must be distinct persistent machines. Loopback aliases or three processes on one host do not satisfy the MVP external-host gate.

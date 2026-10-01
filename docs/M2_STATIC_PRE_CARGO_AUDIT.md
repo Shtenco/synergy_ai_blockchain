@@ -170,7 +170,7 @@ Closed in this pass:
 - rekey policy is bounded and invalid configurations fail closed;
 - ML-KEM/classical transport secrets are nominal zeroizing non-Clone wrappers.
 
-These changes reduce the remaining M2 uncertainty primarily to executable dependency resolution, compilation and runtime tests.
+These changes reduce the remaining M2 uncertainty primarily to executable dependency resolution, compilation and runtime tests. Инстансы пересозданы 29.09.2026: e2-1 `51.170.89.241`, e2-2 `129.151.138.7`.
 
 
 ## Latest cross-plane hardening pass

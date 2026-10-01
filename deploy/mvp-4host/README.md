@@ -6,6 +6,7 @@ Roles:
 - Node A — model/content provider.
 - Node B — transformer stage 0 worker.
 - Node C — primary stage 1 worker.
+  e2-1 `51.170.89.241`, e2-2 `129.151.138.7` (пересозданы 29.09.2026).
 - Node D — independent stage 1 verifier + failover replica.
 
 Acceptance scenario:
