@@ -20,6 +20,7 @@ reference-pq = [
     "dep:rand",
     "dep:signature",
 ]
+cli = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 zeroize = { version = "=1.8.1", default-features = false, features = ["alloc"] }
@@ -32,6 +33,9 @@ slh-dsa = { version = "=0.1.0", optional = true, default-features = false, featu
 fips205 = { version = "=0.4.1", optional = true, default-features = false, features = ["default-rng", "slh_dsa_shake_256s"] }
 rand = { version = "=0.8.5", optional = true, default-features = false, features = ["getrandom", "std", "std_rng"] }
 signature = { version = "=2.3.0-pre.4", optional = true, default-features = false, features = ["rand_core"] }
+serde = { version = "=1.0.228", optional = true, default-features = false, features = ["derive"] }
+serde_json = { version = "=1.0.145", optional = true }
+hex = { version = "=0.4.3", optional = true }
 
 [dev-dependencies]
 hex = "=0.4.3"
