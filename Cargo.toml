@@ -53,3 +53,8 @@ overflow-checks = true
 opt-level = 3
 debug-assertions = true
 overflow-checks = true
+
+[[bin]]
+name = "synergy-mvp"
+path = "src/bin/synergy-mvp.rs"
+required-features = ["cli"]
