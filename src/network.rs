@@ -535,12 +535,8 @@ pub fn establish_authenticated_shared_secret<
         return None;
     }
 
-    let secret = establish_shared_secret(
-        replay_guard,
-        pq_shared,
-        transcript,
-        transport_validation,
-    )?;
+    let secret =
+        establish_shared_secret(replay_guard, pq_shared, transcript, transport_validation)?;
 
     *initiator_replay = next_initiator;
     *responder_replay = next_responder;

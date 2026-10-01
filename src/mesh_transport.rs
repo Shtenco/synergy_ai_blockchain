@@ -674,13 +674,9 @@ mod tests {
         let mut receiver_guard =
             InMemoryTransportReplayGuard::new([41; 32], 9).expect("receiver replay");
 
-        let sender_secret = establish_shared_secret(
-            &mut sender_guard,
-            sender_shared,
-            &transcript,
-            &validation,
-        )
-        .expect("sender shared secret");
+        let sender_secret =
+            establish_shared_secret(&mut sender_guard, sender_shared, &transcript, &validation)
+                .expect("sender shared secret");
         let receiver_secret = establish_shared_secret(
             &mut receiver_guard,
             receiver_shared,

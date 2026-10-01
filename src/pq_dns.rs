@@ -21,7 +21,7 @@ pub fn pq_namehash(name: &str) -> Option<[u8; 32]> {
     // Fail-closed: only printable ASCII, no leading/trailing dots, no empties.
     if lower
         .bytes()
-        .any(|b| b < 0x20 || b > 0x7E || b == b' ' || b == b'\0')
+        .any(|b| !(0x20..=0x7E).contains(&b) || b == b' ' || b == b'\0')
     {
         return None;
     }
@@ -64,7 +64,7 @@ impl PqDnsRecord {
     }
 
     pub fn record_root(&self) -> Option<[u8; 32]> {
-        self.validate(self.expires_at_ms.saturating_sub(1).min(u64::MAX)).ok()?;
+        self.validate(self.expires_at_ms.saturating_sub(1)).ok()?;
         let mut h = Sha256::new();
         h.update(PQ_DNS_DOMAIN);
         h.update(crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
@@ -111,6 +111,10 @@ impl PqDnsRegistry {
     pub fn len(&self) -> usize {
         self.records.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -139,17 +143,17 @@ mod tests {
             sequence: 1,
             expires_at_ms: 5000,
         };
-        assert_eq!(reg.upsert(r1.clone(), 1000).unwrap(), true);
+        assert!(reg.upsert(r1.clone(), 1000).unwrap());
         assert_eq!(reg.resolve(&name, 2000), Some([2; 32]));
         // Stale sequence ignored.
         let mut stale = r1.clone();
         stale.sequence = 0;
-        assert_eq!(reg.upsert(stale, 2000).unwrap(), false);
+        assert!(!reg.upsert(stale, 2000).unwrap());
         // Newer wins.
         let mut r2 = r1.clone();
         r2.sequence = 2;
         r2.address = [9; 32];
-        assert_eq!(reg.upsert(r2, 2000).unwrap(), true);
+        assert!(reg.upsert(r2, 2000).unwrap());
         assert_eq!(reg.resolve(&name, 2000), Some([9; 32]));
         // Expired: unresolvable.
         assert_eq!(reg.resolve(&name, 6000), None);

@@ -30,6 +30,16 @@
       "path": "tests/fixtures/evm_authorization_envelope_v1.hex",
       "git_blob_sha1": "d86a50c7b7d3d82c04fb9c22eabc8b293d79b0a5",
       "sha256": "0505fd868b3100e29b6126860b733740a3bc78b4367981265571546071d9cbd0"
+    },
+    {
+      "path": "tests/fixtures/evm_fips_context_v2.hex",
+      "git_blob_sha1": "84fec65e42e07002f1e3bd3895980c2d5366aa72",
+      "sha256": "0f41d909324dc9180c1955ea80d7b4354bfbd672cf13ebfb23f74a01c3df3755"
+    },
+    {
+      "path": "tests/fixtures/evm_authorization_envelope_v2.hex",
+      "git_blob_sha1": "bbb3e4c045cd9c838b0b1508fda54c45bb092659",
+      "sha256": "12932e7f43bc4605bd56785667124859a0ece710a74cb31fbdbe8df8ce679b1a"
     }
   ]
 }

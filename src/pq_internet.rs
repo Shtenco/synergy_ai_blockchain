@@ -39,7 +39,7 @@ pub fn index_snapshot_into_dht(
 ) -> RoutingTable {
     let mut table = RoutingTable::new(self_id);
     for record in &snapshot.records {
-        if !record.live(now_ms as u64) {
+        if !record.live(now_ms) {
             continue;
         }
         let Some(addr) = dht_address_for_record(&record.node_id, &record.pq_identity_commitment)
@@ -134,7 +134,7 @@ pub fn apply_gossip_to_linkstate(
     let link = advertisement_from_gossip(msg, now_ms).ok_or("gossip advertisement invalid")?;
     match db.upsert(link, now_ms) {
         Ok(()) => Ok(true),
-        Err(e) if e == "mesh link replay or downgrade" => Ok(false),
+        Err("mesh link replay or downgrade") => Ok(false),
         Err(e) => Err(e),
     }
 }

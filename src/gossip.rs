@@ -138,6 +138,10 @@ impl LinkAdvertisementIndex {
     pub fn len(&self) -> usize {
         self.by_root.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_root.is_empty()
+    }
 }
 
 /// PQ-signed gossip envelope (Phase: close the unsigned-gossip gap).
@@ -198,9 +202,7 @@ pub fn verify_signed_gossip<V: ContextSignatureVerifier>(
     if signed.message.origin != validation.expected_origin {
         return false;
     }
-    if signed.authorization.keyset_commitment()
-        != Some(validation.expected_keyset_commitment)
-    {
+    if signed.authorization.keyset_commitment() != Some(validation.expected_keyset_commitment) {
         return false;
     }
     let envelope = match signed.envelope(validation.expected_network_id) {
@@ -224,8 +226,8 @@ mod tests {
     use super::*;
     use crate::pq::{AuthScheme, SignatureEvidence};
     use crate::pq::{
-        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES,
-        SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES, SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
+        ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES, SLH_DSA_SHAKE_256S_PUBLIC_KEY_BYTES,
+        SLH_DSA_SHAKE_256S_SIGNATURE_BYTES,
     };
 
     fn msg(ttl: u8) -> GossipMessage {
@@ -241,8 +243,8 @@ mod tests {
     fn gossip_dedup_and_ttl() {
         let m = msg(4);
         let mut cache = GossipSeenCache::new(8);
-        assert_eq!(cache.observe(&m).unwrap(), true);
-        assert_eq!(cache.observe(&m).unwrap(), false);
+        assert!(cache.observe(&m).unwrap());
+        assert!(!cache.observe(&m).unwrap());
         let f = m.forward().unwrap();
         assert_eq!(f.ttl, 3);
         assert!(msg(1).forward().is_none());
@@ -306,7 +308,11 @@ mod tests {
         }
     }
 
-    fn signed_envelope() -> (SignedGossipEnvelope, SignedGossipValidationContext, EnvelopeVerifier) {
+    fn signed_envelope() -> (
+        SignedGossipEnvelope,
+        SignedGossipValidationContext,
+        EnvelopeVerifier,
+    ) {
         let authorization = pq_only_authorization(11);
         let keyset = authorization.keyset_commitment().expect("keyset");
         let signed = SignedGossipEnvelope {

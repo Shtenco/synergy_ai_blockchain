@@ -114,6 +114,10 @@ impl ResumptionReplayGuard {
     pub fn len(&self) -> usize {
         self.consumed.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.consumed.is_empty()
+    }
 }
 
 #[cfg(test)]

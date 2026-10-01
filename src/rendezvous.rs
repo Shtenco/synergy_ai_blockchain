@@ -76,9 +76,7 @@ impl PunchOffer {
         if self.intent_root != intent.intent_root().ok_or("intent root unavailable")? {
             return Err("punch offer not bound to intent");
         }
-        if self.sender_node != intent.initiator_node
-            && self.sender_node != intent.responder_node
-        {
+        if self.sender_node != intent.initiator_node && self.sender_node != intent.responder_node {
             return Err("punch offer sender not part of intent");
         }
         if self.cookie_root == [0; 32] {
@@ -141,10 +139,7 @@ mod tests {
         let i = intent();
         let a = [11; 32];
         let b = [22; 32];
-        assert_eq!(
-            derive_punch_id(&i, &a, &b),
-            derive_punch_id(&i, &b, &a)
-        );
+        assert_eq!(derive_punch_id(&i, &a, &b), derive_punch_id(&i, &b, &a));
     }
 
     #[test]

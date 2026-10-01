@@ -14,9 +14,9 @@ pub mod cognitive_registry;
 pub mod compute_settlement;
 pub mod consensus;
 pub mod datagram;
+pub mod dht;
 pub mod discovery;
 pub mod double_ratchet;
-pub mod dht;
 pub mod evm_compat;
 pub mod federation_contracts;
 pub mod gossip;
@@ -102,11 +102,14 @@ pub use discovery::{
     ProviderRecord, ProviderRegistry, MAX_PROVIDER_RECORDS, PROVIDER_RECORD_DOMAIN,
     PROVIDER_SET_DOMAIN,
 };
-pub use federation_contracts::{trust_commitment_payload, verify_transport_evidence, TrustCommitmentPayload, TransportEvidenceInput};
 pub use evm_compat::{
     EvmBridgeProofReceipt, EvmBridgeReplayState, EvmCompatibilityEvidence, EvmCompatibilityProfile,
     EvmNetworkClass, EVM_BRIDGE_MESSAGE_ID_DOMAIN, EVM_COMPAT_DOMAIN, EVM_COMPAT_EVIDENCE_DOMAIN,
     EVM_VERIFIED_PROFILE_DOMAIN,
+};
+pub use federation_contracts::{
+    trust_commitment_payload, verify_transport_evidence, TransportEvidenceInput,
+    TrustCommitmentPayload,
 };
 pub use governance::{
     verify_governance_action_and_consume, GovernanceAction, GovernanceAuthorization,
@@ -153,14 +156,13 @@ pub use mvp::{MvpCheckpoint, MVP_CHECKPOINT_DOMAIN};
 pub use mvp_finalization::{finalize_mvp_checkpoint, MvpFinalizationInput};
 pub use network::{
     derive_directional_transport_session_keys, establish_authenticated_shared_secret,
-    validate_shared_secret, InMemoryTransportReplayGuard,
-    MlKem1024Provider, MlKemSharedSecret, PqSharedSecret, RekeyPolicy, TransportPeerAuthorization,
+    validate_shared_secret, InMemoryTransportReplayGuard, MlKem1024Provider, MlKemSharedSecret,
+    PqSharedSecret, RekeyPolicy, TransportPeerAuthorization,
     TransportPeerAuthorizationValidationContext, TransportPeerIdentity, TransportPolicy,
     TransportRecordSequence, TransportReplayGuard, TransportRole, TransportSessionKey,
-    TransportSessionKeys, TransportTranscript, TransportValidationContext,
-    MAX_REKEY_MESSAGES, MAX_REKEY_SECONDS,
-    ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE, ML_KEM_1024_PUBLIC_KEY_BYTES,
-    ML_KEM_SHARED_SECRET_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
+    TransportSessionKeys, TransportTranscript, TransportValidationContext, MAX_REKEY_MESSAGES,
+    MAX_REKEY_SECONDS, ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE,
+    ML_KEM_1024_PUBLIC_KEY_BYTES, ML_KEM_SHARED_SECRET_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
     TRANSPORT_TRANSCRIPT_DOMAIN,
 };
 pub use nexus::{

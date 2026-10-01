@@ -193,23 +193,22 @@ require(
     "ML-KEM shared secret must remain opaque and zeroize on drop",
 )
 require(
-    'pub struct SecretBytes(Vec<u8>);' in network
-    and 'impl Drop for SecretBytes' in network,
-    "classical secret bytes must remain opaque and zeroize on drop",
+    'pub struct SecretBytes(Vec<u8>);' not in network
+    and 'impl Drop for SecretBytes' not in network
+    and 'pub struct HybridSharedSecret' not in network,
+    "classical/Hybrid transport secrets must stay deleted in PQ-only transport",
 )
 require(
-    'pub struct HybridSharedSecret' in network
-    and '#[derive(PartialEq, Eq)]\npub struct HybridSharedSecret' not in network
-    and 'pq_shared: MlKemSharedSecret' in network
-    and 'classical_shared: Option<SecretBytes>' in network,
-    "HybridSharedSecret must contain typed secret wrappers and remain non-Clone",
+    'pq_shared: MlKemSharedSecret' in network
+    and 'struct PqSharedSecret' in network
+    and 'struct HybridSharedSecret' not in network,
+    "transport must hold a typed PQ-only shared secret",
 )
 require(
     'field("pq_shared", &"<redacted>")' in network
-    and 'field("classical_shared", &"<redacted>")' in network
     and 'MlKemSharedSecret(<redacted>)' in network
-    and 'SecretBytes(<redacted>)' in network,
-    "HybridSharedSecret Debug must remain redacted",
+    and 'SecretBytes(<redacted>)' not in network,
+    "transport secret Debug must remain redacted",
 )
 
 
@@ -276,13 +275,12 @@ require(
     "established shared secret must remain bound to transport policy",
 )
 require(
-    "pub enum ClassicalKexScheme" in network
-    and "X25519_PUBLIC_KEY_BYTES: usize = 32" in network
-    and "SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33" in network
-    and "classical KEX public key length mismatch" in network
-    and "PQ-only transport forbids classical KEX material" in network
-    and "CLASSICAL_SHARED_SECRET_BYTES: usize = 32" in network,
-    "explicit classical KEX registry or exact transport bounds missing",
+    "pub enum ClassicalKexScheme" not in network
+    and "X25519_PUBLIC_KEY_BYTES" not in network
+    and "CLASSICAL_SHARED_SECRET_BYTES" not in network
+    and "PQ-only" in network
+    and "There is no Hybrid policy anymore" in network,
+    "classical KEX registry must stay deleted from the PQ-only transport",
 )
 
 require(
@@ -301,7 +299,7 @@ require(
 
 
 require(
-    'CRYPTO_PROFILE_VERSION: u16 = 1' in pq
+    'CRYPTO_PROFILE_VERSION: u16 = 2' in pq
     and 'CRYPTO_PROFILE_VERSION.to_be_bytes()' in pq
     and 'crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes()' in network,
     "crypto profile version must remain bound into authorization and transport domains",
@@ -382,10 +380,9 @@ require(
 )
 
 require(
-    "CLASSICAL_SHARED_SECRET_BYTES: usize = 32" in network
-    and "secret.len() != CLASSICAL_SHARED_SECRET_BYTES" in network
-    and "shared.len() == CLASSICAL_SHARED_SECRET_BYTES" in network,
-    "classical shared-secret length must remain exact",
+    "CLASSICAL_SHARED_SECRET_BYTES" not in network
+    and "ML_KEM_SHARED_SECRET_BYTES: usize = 32" in network,
+    "transport must keep exact PQ shared-secret bounds and no classical KEX length",
 )
 
 require(
@@ -412,9 +409,9 @@ require(
 
 require(
     "ML-KEM-1024 public key must not be all-zero" in network
-    and "classical KEX public key must not be all-zero" in network
-    and "secp256k1 KEX public key must use compressed encoding" in network,
-    "transport advertised-key structural prefilter missing",
+    and "classical KEX public key must not be all-zero" not in network
+    and "secp256k1 KEX public key must use compressed encoding" not in network,
+    "transport advertised-key prefilter must be PQ-only",
 )
 
 require(
@@ -459,9 +456,9 @@ require(
     "pub enum TransportRole" in network
     and "pub ml_kem_recipient: TransportRole" in network
     and "hasher.update([self.ml_kem_recipient.protocol_code()])" in network
-    and "hybrid transport peers must agree on classical KEX scheme" in network
+    and "hybrid transport peers must agree on classical KEX scheme" not in network
     and "transport peers must use distinct ML-KEM public keys" in network
-    and "hybrid transport peers must use distinct classical KEX public keys" in network,
+    and "hybrid transport peers must use distinct classical KEX public keys" not in network,
     "transport role/KEX agreement binding missing",
 )
 
@@ -545,10 +542,10 @@ require(
 )
 
 require(
-    "7cedd002de19f032b45bdde3d99eef89eb9b12b30bbfbcf9e66740c060b297e8" in network
-    and "c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890" in network
-    and "f1a8e0660f99db442f1e56becc05a1ae6e4dd18d14ede6233eefce9e5009ba16" in pq
-    and "fb28450c0d70acfa64a0c5c04e963eb6bcf20661105431f6d244691162c0f8d5" in pq,
+    "eea2df921bb1563a31fa77371f97d3e0d98fc19ebf2499e37f6bb507ebebc13e" in network
+    and "4a190abf3c240c4731d8ff64e24916f6273e73fd16c4e31db33439f695160392" in network
+    and "fa3c74619e4acb264a501d8e53727f1dad241f331f59c6766dc9f3c926558137" in pq
+    and "cad8aa5a33c38106f50e261c14e9d7a2f4c694a0bb18d81483691b7debb4e9fa" in pq,
     "independent authorization/transport known-answer vectors missing",
 )
 
@@ -1741,7 +1738,7 @@ require(
 require(
     evm_fips_context_fixture
         == "53594e455247592f50512d464950532d434f4e5445585400000100000000000000000000000000000000000000000000000000000000000021050103020304"
-    and "evm_fips_context_fixture_matches_rust_profile_v1" in pq
+    and "evm_fips_context_fixture_matches_rust_profile_v2" in pq
     and '"SYNERGY/PQ-FIPS-CONTEXT"' in smart_account_sol
     and "bytes2(CRYPTO_PROFILE_VERSION)" in smart_account_sol
     and "bytes32(block.chainid)" in smart_account_sol
@@ -1773,7 +1770,7 @@ require(
 require(
     evm_authorization_envelope_fixture
         == "53594e455247592f50512d41555448000001000000000000000000000000000000000000000000000000000000000000210501030203040000000000000001000000000000000700000000000003e8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    and "evm_authorization_envelope_fixture_matches_rust_profile_v1" in pq
+    and "evm_authorization_envelope_fixture_matches_rust_profile_v2" in pq
     and '"SYNERGY/PQ-AUTH"' in smart_account_sol
     and "function authorizationEnvelopeMessage(" in smart_account_sol
     and "uint64 public constant AUTHORIZATION_EPOCH = 1" in smart_account_sol

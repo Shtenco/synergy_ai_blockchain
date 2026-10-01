@@ -106,12 +106,7 @@ impl RatchetState {
         info.extend_from_slice(RATCHET_DOMAIN);
         info.extend_from_slice(b"pq-rekey");
         info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
-        let bytes = hkdf_expand(
-            &self.chain_key,
-            fresh_shared_secret,
-            &info,
-            32,
-        )?;
+        let bytes = hkdf_expand(&self.chain_key, fresh_shared_secret, &info, 32)?;
         self.chain_key.copy_from_slice(&bytes);
         self.skipped.clear();
         Some(())

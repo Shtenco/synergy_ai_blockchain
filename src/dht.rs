@@ -112,6 +112,10 @@ impl RoutingTable {
     pub fn len(&self) -> usize {
         self.buckets.values().map(|v| v.len()).sum()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[cfg(test)]
@@ -144,12 +148,32 @@ mod tests {
         a[0] = 1;
         let mut b = [0; 32];
         b[0] = 2;
-        assert!(t.insert(DhtNode { address: a, last_seen_ms: 10 }).unwrap());
-        assert!(t.insert(DhtNode { address: b, last_seen_ms: 20 }).unwrap());
+        assert!(t
+            .insert(DhtNode {
+                address: a,
+                last_seen_ms: 10
+            })
+            .unwrap());
+        assert!(t
+            .insert(DhtNode {
+                address: b,
+                last_seen_ms: 20
+            })
+            .unwrap());
         // Refresh same node with newer timestamp changes table.
-        assert!(t.insert(DhtNode { address: a, last_seen_ms: 30 }).unwrap());
+        assert!(t
+            .insert(DhtNode {
+                address: a,
+                last_seen_ms: 30
+            })
+            .unwrap());
         // Stale refresh does not.
-        assert!(!t.insert(DhtNode { address: a, last_seen_ms: 5 }).unwrap());
+        assert!(!t
+            .insert(DhtNode {
+                address: a,
+                last_seen_ms: 5
+            })
+            .unwrap());
         let mut target = [0; 32];
         target[0] = 1;
         let closest = t.closest(&target, 1);
@@ -161,7 +185,17 @@ mod tests {
     #[test]
     fn dht_rejects_self_and_zero() {
         let mut t = RoutingTable::new([7; 32]);
-        assert!(t.insert(DhtNode { address: [7; 32], last_seen_ms: 1 }).is_err());
-        assert!(t.insert(DhtNode { address: [0; 32], last_seen_ms: 1 }).is_err());
+        assert!(t
+            .insert(DhtNode {
+                address: [7; 32],
+                last_seen_ms: 1
+            })
+            .is_err());
+        assert!(t
+            .insert(DhtNode {
+                address: [0; 32],
+                last_seen_ms: 1
+            })
+            .is_err());
     }
 }

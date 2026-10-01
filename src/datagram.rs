@@ -17,8 +17,8 @@
 //! Fail-closed rules: zero `session_root`, zero `seq`, empty or oversize
 //! payload, and commitment mismatch are all rejected.
 
-use std::collections::VecDeque;
 use sha2::{Digest, Sha256};
+use std::collections::VecDeque;
 
 pub const DATAGRAM_MAGIC: &[u8; 4] = b"SYD1";
 pub const DATAGRAM_VERSION: u16 = 1;
@@ -184,7 +184,7 @@ impl RetransmitQueue {
     pub fn on_ack(&mut self, ack_seq: u64, ack_bits: u32) -> usize {
         let before = self.inflight.len();
         self.inflight.retain(|f| {
-            if f.seq == ack_seq || f.seq > ack_seq {
+            if f.seq >= ack_seq {
                 return f.seq != ack_seq;
             }
             // f.seq < ack_seq: acked if cumulative or SACK bit set.
@@ -214,6 +214,11 @@ impl RetransmitQueue {
 
     pub fn inflight_count(&self) -> usize {
         self.inflight.len()
+    }
+
+    /// Total payload bytes currently awaiting acknowledgement.
+    pub fn inflight_bytes(&self) -> usize {
+        self.inflight.iter().map(|f| f.payload_len).sum()
     }
 
     fn expire_acked(&mut self) {}
