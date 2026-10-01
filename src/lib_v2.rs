@@ -13,9 +13,13 @@ pub mod cognitive_market;
 pub mod cognitive_registry;
 pub mod compute_settlement;
 pub mod consensus;
+pub mod datagram;
 pub mod discovery;
+pub mod double_ratchet;
+pub mod dht;
 pub mod evm_compat;
 pub mod federation_contracts;
+pub mod gossip;
 pub mod governance;
 pub mod inference;
 pub mod kv_cache;
@@ -35,11 +39,15 @@ pub mod payments;
 pub mod peer_discovery;
 pub mod pi_pq;
 pub mod pq;
+pub mod pq_dns;
+pub mod pq_internet;
 #[cfg(feature = "reference-pq")]
 pub mod pq_reference;
 pub mod pq_rpc;
+pub mod rendezvous;
 pub mod scheduling;
 pub mod service_planes;
+pub mod session_resume;
 pub mod slashing;
 pub mod storage;
 pub mod syna_emission;
@@ -145,15 +153,15 @@ pub use mvp::{MvpCheckpoint, MVP_CHECKPOINT_DOMAIN};
 pub use mvp_finalization::{finalize_mvp_checkpoint, MvpFinalizationInput};
 pub use network::{
     derive_directional_transport_session_keys, establish_authenticated_shared_secret,
-    validate_shared_secret, ClassicalKexScheme, HybridSharedSecret, InMemoryTransportReplayGuard,
-    MlKem1024Provider, MlKemSharedSecret, RekeyPolicy, SecretBytes, TransportPeerAuthorization,
+    validate_shared_secret, InMemoryTransportReplayGuard,
+    MlKem1024Provider, MlKemSharedSecret, PqSharedSecret, RekeyPolicy, TransportPeerAuthorization,
     TransportPeerAuthorizationValidationContext, TransportPeerIdentity, TransportPolicy,
     TransportRecordSequence, TransportReplayGuard, TransportRole, TransportSessionKey,
     TransportSessionKeys, TransportTranscript, TransportValidationContext,
-    CLASSICAL_SHARED_SECRET_BYTES, MAX_REKEY_MESSAGES, MAX_REKEY_SECONDS,
+    MAX_REKEY_MESSAGES, MAX_REKEY_SECONDS,
     ML_KEM_1024_CIPHERTEXT_BYTES, ML_KEM_1024_PROTOCOL_CODE, ML_KEM_1024_PUBLIC_KEY_BYTES,
-    ML_KEM_SHARED_SECRET_BYTES, SECP256K1_KEX_PUBLIC_KEY_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
-    TRANSPORT_TRANSCRIPT_DOMAIN, X25519_PUBLIC_KEY_BYTES,
+    ML_KEM_SHARED_SECRET_BYTES, TRANSPORT_RECORD_NONCE_BYTES,
+    TRANSPORT_TRANSCRIPT_DOMAIN,
 };
 pub use nexus::{
     infer_reference_metered, NexusError, NexusManifest, NexusMode, NexusRequest, NexusResponse,

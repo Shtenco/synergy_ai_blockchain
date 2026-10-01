@@ -139,14 +139,10 @@ mod tests {
             initiator: TransportPeerIdentity {
                 node_id: [3; 32],
                 ml_kem1024_public_key: vec![1; crate::network::ML_KEM_1024_PUBLIC_KEY_BYTES],
-                legacy_kex_scheme: None,
-                legacy_kex_public_key: vec![],
             },
             responder: TransportPeerIdentity {
                 node_id: [4; 32],
                 ml_kem1024_public_key: vec![2; crate::network::ML_KEM_1024_PUBLIC_KEY_BYTES],
-                legacy_kex_scheme: None,
-                legacy_kex_public_key: vec![],
             },
             policy: TransportPolicy::PqOnly,
             rekey_policy: RekeyPolicy {
@@ -155,7 +151,6 @@ mod tests {
             },
             ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: vec![7; crate::network::ML_KEM_1024_CIPHERTEXT_BYTES],
-            classical_transcript_hash: None,
         }
     }
 

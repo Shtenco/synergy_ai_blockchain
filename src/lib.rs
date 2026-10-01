@@ -35,7 +35,7 @@ pub use cognitive_registry::{
 pub use consensus::{PrecompileAddress, PrecompileGasSchedule};
 pub use domain_commitment::DomainArtifactCommitment;
 pub use migration::{LegacyChain, LegacyIdentityBinding};
-pub use network::{HybridSharedSecret, TransportPolicy};
+pub use network::{PqSharedSecret, TransportPolicy};
 pub use nexus::{NexusManifest, NexusMode, NexusRequest, NexusResponse};
 pub use payments::{PaymentIntent, PaymentLaneKey, PaymentRail, SettlementBatch, SettlementState};
 pub use pq::{AuthPolicy, AuthScheme, HybridAuthorization};

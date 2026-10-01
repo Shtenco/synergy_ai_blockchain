@@ -1,0 +1,20 @@
+[Unit]
+Description=SYNERGY mutually authenticated PQ Stage RPC tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+EnvironmentFile=/home/ubuntu/.synergy-pq/stage.env
+ExecStart=/usr/bin/python3 -u /home/ubuntu/pq_stage_tunnel.py server --bind 0.0.0.0:44100 --target 127.0.0.1:${STAGE_PORT} --identity /home/ubuntu/.synergy-pq/${STAGE_ID}.json --peer-key /home/ubuntu/.synergy-pq/home.pub
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

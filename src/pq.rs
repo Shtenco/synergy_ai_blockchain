@@ -8,7 +8,10 @@ pub enum AuthScheme {
     SlhDsaShake256s,
 }
 
-pub const CRYPTO_PROFILE_VERSION: u16 = 1;
+/// Crypto profile version bound into every transcript/commitment.
+/// v2: classical/Hybrid transport lane deleted (PQ-only wire); transcript and
+/// KDF commitments changed and are NOT interoperable with v1.
+pub const CRYPTO_PROFILE_VERSION: u16 = 2;
 pub const MAX_AUTHORIZATION_LIFETIME_SECONDS: u64 = 86_400;
 pub const SECP256K1_PUBLIC_KEY_BYTES: usize = 33;
 pub const SECP256K1_SIGNATURE_BYTES: usize = 65;
@@ -146,6 +149,7 @@ pub enum AuthorizationDomain {
     TransportHandshake,
     AutopilotLeaseTerminal,
     AgentExecutionReceipt,
+    GossipAdvertisement,
 }
 
 impl AuthorizationDomain {
@@ -174,6 +178,7 @@ impl AuthorizationDomain {
             Self::TransportHandshake => 16,
             Self::AutopilotLeaseTerminal => 17,
             Self::AgentExecutionReceipt => 18,
+            Self::GossipAdvertisement => 19,
         }
     }
 }
@@ -1254,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn evm_authorization_envelope_fixture_matches_rust_profile_v1() {
+    fn evm_authorization_envelope_fixture_matches_rust_profile_v2() {
         let mut chain_id = [0u8; 32];
         chain_id[30..].copy_from_slice(&8453u16.to_be_bytes());
 
@@ -1275,14 +1280,14 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
         let expected_hex =
-            include_str!("../tests/fixtures/evm_authorization_envelope_v1.hex").trim();
+            include_str!("../tests/fixtures/evm_authorization_envelope_v2.hex").trim();
 
         assert_eq!(actual_hex, expected_hex);
         assert_eq!(message.len(), 111);
     }
 
     #[test]
-    fn evm_fips_context_fixture_matches_rust_profile_v1() {
+    fn evm_fips_context_fixture_matches_rust_profile_v2() {
         let mut chain_id = [0u8; 32];
         chain_id[30..].copy_from_slice(&8453u16.to_be_bytes());
 
@@ -1296,7 +1301,7 @@ mod tests {
             .map(|byte| format!("{byte:02x}"))
             .collect::<Vec<_>>()
             .join("");
-        let expected_hex = include_str!("../tests/fixtures/evm_fips_context_v1.hex").trim();
+        let expected_hex = include_str!("../tests/fixtures/evm_fips_context_v2.hex").trim();
 
         assert_eq!(actual_hex, expected_hex);
         assert_eq!(context.len(), 63);
@@ -1347,6 +1352,7 @@ mod tests {
             AuthorizationDomain::KvReplicaReceipt.protocol_code(),
             AuthorizationDomain::TransportHandshake.protocol_code(),
             AuthorizationDomain::AutopilotLeaseTerminal.protocol_code(),
+            AuthorizationDomain::GossipAdvertisement.protocol_code(),
         ];
 
         for codes in [&schemes[..], &policies[..], &domains[..]] {
@@ -1377,11 +1383,11 @@ mod tests {
         assert_eq!(context.len(), 63);
         assert_eq!(
             hex::encode(Sha256::digest(&message)),
-            "f1a8e0660f99db442f1e56becc05a1ae6e4dd18d14ede6233eefce9e5009ba16"
+            "fa3c74619e4acb264a501d8e53727f1dad241f331f59c6766dc9f3c926558137"
         );
         assert_eq!(
             hex::encode(Sha256::digest(&context)),
-            "fb28450c0d70acfa64a0c5c04e963eb6bcf20661105431f6d244691162c0f8d5"
+            "cad8aa5a33c38106f50e261c14e9d7a2f4c694a0bb18d81483691b7debb4e9fa"
         );
     }
 

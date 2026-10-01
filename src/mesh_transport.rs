@@ -654,20 +654,15 @@ mod tests {
             initiator: TransportPeerIdentity {
                 node_id: [1; 32],
                 ml_kem1024_public_key: initiator_public,
-                legacy_kex_scheme: None,
-                legacy_kex_public_key: vec![],
             },
             responder: TransportPeerIdentity {
                 node_id: [3; 32],
                 ml_kem1024_public_key: responder_public,
-                legacy_kex_scheme: None,
-                legacy_kex_public_key: vec![],
             },
             policy: TransportPolicy::PqOnly,
             rekey_policy: rekey,
             ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: ciphertext,
-            classical_transcript_hash: None,
         };
         let validation = TransportValidationContext {
             expected_network_id: [41; 32],
@@ -682,7 +677,6 @@ mod tests {
         let sender_secret = establish_shared_secret(
             &mut sender_guard,
             sender_shared,
-            None,
             &transcript,
             &validation,
         )
@@ -690,7 +684,6 @@ mod tests {
         let receiver_secret = establish_shared_secret(
             &mut receiver_guard,
             receiver_shared,
-            None,
             &transcript,
             &validation,
         )

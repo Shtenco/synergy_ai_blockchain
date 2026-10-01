@@ -14,14 +14,22 @@ pub const ML_KEM_1024_PROTOCOL_CODE: u8 = 1;
 pub const ML_KEM_1024_PUBLIC_KEY_BYTES: usize = 1568;
 pub const ML_KEM_1024_CIPHERTEXT_BYTES: usize = 1568;
 pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
-pub const X25519_PUBLIC_KEY_BYTES: usize = 32;
-pub const SECP256K1_KEX_PUBLIC_KEY_BYTES: usize = 33;
-pub const CLASSICAL_SHARED_SECRET_BYTES: usize = 32;
+
+// NOTE (PQ-only removal): classical KEX material (X25519/secp256k1) was
+// deleted from the transport. There is no Hybrid policy anymore; the only
+// wire policy is PqOnly (protocol code 2, kept stable for compatibility).
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportPolicy {
-    Hybrid,
     PqOnly,
+}
+
+impl TransportPolicy {
+    pub const fn protocol_code(self) -> u8 {
+        match self {
+            Self::PqOnly => 2,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,34 +145,10 @@ impl TransportReplayGuard for InMemoryTransportReplayGuard {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ClassicalKexScheme {
-    X25519,
-    Secp256k1,
-}
-
-impl ClassicalKexScheme {
-    pub const fn protocol_code(self) -> u8 {
-        match self {
-            Self::X25519 => 1,
-            Self::Secp256k1 => 2,
-        }
-    }
-
-    pub const fn expected_public_key_bytes(self) -> usize {
-        match self {
-            Self::X25519 => X25519_PUBLIC_KEY_BYTES,
-            Self::Secp256k1 => SECP256K1_KEX_PUBLIC_KEY_BYTES,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransportPeerIdentity {
     pub node_id: [u8; 32],
     pub ml_kem1024_public_key: Vec<u8>,
-    pub legacy_kex_scheme: Option<ClassicalKexScheme>,
-    pub legacy_kex_public_key: Vec<u8>,
 }
 
 impl TransportPeerIdentity {
@@ -179,29 +163,8 @@ impl TransportPeerIdentity {
             return Err("ML-KEM-1024 public key must not be all-zero");
         }
         match policy {
-            TransportPolicy::PqOnly => {
-                if self.legacy_kex_scheme.is_some() || !self.legacy_kex_public_key.is_empty() {
-                    return Err("PQ-only transport forbids classical KEX material");
-                }
-            }
-            TransportPolicy::Hybrid => {
-                let scheme = self
-                    .legacy_kex_scheme
-                    .ok_or("hybrid transport requires classical KEX scheme")?;
-                if self.legacy_kex_public_key.len() != scheme.expected_public_key_bytes() {
-                    return Err("classical KEX public key length mismatch");
-                }
-                if self.legacy_kex_public_key.iter().all(|byte| *byte == 0) {
-                    return Err("classical KEX public key must not be all-zero");
-                }
-                if scheme == ClassicalKexScheme::Secp256k1
-                    && !matches!(self.legacy_kex_public_key.first(), Some(0x02 | 0x03))
-                {
-                    return Err("secp256k1 KEX public key must use compressed encoding");
-                }
-            }
+            TransportPolicy::PqOnly => Ok(()),
         }
-        Ok(())
     }
 }
 
@@ -235,7 +198,6 @@ impl MlKemSharedSecret {
         &self.0
     }
 }
-
 impl fmt::Debug for MlKemSharedSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MlKemSharedSecret(<redacted>)")
@@ -243,38 +205,6 @@ impl fmt::Debug for MlKemSharedSecret {
 }
 
 impl Drop for MlKemSharedSecret {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-pub struct SecretBytes(Vec<u8>);
-
-impl SecretBytes {
-    pub fn new(bytes: Vec<u8>) -> Option<Self> {
-        (bytes.len() == CLASSICAL_SHARED_SECRET_BYTES).then_some(Self(bytes))
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl fmt::Debug for SecretBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretBytes(<redacted>)")
-    }
-}
-
-impl Drop for SecretBytes {
     fn drop(&mut self) {
         self.0.zeroize();
     }
@@ -311,7 +241,6 @@ pub struct TransportTranscript {
     pub rekey_policy: RekeyPolicy,
     pub ml_kem_recipient: TransportRole,
     pub ml_kem_ciphertext: Vec<u8>,
-    pub classical_transcript_hash: Option<[u8; 32]>,
 }
 
 impl TransportTranscript {
@@ -332,32 +261,8 @@ impl TransportTranscript {
         if self.initiator.ml_kem1024_public_key == self.responder.ml_kem1024_public_key {
             return Err("transport peers must use distinct ML-KEM public keys");
         }
-        if matches!(self.policy, TransportPolicy::Hybrid) {
-            if self.initiator.legacy_kex_scheme != self.responder.legacy_kex_scheme {
-                return Err("hybrid transport peers must agree on classical KEX scheme");
-            }
-            if self.initiator.legacy_kex_public_key == self.responder.legacy_kex_public_key {
-                return Err("hybrid transport peers must use distinct classical KEX public keys");
-            }
-        }
         if self.ml_kem_ciphertext.len() != ML_KEM_1024_CIPHERTEXT_BYTES {
             return Err("ML-KEM-1024 ciphertext length mismatch");
-        }
-
-        match self.policy {
-            TransportPolicy::PqOnly => {
-                if self.classical_transcript_hash.is_some() {
-                    return Err("PQ-only transcript must not include classical transcript hash");
-                }
-            }
-            TransportPolicy::Hybrid => {
-                let classical = self
-                    .classical_transcript_hash
-                    .ok_or("hybrid transcript requires classical transcript hash")?;
-                if classical == [0u8; 32] {
-                    return Err("classical transcript hash must be nonzero");
-                }
-            }
         }
 
         Ok(())
@@ -403,38 +308,20 @@ impl TransportTranscript {
         hasher.update(self.network_id);
         hasher.update(self.epoch.to_be_bytes());
         hasher.update(self.session_id);
-        hasher.update([match self.policy {
-            TransportPolicy::Hybrid => 1,
-            TransportPolicy::PqOnly => 2,
-        }]);
+        // PQ-only is the sole wire policy (protocol code 2, stable).
+        hasher.update([TransportPolicy::PqOnly.protocol_code()]);
         hasher.update(self.rekey_policy.max_messages.to_be_bytes());
         hasher.update(self.rekey_policy.max_seconds.to_be_bytes());
         hasher.update([self.ml_kem_recipient.protocol_code()]);
 
         // Role order is canonical: initiator first, responder second.
+        // PQ-only transcripts carry ML-KEM identities only.
         for peer in [&self.initiator, &self.responder] {
             hasher.update(peer.node_id);
             put_len_prefixed(&mut hasher, &peer.ml_kem1024_public_key)?;
-            match peer.legacy_kex_scheme {
-                Some(scheme) => {
-                    hasher.update([1, scheme.protocol_code()]);
-                    put_len_prefixed(&mut hasher, &peer.legacy_kex_public_key)?;
-                }
-                None => {
-                    hasher.update([0, 0]);
-                    put_len_prefixed(&mut hasher, &[])?;
-                }
-            }
         }
 
         put_len_prefixed(&mut hasher, &self.ml_kem_ciphertext)?;
-        match self.classical_transcript_hash {
-            Some(hash) => {
-                hasher.update([1]);
-                hasher.update(hash);
-            }
-            None => hasher.update([0]),
-        }
 
         Some(hasher.finalize().into())
     }
@@ -511,18 +398,18 @@ fn verify_transport_peer_authorization<V: ContextSignatureVerifier>(
     )
 }
 
-pub struct HybridSharedSecret {
+/// Post-quantum transport shared secret: ML-KEM-1024 only.
+/// The classical/Hybrid lane was deleted; there is no classical component.
+pub struct PqSharedSecret {
     policy: TransportPolicy,
     rekey_policy: RekeyPolicy,
     pq_shared: MlKemSharedSecret,
-    classical_shared: Option<SecretBytes>,
     transcript_hash: [u8; 32],
 }
 
-impl HybridSharedSecret {
+impl PqSharedSecret {
     pub(crate) fn from_transcript(
         pq_shared: MlKemSharedSecret,
-        classical_shared: Option<SecretBytes>,
         transcript: &TransportTranscript,
         validation: &TransportValidationContext,
     ) -> Option<Self> {
@@ -531,24 +418,14 @@ impl HybridSharedSecret {
             return None;
         }
 
-        match transcript.policy {
-            TransportPolicy::PqOnly if classical_shared.is_some() => return None,
-            TransportPolicy::Hybrid
-                if classical_shared
-                    .as_ref()
-                    .map(|secret| secret.len() != CLASSICAL_SHARED_SECRET_BYTES)
-                    .unwrap_or(true) =>
-            {
-                return None;
-            }
-            _ => {}
+        if transcript.policy != TransportPolicy::PqOnly {
+            return None;
         }
 
         Some(Self {
             policy: transcript.policy,
             rekey_policy: transcript.rekey_policy,
             pq_shared,
-            classical_shared,
             transcript_hash,
         })
     }
@@ -570,10 +447,6 @@ impl HybridSharedSecret {
         &self.pq_shared
     }
 
-    pub fn classical_shared(&self) -> Option<&SecretBytes> {
-        self.classical_shared.as_ref()
-    }
-
     pub fn transcript_hash(&self) -> &[u8; 32] {
         &self.transcript_hash
     }
@@ -582,14 +455,12 @@ impl HybridSharedSecret {
 pub(crate) fn establish_shared_secret<G: TransportReplayGuard>(
     replay_guard: &mut G,
     pq_shared: MlKemSharedSecret,
-    classical_shared: Option<SecretBytes>,
     transcript: &TransportTranscript,
     validation: &TransportValidationContext,
-) -> Option<HybridSharedSecret> {
+) -> Option<PqSharedSecret> {
     // Validate transcript and secret material before consuming replay state.
     // Otherwise malformed local input could burn an otherwise valid session ID.
-    let secret =
-        HybridSharedSecret::from_transcript(pq_shared, classical_shared, transcript, validation)?;
+    let secret = PqSharedSecret::from_transcript(pq_shared, transcript, validation)?;
     let transcript_hash = *secret.transcript_hash();
 
     if !replay_guard.consume_session(
@@ -614,14 +485,13 @@ pub fn establish_authenticated_shared_secret<
     responder_replay: &mut AuthorizationReplayState,
     verifier: &V,
     pq_shared: MlKemSharedSecret,
-    classical_shared: Option<SecretBytes>,
     transcript: &TransportTranscript,
     transport_validation: &TransportValidationContext,
     initiator_authorization: &TransportPeerAuthorization,
     initiator_validation: &TransportPeerAuthorizationValidationContext,
     responder_authorization: &TransportPeerAuthorization,
     responder_validation: &TransportPeerAuthorizationValidationContext,
-) -> Option<HybridSharedSecret> {
+) -> Option<PqSharedSecret> {
     if initiator_validation.expected_node_id != transcript.initiator.node_id
         || responder_validation.expected_node_id != transcript.responder.node_id
         || initiator_validation.expected_keyset_commitment == [0u8; 32]
@@ -668,7 +538,6 @@ pub fn establish_authenticated_shared_secret<
     let secret = establish_shared_secret(
         replay_guard,
         pq_shared,
-        classical_shared,
         transcript,
         transport_validation,
     )?;
@@ -706,31 +575,20 @@ impl Drop for TransportSessionKey {
 }
 
 #[cfg(test)]
-fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<TransportSessionKey> {
+fn derive_transport_session_key(secret: &PqSharedSecret) -> Option<TransportSessionKey> {
     if !validate_shared_secret(secret.policy(), secret) {
         return None;
     }
 
-    let mut ikm =
-        Vec::with_capacity(2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES);
-    ikm.push(1); // PQ component present.
+    // PQ-only IKM: presence byte + ML-KEM-1024 shared secret. No classical lane.
+    let mut ikm = Vec::with_capacity(1 + ML_KEM_SHARED_SECRET_BYTES);
+    ikm.push(1);
     ikm.extend_from_slice(secret.pq_shared().as_bytes());
-
-    match secret.classical_shared() {
-        Some(classical) => {
-            ikm.push(1);
-            ikm.extend_from_slice(classical.as_bytes());
-        }
-        None => ikm.push(0),
-    }
 
     let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 2 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
-    info.push(match secret.policy() {
-        TransportPolicy::Hybrid => 1,
-        TransportPolicy::PqOnly => 2,
-    });
+    info.push(TransportPolicy::PqOnly.protocol_code());
     info.push(ML_KEM_1024_PROTOCOL_CODE);
     info.push(TRANSPORT_KDF_PROTOCOL_CODE);
     info.extend_from_slice(secret.transcript_hash());
@@ -752,32 +610,21 @@ fn derive_transport_session_key(secret: &HybridSharedSecret) -> Option<Transport
 }
 
 fn derive_transport_direction_key(
-    secret: &HybridSharedSecret,
+    secret: &PqSharedSecret,
     direction: TransportDirection,
 ) -> Option<TransportSessionKey> {
     if !validate_shared_secret(secret.policy(), secret) {
         return None;
     }
 
-    let mut ikm =
-        Vec::with_capacity(2 + ML_KEM_SHARED_SECRET_BYTES + CLASSICAL_SHARED_SECRET_BYTES);
+    let mut ikm = Vec::with_capacity(1 + ML_KEM_SHARED_SECRET_BYTES);
     ikm.push(1);
     ikm.extend_from_slice(secret.pq_shared().as_bytes());
-    match secret.classical_shared() {
-        Some(classical) => {
-            ikm.push(1);
-            ikm.extend_from_slice(classical.as_bytes());
-        }
-        None => ikm.push(0),
-    }
 
     let mut info = Vec::with_capacity(TRANSPORT_KDF_DOMAIN.len() + 2 + 4 + 32);
     info.extend_from_slice(TRANSPORT_KDF_DOMAIN);
     info.extend_from_slice(&crate::pq::CRYPTO_PROFILE_VERSION.to_be_bytes());
-    info.push(match secret.policy() {
-        TransportPolicy::Hybrid => 1,
-        TransportPolicy::PqOnly => 2,
-    });
+    info.push(TransportPolicy::PqOnly.protocol_code());
     info.push(ML_KEM_1024_PROTOCOL_CODE);
     info.push(TRANSPORT_KDF_PROTOCOL_CODE);
     info.push(direction.protocol_code());
@@ -897,7 +744,7 @@ impl TransportRecordSequence {
 }
 
 pub fn derive_directional_transport_session_keys(
-    secret: &HybridSharedSecret,
+    secret: &PqSharedSecret,
 ) -> Option<TransportSessionKeys> {
     let initiator_to_responder =
         derive_transport_direction_key(secret, TransportDirection::InitiatorToResponder)?;
@@ -910,13 +757,12 @@ pub fn derive_directional_transport_session_keys(
     })
 }
 
-impl fmt::Debug for HybridSharedSecret {
+impl fmt::Debug for PqSharedSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HybridSharedSecret")
+        f.debug_struct("PqSharedSecret")
             .field("policy", &self.policy)
             .field("rekey_policy", &self.rekey_policy)
             .field("pq_shared", &"<redacted>")
-            .field("classical_shared", &"<redacted>")
             .field("transcript_hash", &self.transcript_hash)
             .finish()
     }
@@ -935,21 +781,16 @@ pub trait MlKem1024Provider {
 }
 
 /// Consensus code does not implement a transport cipher here. The networking
-/// stack feeds the resulting hybrid secret into its reviewed transcript-bound KDF.
-pub fn validate_shared_secret(policy: TransportPolicy, secret: &HybridSharedSecret) -> bool {
+/// stack feeds the resulting PQ secret into its reviewed transcript-bound KDF.
+pub fn validate_shared_secret(policy: TransportPolicy, secret: &PqSharedSecret) -> bool {
     if secret.policy() != policy
+        || policy != TransportPolicy::PqOnly
         || secret.transcript_hash() == &[0u8; 32]
         || secret.rekey_policy().validate().is_err()
     {
         return false;
     }
-    match policy {
-        TransportPolicy::PqOnly => true,
-        TransportPolicy::Hybrid => secret
-            .classical_shared()
-            .map(|shared| shared.len() == CLASSICAL_SHARED_SECRET_BYTES)
-            .unwrap_or(false),
-    }
+    true
 }
 
 pub const MAX_REKEY_MESSAGES: u64 = 1 << 20;
@@ -1095,14 +936,9 @@ mod tests {
     }
 
     #[test]
-    fn transport_algorithm_registry_codes_are_nonzero_and_unique() {
+    fn transport_algorithm_registry_codes_are_nonzero() {
         assert_ne!(ML_KEM_1024_PROTOCOL_CODE, 0);
-        let kex = [
-            ClassicalKexScheme::X25519.protocol_code(),
-            ClassicalKexScheme::Secp256k1.protocol_code(),
-        ];
-        assert!(kex.iter().all(|code| *code != 0));
-        assert_ne!(kex[0], kex[1]);
+        assert_eq!(TransportPolicy::PqOnly.protocol_code(), 2);
     }
 
     #[test]
@@ -1146,68 +982,42 @@ mod tests {
     }
 
     #[test]
-    fn peer_identity_enforces_ml_kem_size_and_hybrid_classical_key() {
+    fn peer_identity_enforces_ml_kem_size() {
         let mut peer = TransportPeerIdentity {
             node_id: [1u8; 32],
             ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
-            legacy_kex_public_key: {
-                let mut key = vec![3u8; SECP256K1_KEX_PUBLIC_KEY_BYTES];
-                key[0] = 0x02;
-                key
-            },
         };
-
-        assert_eq!(peer.validate_for_policy(TransportPolicy::Hybrid), Ok(()));
+        assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
 
         peer.ml_kem1024_public_key.pop();
         assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
-        peer.ml_kem1024_public_key = vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES];
-        peer.legacy_kex_public_key.pop();
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+        peer.ml_kem1024_public_key = vec![0u8; ML_KEM_1024_PUBLIC_KEY_BYTES];
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
-        peer.legacy_kex_scheme = None;
-        peer.legacy_kex_public_key.clear();
-        assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+        peer.node_id = [0u8; 32];
+        peer.ml_kem1024_public_key = vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES];
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
     }
 
     fn test_peer(node: u8) -> TransportPeerIdentity {
         TransportPeerIdentity {
             node_id: [node; 32],
             ml_kem1024_public_key: vec![node; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_scheme: Some(ClassicalKexScheme::Secp256k1),
-            legacy_kex_public_key: {
-                let mut key = vec![node; SECP256K1_KEX_PUBLIC_KEY_BYTES];
-                key[0] = 0x02;
-                key
-            },
         }
     }
 
-    fn valid_transcript(policy: TransportPolicy) -> TransportTranscript {
-        let mut initiator = test_peer(1);
-        let mut responder = test_peer(2);
-        if matches!(policy, TransportPolicy::PqOnly) {
-            initiator.legacy_kex_scheme = None;
-            initiator.legacy_kex_public_key.clear();
-            responder.legacy_kex_scheme = None;
-            responder.legacy_kex_public_key.clear();
-        }
-
+    fn valid_transcript() -> TransportTranscript {
         TransportTranscript {
             network_id: [0xA0; 32],
             epoch: 7,
             session_id: [0xA1; 32],
-            initiator,
-            responder,
-            policy,
+            initiator: test_peer(1),
+            responder: test_peer(2),
+            policy: TransportPolicy::PqOnly,
             rekey_policy: RekeyPolicy::default(),
             ml_kem_recipient: TransportRole::Responder,
             ml_kem_ciphertext: vec![3u8; ML_KEM_1024_CIPHERTEXT_BYTES],
-            classical_transcript_hash: matches!(policy, TransportPolicy::Hybrid)
-                .then_some([4u8; 32]),
         }
     }
 
@@ -1293,24 +1103,23 @@ mod tests {
         }
     }
 
-    fn valid_secret() -> HybridSharedSecret {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+    fn valid_secret() -> PqSharedSecret {
+        let transcript = valid_transcript();
         let validation = validation_for(&transcript);
         let mut replay_guard = OneShotReplayGuard::default();
         establish_shared_secret(
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("fixed ML-KEM shared secret"),
-            SecretBytes::new(vec![2u8; 32]),
             &transcript,
             &validation,
         )
-        .expect("valid hybrid shared secret")
+        .expect("valid PQ shared secret")
     }
 
     #[test]
     fn authenticated_transport_binds_both_peer_identities_and_consumes_once() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let transport_validation = validation_for(&transcript);
         let (initiator_auth, initiator_validation) =
             peer_authorization(&transcript, TransportRole::Initiator, 11, 0x21);
@@ -1345,7 +1154,6 @@ mod tests {
             &verifier,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &transport_validation,
             &initiator_auth,
@@ -1364,7 +1172,6 @@ mod tests {
             &verifier,
             MlKemSharedSecret::try_from_slice(&[3u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("replay PQ secret"),
-            SecretBytes::new(vec![4u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &transport_validation,
             &initiator_auth,
@@ -1379,7 +1186,7 @@ mod tests {
 
     #[test]
     fn transport_handshake_rejects_shared_authentication_keyset_between_peers() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let transport_validation = validation_for(&transcript);
         let (initiator_auth, initiator_validation) =
             peer_authorization(&transcript, TransportRole::Initiator, 11, 0x21);
@@ -1416,7 +1223,6 @@ mod tests {
             &verifier,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &transport_validation,
             &initiator_auth,
@@ -1431,7 +1237,7 @@ mod tests {
 
     #[test]
     fn transport_handshake_rejects_role_swap() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let transport_validation = validation_for(&transcript);
         let (mut initiator_auth, initiator_validation) =
             peer_authorization(&transcript, TransportRole::Initiator, 11, 0x21);
@@ -1467,7 +1273,6 @@ mod tests {
             &verifier,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &transport_validation,
             &initiator_auth,
@@ -1482,7 +1287,7 @@ mod tests {
 
     #[test]
     fn transport_session_replay_failure_does_not_burn_peer_auth_nonces() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let transport_validation = validation_for(&transcript);
         let (initiator_auth, initiator_validation) =
             peer_authorization(&transcript, TransportRole::Initiator, 11, 0x21);
@@ -1524,7 +1329,6 @@ mod tests {
             &verifier,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &transport_validation,
             &initiator_auth,
@@ -1538,41 +1342,25 @@ mod tests {
     }
 
     #[test]
-    fn peer_identity_rejects_zero_and_noncanonical_kex_keys() {
+    fn peer_identity_rejects_zero_ml_kem_key() {
         let mut peer = test_peer(7);
         peer.ml_kem1024_public_key.fill(0);
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
         let mut peer = test_peer(7);
-        peer.legacy_kex_public_key.fill(0);
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
+        peer.ml_kem1024_public_key.pop();
+        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
 
-        let mut peer = test_peer(7);
-        peer.legacy_kex_public_key[0] = 0x04;
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
-
-        let peer = TransportPeerIdentity {
-            node_id: [8u8; 32],
-            ml_kem1024_public_key: vec![8u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_scheme: Some(ClassicalKexScheme::X25519),
-            legacy_kex_public_key: vec![9u8; X25519_PUBLIC_KEY_BYTES],
-        };
-        assert_eq!(peer.validate_for_policy(TransportPolicy::Hybrid), Ok(()));
+        let peer = test_peer(8);
+        assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
     }
 
     #[test]
-    fn transport_classical_material_is_bounded() {
-        assert!(SecretBytes::new(vec![1u8; CLASSICAL_SHARED_SECRET_BYTES]).is_some());
-        assert!(SecretBytes::new(vec![1u8; CLASSICAL_SHARED_SECRET_BYTES + 1]).is_none());
-
-        let peer = TransportPeerIdentity {
-            node_id: [1u8; 32],
-            ml_kem1024_public_key: vec![2u8; ML_KEM_1024_PUBLIC_KEY_BYTES],
-            legacy_kex_scheme: Some(ClassicalKexScheme::X25519),
-            legacy_kex_public_key: vec![3u8; X25519_PUBLIC_KEY_BYTES + 1],
-        };
-        assert!(peer.validate_for_policy(TransportPolicy::Hybrid).is_err());
-        assert!(peer.validate_for_policy(TransportPolicy::PqOnly).is_err());
+    fn transport_policy_is_pq_only() {
+        // The Hybrid/classical lane was deleted: PqOnly is the sole variant.
+        assert_eq!(TransportPolicy::PqOnly.protocol_code(), 2);
+        let peer = test_peer(1);
+        assert_eq!(peer.validate_for_policy(TransportPolicy::PqOnly), Ok(()));
     }
 
     #[test]
@@ -1594,64 +1382,33 @@ mod tests {
         );
 
         let valid = valid_secret();
-        assert!(validate_shared_secret(TransportPolicy::Hybrid, &valid));
-        assert!(!validate_shared_secret(TransportPolicy::PqOnly, &valid));
-
+        assert!(validate_shared_secret(TransportPolicy::PqOnly, &valid));
         assert_ne!(valid.transcript_hash(), &[0u8; 32]);
-
-        let pq_transcript = valid_transcript(TransportPolicy::PqOnly);
-        let pq_validation = validation_for(&pq_transcript);
-        let mut replay_guard = OneShotReplayGuard::default();
-        let pq_only = establish_shared_secret(
-            &mut replay_guard,
-            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
-                .expect("fixed ML-KEM shared secret"),
-            None,
-            &pq_transcript,
-            &pq_validation,
-        )
-        .expect("valid PQ-only shared secret");
-        assert!(!validate_shared_secret(TransportPolicy::Hybrid, &pq_only));
-        assert!(validate_shared_secret(TransportPolicy::PqOnly, &pq_only));
     }
 
     #[test]
-    fn hybrid_secret_rejects_oversized_classical_secret() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
-        let validation = validation_for(&transcript);
-        let mut replay_guard = OneShotReplayGuard::default();
-        let secret = establish_shared_secret(
-            &mut replay_guard,
-            MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
-                .expect("fixed ML-KEM shared secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES + 1]),
-            &transcript,
-            &validation,
-        );
-        assert!(secret.is_none());
-    }
-
-    #[test]
-    fn invalid_secret_material_does_not_burn_session_id() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
-        let validation = validation_for(&transcript);
+    fn pq_secret_rejects_wrong_context_without_burning_session() {
+        let transcript = valid_transcript();
         let mut replay_guard = OneShotReplayGuard::default();
 
+        // Wrong epoch in validation context: establishment fails...
+        let mut wrong = validation_for(&transcript);
+        wrong.expected_epoch += 1;
         let invalid = establish_shared_secret(
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("invalid-attempt ML-KEM shared secret"),
-            None,
             &transcript,
-            &validation,
+            &wrong,
         );
         assert!(invalid.is_none());
 
+        // ...and the session id is NOT burned: the valid attempt succeeds.
+        let validation = validation_for(&transcript);
         let valid = establish_shared_secret(
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[2u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("valid-attempt ML-KEM shared secret"),
-            SecretBytes::new(vec![3u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &validation,
         );
@@ -1660,7 +1417,7 @@ mod tests {
 
     #[test]
     fn shared_secret_establishment_consumes_session_exactly_once() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let validation = validation_for(&transcript);
         let mut replay_guard = OneShotReplayGuard::default();
 
@@ -1668,7 +1425,6 @@ mod tests {
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("first ML-KEM shared secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &validation,
         );
@@ -1678,7 +1434,6 @@ mod tests {
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[3u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("second ML-KEM shared secret"),
-            SecretBytes::new(vec![4u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &validation,
         );
@@ -1687,7 +1442,7 @@ mod tests {
 
     #[test]
     fn transport_context_rejects_cross_network_epoch_and_session_replay() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let ok = validation_for(&transcript);
         assert!(transcript.validate_in_context(&ok).is_ok());
 
@@ -1705,25 +1460,19 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_transcript_rejects_kex_algorithm_mismatch_and_key_reuse() {
-        let mut mismatch = valid_transcript(TransportPolicy::Hybrid);
-        mismatch.initiator.legacy_kex_scheme = Some(ClassicalKexScheme::X25519);
-        mismatch.initiator.legacy_kex_public_key = vec![7u8; X25519_PUBLIC_KEY_BYTES];
-        assert!(mismatch.commitment().is_none());
-
-        let mut same_kem = valid_transcript(TransportPolicy::Hybrid);
+    fn pq_transcript_rejects_key_reuse() {
+        let mut same_kem = valid_transcript();
         same_kem.responder.ml_kem1024_public_key = same_kem.initiator.ml_kem1024_public_key.clone();
         assert!(same_kem.commitment().is_none());
 
-        let mut same_classical = valid_transcript(TransportPolicy::Hybrid);
-        same_classical.responder.legacy_kex_public_key =
-            same_classical.initiator.legacy_kex_public_key.clone();
-        assert!(same_classical.commitment().is_none());
+        let mut same_node = valid_transcript();
+        same_node.responder.node_id = same_node.initiator.node_id;
+        assert!(same_node.commitment().is_none());
     }
 
     #[test]
     fn transcript_commitment_binds_ml_kem_recipient_role() {
-        let base = valid_transcript(TransportPolicy::Hybrid);
+        let base = valid_transcript();
         let commitment = base.commitment().expect("commitment");
 
         let mut changed = base;
@@ -1736,7 +1485,7 @@ mod tests {
 
     #[test]
     fn transcript_commitment_binds_rekey_policy() {
-        let base = valid_transcript(TransportPolicy::Hybrid);
+        let base = valid_transcript();
         let commitment = base.commitment().expect("commitment");
 
         let mut changed = base.clone();
@@ -1752,8 +1501,8 @@ mod tests {
     }
 
     #[test]
-    fn transcript_commitment_binds_roles_policy_keys_and_ciphertext() {
-        let base = valid_transcript(TransportPolicy::Hybrid);
+    fn transcript_commitment_binds_keys_and_ciphertext() {
+        let base = valid_transcript();
         let commitment = base.commitment().expect("commitment");
 
         let mut changed = base.clone();
@@ -1770,24 +1519,18 @@ mod tests {
             changed.commitment().expect("changed commitment")
         );
 
-        let pq_only = valid_transcript(TransportPolicy::PqOnly);
-        assert_ne!(
-            commitment,
-            pq_only.commitment().expect("PQ-only commitment")
-        );
-
-        let mut invalid = base;
-        invalid.classical_transcript_hash = Some([0u8; 32]);
-        assert!(invalid.commitment().is_none());
+        // PQ-only is the sole policy: identical inputs commit identically.
+        let same = valid_transcript();
+        assert_eq!(commitment, same.commitment().expect("same commitment"));
     }
 
     #[test]
     fn transport_transcript_and_hkdf_match_independent_known_answer() {
-        let transcript = valid_transcript(TransportPolicy::Hybrid);
+        let transcript = valid_transcript();
         let commitment = transcript.commitment().expect("transcript commitment");
         assert_eq!(
             hex::encode(commitment),
-            "7cedd002de19f032b45bdde3d99eef89eb9b12b30bbfbcf9e66740c060b297e8"
+            "eea2df921bb1563a31fa77371f97d3e0d98fc19ebf2499e37f6bb507ebebc13e"
         );
 
         let validation = validation_for(&transcript);
@@ -1796,7 +1539,6 @@ mod tests {
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("KAT PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &transcript,
             &validation,
         )
@@ -1805,7 +1547,7 @@ mod tests {
         let session = derive_transport_session_key(&secret).expect("KAT session key");
         assert_eq!(
             hex::encode(session.as_bytes()),
-            "c1bfa4aaaf544e95235f01fbdb40f392eb8d4869183f221713d05f2da8568890"
+            "4a190abf3c240c4731d8ff64e24916f6273e73fd16c4e31db33439f695160392"
         );
     }
 
@@ -1813,7 +1555,7 @@ mod tests {
     fn transport_kdf_algorithm_code_is_nonzero_and_transcript_bound() {
         assert_ne!(TRANSPORT_KDF_PROTOCOL_CODE, 0);
 
-        let base = valid_transcript(TransportPolicy::Hybrid);
+        let base = valid_transcript();
         let commitment = base.commitment().expect("commitment");
 
         let mut hasher = Sha256::new();
@@ -1881,7 +1623,7 @@ mod tests {
         );
 
         let other_transcript = {
-            let mut transcript = valid_transcript(TransportPolicy::Hybrid);
+            let mut transcript = valid_transcript();
             transcript.session_id[0] ^= 1;
             transcript
         };
@@ -1891,7 +1633,6 @@ mod tests {
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
                 .expect("PQ secret"),
-            SecretBytes::new(vec![2u8; CLASSICAL_SHARED_SECRET_BYTES]),
             &other_transcript,
             &validation,
         )
@@ -1906,26 +1647,29 @@ mod tests {
     }
 
     #[test]
-    fn transport_kdf_is_transcript_and_policy_bound() {
-        let hybrid = valid_secret();
-        let hybrid_key = derive_transport_session_key(&hybrid).expect("hybrid session key");
-        assert_eq!(hybrid_key.as_bytes().len(), TRANSPORT_SESSION_KEY_BYTES);
+    fn transport_kdf_is_transcript_bound() {
+        let base = valid_secret();
+        let base_key = derive_transport_session_key(&base).expect("base session key");
+        assert_eq!(base_key.as_bytes().len(), TRANSPORT_SESSION_KEY_BYTES);
 
-        let pq_transcript = valid_transcript(TransportPolicy::PqOnly);
-        let pq_validation = validation_for(&pq_transcript);
+        let other_transcript = {
+            let mut transcript = valid_transcript();
+            transcript.session_id[0] ^= 1;
+            transcript
+        };
+        let other_validation = validation_for(&other_transcript);
         let mut replay_guard = OneShotReplayGuard::default();
-        let pq_secret = establish_shared_secret(
+        let other_secret = establish_shared_secret(
             &mut replay_guard,
             MlKemSharedSecret::try_from_slice(&[1u8; ML_KEM_SHARED_SECRET_BYTES])
-                .expect("PQ-only ML-KEM shared secret"),
-            None,
-            &pq_transcript,
-            &pq_validation,
+                .expect("other ML-KEM shared secret"),
+            &other_transcript,
+            &other_validation,
         )
-        .expect("PQ-only shared secret");
-        let pq_key = derive_transport_session_key(&pq_secret).expect("PQ-only session key");
+        .expect("other shared secret");
+        let other_key = derive_transport_session_key(&other_secret).expect("other session key");
 
-        assert_ne!(hybrid_key.as_bytes(), pq_key.as_bytes());
+        assert_ne!(base_key.as_bytes(), other_key.as_bytes());
     }
 
     #[test]
