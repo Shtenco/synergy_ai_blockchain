@@ -23,13 +23,16 @@
 - Slash one-shot replay test uses state=Consumed (CLI is stateless).
 
 ## Remaining
-- Stage 6 (cloud): e2-1/e2-2/MIDAS all SSH-reachable, remote PQ tunnels +
-  ggml-rpc running. OCI console action NOT needed (all ports OPEN from home,
-  iptables already pin new IP 188.130.156.212).
-- MIDAS rekeyed 2026-10-02: SYNERGY-PQ-TUNNEL now pins home2.pub
-  (old home.pub private lost 09-30; backup cmd at .bak-homepub).
-  PQ handshake home->MIDAS:44112 OK. keys/midas-2.pub saved in workspace.
-- Heavy tests deferred: full 2-host reload (~8 min) and 3-host run
-  (MIDAS layer upload ~226MB) postponed — PC hard-resets under load.
+- Stage 6 (cloud): DONE 2026-10-02.
+  - 2-host reproduced: `2+2=4` (load 198s, 0.88/0.25 t/s),
+    evidence/pq_llm_distributed_2host_oct02.json (root 2abbee08...).
+  - 3-host reproduced: `The capital of France is Paris.`
+    (load 218s, 0.89/0.42 t/s),
+    evidence/pq_llm_distributed_3host_oct02.json (root e84651db...).
+  - MIDAS rekeyed to home2; OCI console action not needed (ports OPEN).
+  - Root causes fixed: C: disk pressure, wedged rpc (Recv-Q gate),
+    stale PQ clients (PID-verified), Start-Process arg quoting.
+- Deferred: relay contour (agents Full), :8082 serving task,
+  gguf_inference_server.py rebuild.
 - Note: this PC (i7-3610QM, 2012) overheats and hard-resets under full
   cargo/llama load. Use -j 2, close Chrome, avoid parallel heavy jobs.
