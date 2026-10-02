@@ -1,0 +1,39 @@
+{
+  "claim": "decentralized distributed GGUF inference over post-quantum tunnels: transformer layers split across three hosts in two clouds",
+  "completed_utc": "2026-10-02T22:30:00Z",
+  "eval": {
+    "n_runs": 28,
+    "seconds": 66.53,
+    "tokens_per_second": 0.42
+  },
+  "evidence_root": "e84651db44f5b81c0651d0ec3ad85bf0aec837020d9e0f4ebca5bd8f996081d7",
+  "layer_assignment": {
+    "RPC0_e2_1": "0-10",
+    "RPC1_e2_2": "11-21",
+    "RPC2_MIDAS": "22-25",
+    "note": "auto-distributed by llama.cpp across 3 RPC backends; MIDAS CPU +17s in run window confirms participation"
+  },
+  "load": {
+    "seconds": 218.14
+  },
+  "model": "Qwen3.5-0.8B-Q4_K_M.gguf (579MB, 26 transformer blocks)",
+  "notes": "MIDAS tunnel rekeyed home.pub->home2.pub same day. Fresh rpc on all hosts (Recv-Q=0 gate). Home PQ clients restarted clean (PID-verified listeners). Matches 2026-09-30 3-host evidence.",
+  "prompt_eval": {
+    "n_tokens": 12,
+    "seconds": 13.47,
+    "tokens_per_second": 0.89
+  },
+  "run": {
+    "answer": "The capital of France is Paris.",
+    "binary": "llama.cpp b11026 llama-completion",
+    "flags": "--rpc 127.0.0.1:17831,127.0.0.1:17832,127.0.0.1:17833 -fit off -c 2048 -t 4 --simple-io --no-display-prompt -f prompt.txt -n 32 --temp 0 --seed 1",
+    "log": "cloud-3host-full (exit 0)",
+    "prompt": "capital of France is"
+  },
+  "transport_per_hop": {
+    "pq": "ML-KEM-1024 + ML-DSA-87 signatures + ChaCha20-Poly1305 records (pq_stage_tunnel)",
+    "tcp_path_e2_1": "127.0.0.1:17831 -> ssh -L 44010 -> e2-1 127.0.0.1:44110 -> 127.0.0.1:5001 ggml-rpc-server",
+    "tcp_path_e2_2": "127.0.0.1:17832 -> ssh -L 44011 -> e2-2 127.0.0.1:44111 -> 127.0.0.1:5002 ggml-rpc-server",
+    "tcp_path_midas": "127.0.0.1:17833 -> 185.200.84.83:44112 (direct PQ, rekeyed home2) -> 127.0.0.1:5001 ggml-rpc-server"
+  }
+}
