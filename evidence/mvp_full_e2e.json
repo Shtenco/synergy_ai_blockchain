@@ -1,0 +1,93 @@
+{
+  "all_steps_passed": true,
+  "evidence_root": "b4c75b0252aea29be5d91150fb16a0385d599a2fc0648a97e1efef69262542bc",
+  "gguf": "C:\\Users\\Shtenco\\Desktop\\SYNERGY-PQ-LLM\\models\\Qwen3.5-0.8B-Q4_K_M.gguf",
+  "gguf_sha256": "fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526",
+  "llama_cli": "C:\\Users\\Shtenco\\Desktop\\SYNERGY-PQ-LLM\\runtime\\llama-b11026\\llama-completion.exe",
+  "num_tokens": 8,
+  "prompt": "Reply with exactly: SYNERGY_E2E_OK",
+  "run_scope": "local-multiprocess",
+  "schema": "synergy.mvp-full-e2e/v1",
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "pq_identities",
+      "nodes": [
+        "node_a",
+        "node_b",
+        "node_c"
+      ],
+      "status": "PASS"
+    },
+    {
+      "name": "pq_tunnels",
+      "status": "PASS",
+      "tunnels": [
+        "a-server",
+        "a-client",
+        "b-server"
+      ]
+    },
+    {
+      "manifest": {
+        "gguf_bytes": 579615840,
+        "gguf_sha256": "fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526",
+        "layer_split": {
+          "stage0": "0-10",
+          "stage1": "11-21",
+          "stage2": "22-25"
+        },
+        "model": "Qwen3.5-0.8B-Q4_K_M",
+        "schema": "synergy.model-manifest/v1"
+      },
+      "model_digest": "18e8c5f7a116c97cc69cc4b3afad6b5a2ca87952352a2bff1efa753244ac0e08",
+      "name": "model_publish_fetch",
+      "status": "PASS"
+    },
+    {
+      "name": "real_llm_inference",
+      "output_commitment": "f4376086fef876092edcfed440a2b41ffbc4bd6a969c8282bb6fc42aa89ff006",
+      "output_text": "<think>\r\n\r\n</think>\r\n\r\nI cannot generate code\r\n> EOF by user\r\n\r\n\r\n",
+      "stage0_trace_root": "a1494b1d34a7ca109db6c7843b8f41dc90350af10245fe80a04235618917ebf1",
+      "stage1_trace_root": "bfb63ea3ca5b7560e45492892155e1e20e8d014890cf7e37f844b788ff90f135",
+      "status": "PASS"
+    },
+    {
+      "bad_output_commitment": "cd13a9d3813765c9c2c8b05af6e3ed85f7e94e97bf1ba4efad0d4538156d76af",
+      "good_output_commitment": "f4376086fef876092edcfed440a2b41ffbc4bd6a969c8282bb6fc42aa89ff006",
+      "name": "adversarial",
+      "status": "PASS",
+      "verdict": "MISMATCH"
+    },
+    {
+      "checkpoint1_commitment": "087cf72c97e7254bf20a4b5e1477f6c6b61e0f6bcfc6edb6f087a18b180ab16f",
+      "name": "slash_once",
+      "slash_root": "209a5f1ac2a5b342402966be4821ca8f014cc11ef64c487e882a85bf9b7336f1",
+      "status": "PASS"
+    },
+    {
+      "name": "kv_failover",
+      "primary_killed": true,
+      "replica_alive": true,
+      "status": "PASS"
+    },
+    {
+      "checkpoint2_commitment": "acb868fc09f9ced0654ea2199b4f4c3ad4fd0c73793c0a9c31efdb6149861160",
+      "name": "chain_extension",
+      "previous_checkpoint": "087cf72c97e7254bf20a4b5e1477f6c6b61e0f6bcfc6edb6f087a18b180ab16f",
+      "status": "PASS"
+    },
+    {
+      "commitment": "acb868fc09f9ced0654ea2199b4f4c3ad4fd0c73793c0a9c31efdb6149861160",
+      "name": "identical_checkpoint_root",
+      "status": "PASS"
+    },
+    {
+      "conservation": true,
+      "funded_amount": 100,
+      "name": "settlement",
+      "status": "PASS",
+      "total_distributed": 100
+    }
+  ]
+}

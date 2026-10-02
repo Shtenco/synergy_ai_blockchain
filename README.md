@@ -44,6 +44,29 @@ The Rust reference core intentionally has no external dependencies:
 cargo test
 ```
 
+## Full local MVP (single command)
+
+One orchestrated end-to-end run — PQ identities, PQ tunnels, model
+publish/fetch, real LLM inference (llama.cpp), adversarial worker,
+one-shot slash, KV failover, honest retry with chain extension,
+identical checkpoint root from two isolated processes, settlement:
+
+```bash
+# Build the checkpoint finalization CLI once:
+cargo build --bin synergy-mvp --features cli
+
+# Run the full pipeline (~15 min, needs llama.cpp + GGUF model):
+python scripts/mvp_full_e2e.py \
+  --llama-cli runtime/llama-b11026/llama-completion.exe \
+  --gguf models/Qwen3.5-0.8B-Q4_K_M.gguf
+```
+
+Output: `evidence/mvp_full_e2e.json` (`status: PASS`, 10/10 steps,
+`evidence_root` commits the whole run). Scope is `local-multiprocess`:
+real OS processes and real PQ tunnels on loopback, not external hosts.
+The external 3-host run (`deploy/mvp-3host/README.md`) remains a separate
+acceptance step.
+
 ## Status
 
 Research / integration branch. Not audited. Do not use it to custody real assets until the production PQ provider, EVM-client integration, cross-client vectors, light clients, bridge proofs and independent cryptographic audit are complete.
