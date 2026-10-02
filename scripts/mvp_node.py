@@ -36,6 +36,7 @@ def main() -> int:
     p.add_argument("--model-root")
     p.add_argument("--shard-root")
     p.add_argument("--capability-root")
+    p.add_argument("--tokens", type=int, default=1)
     args = p.parse_args()
 
     if args.role == "provider":
@@ -61,6 +62,7 @@ def main() -> int:
             model_root=args.model_root,
             shard_root=args.shard_root,
             capability_root=args.capability_root,
+            num_tokens=args.tokens,
         )
 
     with StageRpcServer(backend, host=args.host, port=args.port) as server:

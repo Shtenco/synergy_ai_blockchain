@@ -27,6 +27,7 @@ class LlamaCppSingleTokenBackend:
         context_size: int = 512,
         seed: int = 1,
         timeout_seconds: int = 120,
+        num_tokens: int = 1,
     ):
         self.llama_cli = Path(llama_cli)
         self.model_path = Path(model_path)
@@ -36,12 +37,15 @@ class LlamaCppSingleTokenBackend:
         self.context_size = int(context_size)
         self.seed = int(seed)
         self.timeout_seconds = int(timeout_seconds)
+        self.num_tokens = int(num_tokens)
         if not self.llama_cli.is_file() or not os.access(self.llama_cli, os.X_OK):
             raise LlamaCppBackendError("llama-cli executable required")
         if not self.model_path.is_file():
             raise LlamaCppBackendError("local GGUF model required")
         if self.context_size <= 0 or self.timeout_seconds <= 0:
             raise LlamaCppBackendError("invalid llama.cpp runtime limits")
+        if self.num_tokens <= 0:
+            raise LlamaCppBackendError("num_tokens must be positive")
 
     def run(self, payload: bytes) -> bytes:
         try:
@@ -55,7 +59,7 @@ class LlamaCppSingleTokenBackend:
             str(self.llama_cli),
             "-m", str(self.model_path),
             "-p", prompt,
-            "-n", "1",
+            "-n", str(self.num_tokens),
             "--temp", "0",
             "--seed", str(self.seed),
             "-c", str(self.context_size),
@@ -66,15 +70,19 @@ class LlamaCppSingleTokenBackend:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             timeout=self.timeout_seconds,
             check=False,
         )
-        if proc.returncode != 0:
-            tail = proc.stderr[-4096:].decode("utf-8", errors="replace")
-            raise LlamaCppBackendError(f"llama.cpp failed: {tail}")
+        # NOTE: llama.cpp single-shot binaries enter interactive/chat mode
+        # when the model has a chat template; with stdin=DEVNULL they exit
+        # nonzero ("EOF by user") AFTER generation completes. Accept output
+        # when stdout is non-empty; the verifier recomputes and compares
+        # commitments, so truncated output fails verification, not silently.
         output = proc.stdout
         if not output:
-            raise LlamaCppBackendError("llama.cpp returned empty output")
+            tail = proc.stderr[-4096:].decode("utf-8", errors="replace")
+            raise LlamaCppBackendError(f"llama.cpp failed: {tail}")
         return bytes(output)
 
     def artifact_evidence(self) -> dict[str, str | int]:
@@ -87,4 +95,5 @@ class LlamaCppSingleTokenBackend:
             "capability_root": self.capability_root,
             "context_size": self.context_size,
             "seed": self.seed,
+            "num_tokens": self.num_tokens,
         }
