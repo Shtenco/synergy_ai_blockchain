@@ -1,0 +1,64 @@
+{
+  "claim": "decentralized distributed GGUF inference over post-quantum tunnels: transformer layers split across two remote hosts",
+  "completed_utc": "2026-10-02T20:00:00Z",
+  "eval": {
+    "n_runs": 9,
+    "seconds": 35.65,
+    "tokens_per_second": 0.25
+  },
+  "evidence_root": "2abbee08d4d9549a153867dc62b134e4800c426f2b5f6660e39f0c88f333640b",
+  "layer_assignment": {
+    "RPC0_e2_1": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "RPC1_e2_2": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ]
+  },
+  "load": {
+    "seconds": 198.22
+  },
+  "model": "Qwen3.5-0.8B-Q4_K_M.gguf (579MB, 26 transformer blocks)",
+  "notes": "Fresh ggml-rpc-server on both hosts before run (Recv-Q=0 gate). Home PQ clients restarted. PC disk pressure resolved (8.3GB free on C:). Matches 2026-09-30 2-host evidence within variance.",
+  "prompt_eval": {
+    "n_tokens": 12,
+    "seconds": 13.68,
+    "tokens_per_second": 0.88
+  },
+  "run": {
+    "answer": "2+2=4",
+    "binary": "llama.cpp b11026 llama-completion",
+    "flags": "--rpc 127.0.0.1:17831,127.0.0.1:17832 -fit off -c 2048 -t 4 --simple-io --no-display-prompt -p 2+2= -n 32 --temp 0 --seed 1",
+    "log": "cloud-2host-v3 (exit 0)",
+    "prompt": "2+2="
+  },
+  "transport_per_hop": {
+    "pq": "ML-KEM-1024 + ML-DSA-87 signatures + ChaCha20-Poly1305 records (pq_stage_tunnel)",
+    "tcp_path_e2_1": "127.0.0.1:17831 -> ssh -L 44010 -> e2-1 127.0.0.1:44110 -> 127.0.0.1:5001 ggml-rpc-server",
+    "tcp_path_e2_2": "127.0.0.1:17832 -> ssh -L 44011 -> e2-2 127.0.0.1:44111 -> 127.0.0.1:5002 ggml-rpc-server"
+  }
+}
