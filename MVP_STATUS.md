@@ -24,7 +24,12 @@
 
 ## Remaining
 - Stage 6 (cloud): e2-1/e2-2/MIDAS all SSH-reachable, remote PQ tunnels +
-  ggml-rpc running. Blocked on user: OCI security-list ingress for current
-  home IP (now 188.130.156.212, rules still pin 109.248.159.212).
+  ggml-rpc running. OCI console action NOT needed (all ports OPEN from home,
+  iptables already pin new IP 188.130.156.212).
+- MIDAS rekeyed 2026-10-02: SYNERGY-PQ-TUNNEL now pins home2.pub
+  (old home.pub private lost 09-30; backup cmd at .bak-homepub).
+  PQ handshake home->MIDAS:44112 OK. keys/midas-2.pub saved in workspace.
+- Heavy tests deferred: full 2-host reload (~8 min) and 3-host run
+  (MIDAS layer upload ~226MB) postponed — PC hard-resets under load.
 - Note: this PC (i7-3610QM, 2012) overheats and hard-resets under full
   cargo/llama load. Use -j 2, close Chrome, avoid parallel heavy jobs.
