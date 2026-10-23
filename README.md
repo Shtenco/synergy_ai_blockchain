@@ -52,26 +52,26 @@ Research / integration branch. Not audited. Do not use it to custody real assets
 <!-- SYNERGY-FEDERATION-PASSPORT:START -->
 ---
 
-## 🧭 SYNERGY federation passport
+##  SYNERGY federation passport
 
-**Домен:** ⛓️ Blockchain / trust authority  
+**Домен:**  Blockchain / trust authority  
 **Архитектурный родитель:** [`synergy_system`](https://github.com/Shtenco/synergy_system)  
 **Архитектурный корень:** [`synergy_system`](https://github.com/Shtenco/synergy_system)
 
 ```mermaid
 flowchart LR
-    SYS[🧭 synergy_system] --> P[synergy_system]
+    SYS[ synergy_system] --> P[synergy_system]
     P --> THIS[synergy_ai_blockchain]
-    THIS --> E[📦 Evidence / outputs]
+    THIS --> E[ Evidence / outputs]
 ```
 
 Эта диаграмма фиксирует место в документационной федерации. Реальная code/runtime dependency должна подтверждаться отдельными артефактами.
 
 ### Навигация
 
-- [📚 Атлас всех 75 репозиториев](https://github.com/Shtenco/synergy_system/blob/main/docs/SYNERGY_REPOSITORY_ATLAS.md)
-- [🧾 Машиночитаемый registry](https://github.com/Shtenco/synergy_system/blob/main/registry/SYNERGY_REPOSITORIES.json)
-- [🧭 SYNERGY SYSTEM](https://github.com/Shtenco/synergy_system)
+- [ Атлас всех 75 репозиториев](https://github.com/Shtenco/synergy_system/blob/main/docs/SYNERGY_REPOSITORY_ATLAS.md)
+- [ Машиночитаемый registry](https://github.com/Shtenco/synergy_system/blob/main/registry/SYNERGY_REPOSITORIES.json)
+- [ SYNERGY SYSTEM](https://github.com/Shtenco/synergy_system)
 
 ### Evidence rule
 
@@ -82,7 +82,7 @@ flowchart LR
 
 ---
 
-# 🧪 Реальная evidence-карта `main`
+#  Реальная evidence-карта `main`
 
 В отличие от многих архитектурных узлов федерации, `synergy_ai_blockchain` уже содержит большой исполняемый и доказательный слой на `main`: Rust workspace, Solidity contracts, node runtime, deployment manifests, PQ test vectors, smoke/adversarial tests и сохранённые evidence bundles.
 
@@ -103,11 +103,11 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    SRC[💻 Rust / Solidity source] --> TEST[🧪 Tests / vectors]
-    TEST --> BUILD[🔧 Build / clippy / docs]
-    BUILD --> RUNTIME[⚙️ MVP runtime]
-    RUNTIME --> EVID[📦 Evidence bundles]
-    EVID --> CLAIM[📊 Bounded claims]
+    SRC[ Rust / Solidity source] --> TEST[ Tests / vectors]
+    TEST --> BUILD[ Build / clippy / docs]
+    BUILD --> RUNTIME[ MVP runtime]
+    RUNTIME --> EVID[ Evidence bundles]
+    EVID --> CLAIM[ Bounded claims]
 ```
 
 ## Что означает GREEN здесь
