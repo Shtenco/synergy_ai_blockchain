@@ -1,3 +1,15 @@
+<!-- SCIENTIFIC-PROFILE-2026:START -->
+<div align="center">
+<img src="assets/readme/research-architecture.svg" width="100%" alt="SYNERGY PQ-EVM / NEXUS CONSENSUS architecture"/>
+
+**[Новое научно-техническое досье / Scientific Profile](docs/SCIENTIFIC_PROFILE_2026.md)**
+</div>
+
+Дополнение раскрывает алгоритмы, математическую модель, исследовательскую ценность и воспроизводимость. Весь предыдущий README сохранён без сокращений.
+
+---
+<!-- SCIENTIFIC-PROFILE-2026:END -->
+
 # SYNERGY AI Blockchain — PQ-EVM + NEXUS
 
 Experimental consensus/execution core for the SYNERGY post-quantum EVM architecture.
